@@ -69,5 +69,23 @@ lighting defaults 315°/48%/36%/24% · material 62/18/107/12 · no JS errors · 
 
 ## Milestone status
 - M0 Foundations ✔ · M1 Model+resolver+hero ✔ · M2 Shell (visual lock) ✔ ·
-  M3 Control sections ✔ · M4 State system ✔ (delta form) ·
-  M5 Export parity ▢ · M6 Registry/adapters ▢ · M7 Build Kit ▢ (gated) · M8 Tests ▢
+  M3 Control sections ✔ · M4 State system ✔ · M5 Export (SVG/PNG/HTML) + live
+  HTML preview ✔ · M7 Build Kit (state matrix) ✔ · M6 Registry/adapters ▢ · M8 Tests ▢
+
+## Update — features added (all from the one canonical model)
+- **True state inheritance (§13):** states now compose down the chain
+  (Hover←Default, Pressed←Hover, Disabled←Pressed) via `composeDeltas`; additive
+  fields accumulate, others override.
+- **Live HTML preview:** the HTML-Preview mode renders the actual component
+  (embedded Lucide vector) with a Live / Markup toggle — both from `toHtml`.
+- **Export:** `toSvg` (resolution-independent vector — 3 shadow tiers, gradient
+  face, feTurbulence grain, embedded icon, filter emboss; an approximation of the
+  CSS material), `toHtml` (self-contained markup, fixed dims), and `exportPng`
+  (html-to-image rasterizes the live DOM → pixel-accurate; transparent bg). Wired
+  into the Output section (Copy/Save HTML · Save/Copy SVG · PNG 2×/3×).
+- **Build Kit phase:** top-bar pills + "Generate Kit from Master" switch to a
+  state-matrix view rendering the master across all four states (same renderer),
+  with Back-to-Master and Export-all. Note per earlier directive this was gated on
+  Master approval, which was granted.
+- Known SVG-export limitation: CSS blend-modes/box-shadows can't be reproduced
+  exactly in SVG (icon emboss reads a bit heavy); PNG is the faithful fallback.
