@@ -1,0 +1,46 @@
+/* FORGE application shell tokens — design lock §3, §4.
+   Shell is flat and quiet: ~85% white/neutral, ~10% gray, ~5% blue accent.
+   No gradients, no shadows on ordinary panels. */
+:root {
+  --forge-app-bg: #f7f8fa;
+  --forge-panel-bg: #ffffff;
+  --forge-panel-secondary: #fafbfc;
+  --forge-canvas-bg: #f8f9fb;
+
+  --forge-border-subtle: #e7eaf0;
+  --forge-border-default: #dde2e9;
+  --forge-border-strong: #cdd4de;
+
+  --forge-text-strong: #18212f;
+  --forge-text-default: #4e596a;
+  --forge-text-muted: #8993a3;
+  --forge-text-faint: #aab2bf;
+
+  --forge-accent: #245cff;
+  --forge-accent-hover: #174be6;
+  --forge-accent-soft: #edf2ff;
+  --forge-accent-border: #bfcfff;
+
+  --forge-warning: #f2a83b;
+  --forge-warning-soft: #fff7e8;
+  --forge-success: #16a36a;
+  --forge-danger: #d94b55;
+
+  /* geometry (§1) */
+  --forge-topbar-h: 64px;
+  --forge-rail-w: 58px;
+  --forge-panel-w: 340px;
+  --forge-help-h: 176px;
+  --forge-help-collapsed-h: 34px;
+  --forge-ruler-top-h: 36px;
+  --forge-ruler-left-w: 42px;
+
+  --forge-unit: 4px;
+}
+
+@media (max-width: 1440px) {
+  :root { --forge-panel-w: 328px; }
+}
+@media (max-width: 1280px) {
+  :root { --forge-rail-w: 54px; --forge-panel-w: 312px; }
+}
