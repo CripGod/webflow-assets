@@ -1,59 +1,29 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Hand, Minus, Plus, LayoutGrid, Download } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
-import { KIT_COMPONENTS } from "@/generator/model";
-import type { GenStateName, CanvasBg, KitSize } from "@/generator/model";
+import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES } from "@/generator/model";
+import type { GenStateName, KitSize } from "@/generator/model";
 import { downloadSvg } from "@/generator/exportUtils";
 
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
-const GRAIN =
-  "data:image/svg+xml;base64," +
-  btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter><rect width="240" height="240" filter="url(#n)" opacity="0.42"/></svg>`);
-
-const BGS: { id: CanvasBg; name: string; preview: string }[] = [
-  { id: "light", name: "Light", preview: "#F4F5F7" },
-  { id: "white", name: "White", preview: "#FFFFFF" },
-  { id: "deep", name: "Deep", preview: "#0B0C20" },
-  { id: "nebula", name: "Nebula", preview: "radial-gradient(130% 130% at 15% 100%, #fff 0%, #c26bfa 34%, #12132e 78%)" },
-];
-
-function canvasStyle(bg: CanvasBg, gridOn: boolean): { style: React.CSSProperties; dark: boolean } {
-  const dots = (c: string) => `radial-gradient(circle, ${c} 1px, transparent 1.4px)`;
-  if (bg === "nebula" || bg === "deep") {
-    const glow = bg === "nebula"
-      ? "radial-gradient(115% 100% at 10% 102%, #ffffff 0%, #f3e3ff 5%, #c26bfa 16%, #7c3aed 30%, #3d2f8f 48%, #131331 68%, rgba(9,10,26,0) 80%), "
-      : "";
-    return {
-      dark: true,
-      style: {
-        backgroundColor: "#090A1E",
-        backgroundImage: `url("${GRAIN}"), ${glow}${gridOn ? dots("rgba(235,238,255,0.16)") : "none"}`.replace(", none", ""),
-        backgroundSize: `240px 240px, ${bg === "nebula" ? "100% 100%, " : ""}${gridOn ? "22px 22px" : "auto"}`,
-        backgroundBlendMode: `overlay, ${bg === "nebula" ? "normal, " : ""}normal`,
-      },
-    };
-  }
-  return {
-    dark: false,
-    style: {
-      backgroundColor: bg === "white" ? "#FFFFFF" : "#FBFBFD",
-      backgroundImage: gridOn ? dots("rgba(24,28,48,0.13)") : undefined,
-      backgroundSize: gridOn ? "22px 22px" : undefined,
-    },
-  };
-}
-
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridOn, setGridOn, phase, kitSizes, setKitSize } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridOn, setGridOn, phase, kitSizes, setKitSize, selectedState, setSelectedState } = useGen();
   const scroller = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
+  // live interaction: hovering/pressing the hero previews those states ("hot"),
+  // while edits keep applying to the selected state.
+  const [live, setLive] = useState<"hover" | "pressed" | null>(null);
 
-  const heroSvg = useMemo(() => renderBevel(cfg, "default"), [cfg]);
-  const sideStates = (["hover", "pressed", "disabled"] as const).filter((s) => cfg.visible[s]);
-  const { style, dark } = canvasStyle(cfg.canvas, gridOn);
+  const displayed: GenStateName = phase === "master" && live && selectedState !== "disabled" ? live : selectedState;
+  const heroSvg = useMemo(() => renderBevel(cfg, displayed), [cfg, displayed]);
+  const sideStates = STATE_NAMES.filter(
+    (s) => s !== selectedState && (s === "default" || cfg.visible[s as Exclude<GenStateName, "default">])
+  );
+  const dark = cfg.canvas === "#1C1D22" || cfg.canvas === "#000000";
   const capColor = dark ? "rgba(235,238,255,0.62)" : undefined;
+  const dotColor = dark ? "rgba(235,238,255,0.16)" : "rgba(24,28,48,0.13)";
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!panMode || !scroller.current) return;
@@ -72,15 +42,32 @@ export function CanvasView() {
       <div
         ref={scroller}
         className={`canvas${panMode ? " pan" : ""}`}
-        style={style}
+        style={{
+          backgroundColor: cfg.canvas,
+          backgroundImage: gridOn ? `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px)` : undefined,
+          backgroundSize: gridOn ? "22px 22px" : undefined,
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
         {phase === "master" ? (
           <div className="stage" style={{ transform: `scale(${zoom})` }}>
-            <div className="state-cap" style={{ color: capColor }}>Default</div>
-            <div className="hero-slot" dangerouslySetInnerHTML={{ __html: heroSvg }} />
+            <div className="state-cap" style={{ color: capColor }}>
+              {CAP[displayed]}{live ? " · live" : ""}
+            </div>
+            <div
+              className="hero-slot hot"
+              onPointerEnter={(e) => setLive(e.buttons === 1 ? "pressed" : "hover")}
+              onPointerLeave={() => setLive(null)}
+              onPointerDown={(e) => { e.stopPropagation(); setLive("pressed"); }}
+              onPointerUp={() => setLive("hover")}
+              onPointerCancel={() => setLive(null)}
+              dangerouslySetInnerHTML={{ __html: heroSvg }}
+            />
+            <div className="editing-note" style={{ color: capColor ?? "rgba(60,64,78,0.55)" }}>
+              editing: {CAP[selectedState]}
+            </div>
           </div>
         ) : (
           <div className="kitgrid" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
@@ -120,10 +107,10 @@ export function CanvasView() {
             <LayoutGrid size={17} strokeWidth={1.8} />
           </button>
           <span className="zdiv" />
-          {BGS.map((b) => (
+          {CANVAS_BGS.map((b) => (
             <button key={b.id} className={`bgdot${cfg.canvas === b.id ? " on" : ""}`} title={`Canvas: ${b.name}`}
               onClick={() => update((c) => { c.canvas = b.id; })}>
-              <span style={{ background: b.preview }} />
+              <span style={{ background: b.id }} />
             </button>
           ))}
         </div>
@@ -132,10 +119,10 @@ export function CanvasView() {
       {phase === "master" && sideStates.length > 0 && (
         <div className="stack" aria-label="State previews">
           {sideStates.map((s) => (
-            <div className="scard" key={s}>
+            <button className="scard clickable" key={s} onClick={() => setSelectedState(s)} title={`Edit ${CAP[s]}`}>
               <div className="scard-title">{CAP[s]}</div>
               <div className="scard-body" dangerouslySetInnerHTML={{ __html: renderBevel(cfg, s) }} />
-            </div>
+            </button>
           ))}
         </div>
       )}

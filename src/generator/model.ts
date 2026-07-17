@@ -1,33 +1,49 @@
-// The UI Generator — canonical model (v4: shape presets, multi-light, kit).
+// The UI Generator — canonical model (v6).
+// Per-state adjustments, one key light + hard highlight, explicit shadow,
+// per-part transparency, text effects, auto-sizing label. One config drives
+// canvas, code copy, and exports.
 
 export type GenStateName = "default" | "hover" | "pressed" | "disabled";
 export const STATE_NAMES: GenStateName[] = ["default", "hover", "pressed", "disabled"];
 
 export type EffectRole = "Bevel" | "Glow" | "Highlight" | "Shadow" | "Inner Fill";
 export const EFFECT_ROLES: EffectRole[] = ["Bevel", "Glow", "Highlight", "Shadow", "Inner Fill"];
+export const ROLE_HINT: Record<EffectRole, string> = {
+  Bevel: "edge frame", Glow: "outer aura", Highlight: "face sheen", Shadow: "grounding", "Inner Fill": "body",
+};
 
-/** Bevel construction — presets differ in geometry, not just palette. */
 export type Shape = "chamfer" | "pill" | "sharp" | "round";
-export type CanvasBg = "light" | "white" | "deep" | "nebula";
+/** Neutral canvas surfaces only — the stage never competes with the component. */
+export const CANVAS_BGS = [
+  { id: "#FFFFFF", name: "White" },
+  { id: "#F4F5F7", name: "Light" },
+  { id: "#B9BEC6", name: "Gray" },
+  { id: "#1C1D22", name: "Dark" },
+  { id: "#000000", name: "Black" },
+] as const;
+export type CanvasBg = (typeof CANVAS_BGS)[number]["id"];
 
-export interface ExtraLight {
-  id: string;
-  kind: "rim" | "fill";
-  angle: number;      // its own direction
-  intensity: number;  // 0..100
+/** Editable per-state treatment — edits apply to the selected state only. */
+export interface StateAdjust {
+  brightness: number; // -30..30
+  glow: number;       // 0..100
+  lift: number;       // -10..10 px (negative = raised)
+  opacity: number;    // 0..100
 }
+
+export interface TextFx { emboss: boolean; glow: boolean; outline: boolean; shadow: boolean }
 
 export interface GenConfig {
   presetId: string;
   shape: Shape;
   effects: Partial<Record<EffectRole, string>>;
   face: { mode: "light" | "dark"; finish: number; noise: number };
-  bevel: { width: number; depth: number; softness: number };
-  lighting: {
-    angle: number; highlight: number; lowlight: number; shadow: number;
-    extras: ExtraLight[];
-  };
-  content: { label: string; icon: string; placement: "left" | "right" | "none" };
+  bevel: { width: number; softness: number };
+  lighting: { angle: number; highlight: number; lowlight: number; hardHighlight: number };
+  shadow: { distance: number; blur: number; opacity: number };
+  transparency: { frame: number; interior: number; content: number };
+  content: { label: string; icon: string; placement: "left" | "right" | "none"; fx: TextFx };
+  states: Record<GenStateName, StateAdjust>;
   visible: Record<Exclude<GenStateName, "default">, boolean>;
   canvas: CanvasBg;
 }
@@ -36,28 +52,32 @@ export interface Preset {
   id: string;
   name: string;
   shape: Shape;
-  bevel: { width: number; depth: number; softness: number };
+  bevel: { width: number; softness: number };
   effects: Record<EffectRole, string>;
 }
 
-/** Style presets — distinct constructions (shape + bevel geometry) with a palette. */
 export const PRESETS: Preset[] = [
-  { id: "arcane-bevel", name: "Arcane Bevel", shape: "chamfer",
-    bevel: { width: 14, depth: 24, softness: 36 },
-    effects: { Bevel: "#7C3AED", Glow: "#C026D3", Highlight: "#FFFFFF", Shadow: "#C4B5FD", "Inner Fill": "#F6F3FC" } },
-  { id: "power-pill", name: "Power Pill", shape: "pill",
-    bevel: { width: 12, depth: 28, softness: 100 },
-    effects: { Bevel: "#DB2777", Glow: "#F472B6", Highlight: "#FFF1F8", Shadow: "#FBCFE8", "Inner Fill": "#FDF4F9" } },
-  { id: "hard-chisel", name: "Hard Chisel", shape: "sharp",
-    bevel: { width: 16, depth: 18, softness: 4 },
-    effects: { Bevel: "#EA580C", Glow: "#F59E0B", Highlight: "#FFF7ED", Shadow: "#FDBA74", "Inner Fill": "#FFF8F2" } },
-  { id: "soft-round", name: "Soft Round", shape: "round",
-    bevel: { width: 12, depth: 30, softness: 70 },
-    effects: { Bevel: "#0891B2", Glow: "#22D3EE", Highlight: "#F0FDFF", Shadow: "#A5F3FC", "Inner Fill": "#F2FBFD" } },
+  { id: "arcane-bevel", name: "Arcane Bevel", shape: "chamfer", bevel: { width: 14, softness: 36 },
+    effects: { Bevel: "#7C3AED", Glow: "#C026D3", Highlight: "#FFFFFF", Shadow: "#5B21B6", "Inner Fill": "#F6F3FC" } },
+  { id: "power-pill", name: "Power Pill", shape: "pill", bevel: { width: 12, softness: 100 },
+    effects: { Bevel: "#DB2777", Glow: "#F472B6", Highlight: "#FFF1F8", Shadow: "#9D174D", "Inner Fill": "#FDF4F9" } },
+  { id: "hard-chisel", name: "Hard Chisel", shape: "sharp", bevel: { width: 16, softness: 4 },
+    effects: { Bevel: "#EA580C", Glow: "#F59E0B", Highlight: "#FFF7ED", Shadow: "#9A3412", "Inner Fill": "#FFF8F2" } },
+  { id: "soft-round", name: "Soft Round", shape: "round", bevel: { width: 12, softness: 70 },
+    effects: { Bevel: "#0891B2", Glow: "#22D3EE", Highlight: "#F0FDFF", Shadow: "#155E75", "Inner Fill": "#F2FBFD" } },
 ];
 
 export function presetById(id: string): Preset {
   return PRESETS.find((p) => p.id === id) ?? PRESETS[0];
+}
+
+export function defaultStates(): Record<GenStateName, StateAdjust> {
+  return {
+    default: { brightness: 0, glow: 42, lift: 0, opacity: 100 },
+    hover: { brightness: 10, glow: 62, lift: -4, opacity: 100 },
+    pressed: { brightness: -8, glow: 30, lift: 2, opacity: 100 },
+    disabled: { brightness: 0, glow: 0, lift: 0, opacity: 58 },
+  };
 }
 
 export function defaultConfig(): GenConfig {
@@ -68,10 +88,13 @@ export function defaultConfig(): GenConfig {
     effects: { ...p.effects },
     face: { mode: "light", finish: 62, noise: 12 },
     bevel: { ...p.bevel },
-    lighting: { angle: 135, highlight: 78, lowlight: 46, shadow: 42, extras: [] },
-    content: { label: "Primary", icon: "ArrowRight", placement: "right" },
+    lighting: { angle: 135, highlight: 78, lowlight: 46, hardHighlight: 0 },
+    shadow: { distance: 14, blur: 18, opacity: 45 },
+    transparency: { frame: 100, interior: 100, content: 100 },
+    content: { label: "PLAY", icon: "Play", placement: "right", fx: { emboss: false, glow: false, outline: false, shadow: false } },
+    states: defaultStates(),
     visible: { hover: true, pressed: true, disabled: true },
-    canvas: "light",
+    canvas: "#F4F5F7",
   };
 }
 
@@ -111,10 +134,10 @@ export function randomizeConfig(c: GenConfig): GenConfig {
       Bevel: hslHex(h, r(70, 90), r(45, 58)),
       Glow: hslHex((h + r(10, 40)) % 360, r(80, 95), r(55, 65)),
       Highlight: hslHex(h, r(15, 35), 97),
-      Shadow: hslHex(h, r(35, 55), r(76, 84)),
+      Shadow: hslHex(h, r(45, 65), r(24, 38)),
       "Inner Fill": hslHex(h, r(15, 30), 96),
     },
-    lighting: { ...c.lighting, angle: [45, 90, 135][r(0, 2)], highlight: r(60, 90), lowlight: r(30, 65), shadow: r(30, 55) },
+    lighting: { ...c.lighting, angle: [45, 90, 135][r(0, 2)], highlight: r(60, 92), lowlight: r(30, 65), hardHighlight: r(0, 2) ? 0 : r(40, 80) },
   };
 }
 

@@ -1,15 +1,15 @@
 import { create } from "zustand";
-import type { GenConfig, KitComponentId, KitSize } from "./model";
+import type { GenConfig, GenStateName, KitComponentId, KitSize } from "./model";
 import { defaultConfig, randomizeConfig, presetById } from "./model";
 
-const LS_KEY = "ui-generator-v5"; // v5: shape presets + multi-light + kit
+const LS_KEY = "ui-generator-v7"; // v7: per-state edits, shadow/transparency/text-fx
 
 function load(): GenConfig {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<GenConfig>;
-      if (parsed.presetId && parsed.shape && parsed.lighting && Array.isArray(parsed.lighting.extras)) {
+      if (parsed.presetId && parsed.states && parsed.shadow && parsed.transparency) {
         return { ...defaultConfig(), ...parsed } as GenConfig;
       }
     }
@@ -19,6 +19,7 @@ function load(): GenConfig {
 
 interface GenStore {
   cfg: GenConfig;
+  selectedState: GenStateName;
   phase: "master" | "kit";
   kitSizes: Partial<Record<KitComponentId, KitSize>>;
   zoom: number;
@@ -30,6 +31,7 @@ interface GenStore {
   update: (fn: (c: GenConfig) => void) => void;
   setPreset: (id: string) => void;
   randomize: () => void;
+  setSelectedState: (s: GenStateName) => void;
   setPhase: (p: "master" | "kit") => void;
   setKitSize: (id: KitComponentId, s: KitSize) => void;
   setZoom: (z: number) => void;
@@ -42,13 +44,14 @@ let saveTimer: number | undefined;
 
 export const useGen = create<GenStore>((set, get) => ({
   cfg: load(),
+  selectedState: "default",
   phase: "master",
   kitSizes: {},
   zoom: 1,
   panMode: false,
   gridOn: true,
   saveStatus: "saved",
-  open: { style: true, bevel: true, lighting: true },
+  open: { state: true, style: true, bevel: true, lighting: true },
 
   update: (fn) => {
     const cfg = JSON.parse(JSON.stringify(get().cfg)) as GenConfig;
@@ -68,6 +71,7 @@ export const useGen = create<GenStore>((set, get) => ({
     const next = randomizeConfig(get().cfg);
     get().update((c) => { c.effects = next.effects; c.lighting = next.lighting; });
   },
+  setSelectedState: (s) => set({ selectedState: s }),
   setPhase: (p) => set({ phase: p }),
   setKitSize: (id, s) => set((st) => ({ kitSizes: { ...st.kitSizes, [id]: s } })),
   setZoom: (z) => set({ zoom: Math.max(0.4, Math.min(2.4, Math.round(z * 10) / 10)) }),

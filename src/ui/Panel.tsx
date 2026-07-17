@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Shuffle, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, ExternalLink, Info, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Shuffle, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, ExternalLink, RotateCcw } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES } from "@/generator/model";
-import type { EffectRole } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, defaultStates } from "@/generator/model";
+import type { GenStateName } from "@/generator/model";
 import { searchIcons, iconInner } from "@/generator/icons";
 
 export function Rail() {
@@ -10,7 +10,7 @@ export function Rail() {
   const items = [
     { id: "style", Icon: Layers, label: "Style" },
     { id: "content", Icon: Type, label: "Content" },
-    { id: "states", Icon: LayoutGrid, label: "Layout / states" },
+    { id: "states", Icon: LayoutGrid, label: "States" },
     { id: "icons", Icon: Search, label: "Icon library" },
   ];
   return (
@@ -82,24 +82,41 @@ function AngleDial({ value, onChange }: { value: number; onChange: (v: number) =
   );
 }
 
-const ROLE_HINT: Record<EffectRole, string> = {
-  Bevel: "edge frame", Glow: "outer aura", Highlight: "face sheen", Shadow: "grounding", "Inner Fill": "body",
-};
+const STATE_LABEL: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize } = useGen();
+  const { cfg, update, setPreset, randomize, selectedState, setSelectedState } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const results = useMemo(() => searchIcons(iconQuery, 18), [iconQuery]);
   const presentRoles = EFFECT_ROLES.filter((r) => cfg.effects[r] !== undefined);
   const missingRoles = EFFECT_ROLES.filter((r) => cfg.effects[r] === undefined);
   const mapStops = presentRoles.map((r) => cfg.effects[r]!) as string[];
   const mapBar = mapStops.length > 1 ? `linear-gradient(90deg, ${mapStops.join(", ")})` : mapStops[0] ?? "#ddd";
+  const adj = cfg.states[selectedState];
 
   return (
     <aside className="panel">
-      {/* ── 1 · Style ─────────────────────────────────────── */}
-      <Section id="style" title={<>Style <em className="titnote">preset (collection)</em></>}
-        right={<Info size={14} strokeWidth={2} style={{ color: "var(--ink3)" }} />}>
+      {/* ── State (edits apply to the selected state only) ──── */}
+      <Section id="state" title="State"
+        right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
+        <div className="segmini" role="radiogroup" aria-label="State being edited">
+          {STATE_NAMES.map((s) => (
+            <button key={s} className={selectedState === s ? "on" : ""} role="radio" aria-checked={selectedState === s}
+              onClick={() => setSelectedState(s)}>{STATE_LABEL[s]}</button>
+          ))}
+        </div>
+        <div className="helper">Hover or press the button on the canvas to feel the states live. These sliders shape only <b>{STATE_LABEL[selectedState]}</b>.</div>
+        <Slider label="Brightness" value={adj.brightness} min={-30} max={30} unit="" onChange={(v) => update((c) => { c.states[selectedState].brightness = v; })} />
+        <Slider label="Glow" value={adj.glow} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.states[selectedState].glow = v; })} />
+        <Slider label="Lift" value={adj.lift} min={-10} max={10} unit="px" onChange={(v) => update((c) => { c.states[selectedState].lift = v; })} />
+        <Slider label="Opacity" value={adj.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.states[selectedState].opacity = v; })} />
+        <button className="resetstate" onClick={() => update((c) => { c.states[selectedState] = defaultStates()[selectedState]; })}>
+          <RotateCcw size={13} strokeWidth={2} /> Reset {STATE_LABEL[selectedState]}
+        </button>
+      </Section>
+
+      {/* ── Style ─────────────────────────────────────────── */}
+      <Section id="style" title={<>Style <em className="titnote">preset (collection)</em></>}>
         <label className="fieldbox" style={{ minWidth: 0 }}>
           <span className="fl">Style preset</span>
           <select value={cfg.presetId} onChange={(e) => setPreset(e.target.value)} aria-label="Style preset">
@@ -107,7 +124,6 @@ export function Panel() {
           </select>
           <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
         </label>
-
         <div>
           <div className="sublabel">Effect colors <em>(component only)</em></div>
           <div className="chips">
@@ -132,11 +148,10 @@ export function Panel() {
         </div>
       </Section>
 
-      {/* ── 2 · Surface ───────────────────────────────────── */}
+      {/* ── Surface ───────────────────────────────────────── */}
       <Section id="surface" title="Surface"
         right={
           <span className="inlinectl" onClick={(e) => e.stopPropagation()}>
-            <span className="mini-swatch" style={{ background: cfg.face.mode === "light" ? "#fff" : "#221833" }} />
             <select className="tinysel" value={cfg.face.mode} aria-label="Face mode"
               onChange={(e) => update((c) => { c.face.mode = e.target.value as "light" | "dark"; })}>
               <option value="light">Light</option>
@@ -146,10 +161,9 @@ export function Panel() {
         }>
         <Slider label="Finish" value={cfg.face.finish} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.face.finish = v; })} />
         <Slider label="Noise" value={cfg.face.noise} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.face.noise = v; })} />
-        <div className="helper">Finish is the face sheen; Noise is surface grain; mode flips the body light/dark.</div>
       </Section>
 
-      {/* ── 3 · Bevel ─────────────────────────────────────── */}
+      {/* ── Bevel ─────────────────────────────────────────── */}
       <Section id="bevel" title="Bevel">
         <div className="ctl">
           <label>Shape</label>
@@ -161,82 +175,61 @@ export function Panel() {
           </div>
         </div>
         <Slider label="Bevel width" value={cfg.bevel.width} min={4} max={26} unit="px" onChange={(v) => update((c) => { c.bevel.width = v; })} />
-        <Slider label="Bevel depth" value={cfg.bevel.depth} min={0} max={48} unit="px" onChange={(v) => update((c) => { c.bevel.depth = v; })} />
         <Slider label="Edge softness" value={cfg.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
       </Section>
 
-      {/* ── 4 · Lighting ──────────────────────────────────── */}
+      {/* ── Lighting (one key light) ──────────────────────── */}
       <Section id="lighting" title="Lighting">
-        <div className="lightcard">
-          <div className="lightcard-head"><span>Key light</span></div>
-          <div className="ctl">
-            <label>Angle</label>
-            <AngleDial value={cfg.lighting.angle} onChange={(v) => update((c) => { c.lighting.angle = v; })} />
-            <span className="valbox">
-              <input className="numin" type="number" min={0} max={360} value={cfg.lighting.angle} aria-label="Key light angle"
-                onChange={(e) => update((c) => { c.lighting.angle = ((+e.target.value % 360) + 360) % 360; })} />
-              <i>°</i>
-            </span>
-          </div>
-          <Slider label="Highlight" value={cfg.lighting.highlight} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.lighting.highlight = v; })} />
-          <Slider label="Lowlight" value={cfg.lighting.lowlight} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.lighting.lowlight = v; })} />
-          <Slider label="Shadow depth" value={cfg.lighting.shadow} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.lighting.shadow = v; })} />
+        <div className="ctl">
+          <label>Angle</label>
+          <AngleDial value={cfg.lighting.angle} onChange={(v) => update((c) => { c.lighting.angle = v; })} />
+          <span className="valbox">
+            <input className="numin" type="number" min={0} max={360} value={cfg.lighting.angle} aria-label="Lighting angle degrees"
+              onChange={(e) => update((c) => { c.lighting.angle = ((+e.target.value % 360) + 360) % 360; })} />
+            <i>°</i>
+          </span>
         </div>
-        {cfg.lighting.extras.map((l) => (
-          <div className="lightcard" key={l.id}>
-            <div className="lightcard-head">
-              <span>{l.kind === "rim" ? "Rim light" : "Fill light"}</span>
-              <button aria-label="Remove light" onClick={() => update((c) => { c.lighting.extras = c.lighting.extras.filter((x) => x.id !== l.id); })}>
-                <X size={13} strokeWidth={2} />
-              </button>
-            </div>
-            <div className="ctl">
-              <label>Angle</label>
-              <AngleDial value={l.angle} onChange={(v) => update((c) => {
-                const t = c.lighting.extras.find((x) => x.id === l.id); if (t) t.angle = v;
-              })} />
-              <span className="valbox">
-                <input className="numin" type="number" min={0} max={360} value={l.angle} aria-label={`${l.kind} light angle`}
-                  onChange={(e) => update((c) => {
-                    const t = c.lighting.extras.find((x) => x.id === l.id); if (t) t.angle = ((+e.target.value % 360) + 360) % 360;
-                  })} />
-                <i>°</i>
-              </span>
-            </div>
-            <Slider label="Intensity" value={l.intensity} min={0} max={100} unit="%" onChange={(v) => update((c) => {
-              const t = c.lighting.extras.find((x) => x.id === l.id); if (t) t.intensity = v;
-            })} />
-          </div>
-        ))}
-        {cfg.lighting.extras.length < 3 && (
-          <button className="addlight" onClick={() => update((c) => {
-            const kind = c.lighting.extras.some((x) => x.kind === "rim") ? "fill" : "rim";
-            const angle = (c.lighting.angle + 180) % 360;
-            c.lighting.extras = [...c.lighting.extras, { id: "L" + Date.now(), kind, angle, intensity: 55 }];
-          })}>
-            <Plus size={14} strokeWidth={2} /> Add light
-          </button>
-        )}
+        <Slider label="Highlight" value={cfg.lighting.highlight} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.lighting.highlight = v; })} />
+        <Slider label="Hard highlight" value={cfg.lighting.hardHighlight} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.lighting.hardHighlight = v; })} />
+        <Slider label="Lowlight" value={cfg.lighting.lowlight} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.lighting.lowlight = v; })} />
       </Section>
 
-      {/* ── 5 · Color Mapping ─────────────────────────────── */}
+      {/* ── Shadow ────────────────────────────────────────── */}
+      <Section id="shadow" title="Shadow">
+        <Slider label="Distance" value={cfg.shadow.distance} min={0} max={48} unit="px" onChange={(v) => update((c) => { c.shadow.distance = v; })} />
+        <Slider label="Blur" value={cfg.shadow.blur} min={0} max={60} unit="px" onChange={(v) => update((c) => { c.shadow.blur = v; })} />
+        <Slider label="Opacity" value={cfg.shadow.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.shadow.opacity = v; })} />
+        <div className="helper">Shadow color comes from the Shadow chip; direction follows the light.</div>
+      </Section>
+
+      {/* ── Transparency ──────────────────────────────────── */}
+      <Section id="transparency" title="Transparency">
+        <Slider label="Frame" value={cfg.transparency.frame} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.frame = v; })} />
+        <Slider label="Interior" value={cfg.transparency.interior} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.interior = v; })} />
+        <Slider label="Text & icon" value={cfg.transparency.content} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.content = v; })} />
+      </Section>
+
+      {/* ── Color Mapping (editable) ──────────────────────── */}
       <Section id="mapping" title="Color Mapping" right={<span className="mapbar" style={{ background: mapBar }} />}>
         <span className="mapbar wide" style={{ background: mapBar }} />
         <div className="maplist">
           {presentRoles.map((r) => (
             <div className="maprow" key={r}>
-              <span className="mini-swatch" style={{ background: cfg.effects[r] }} />
+              <span className="chipwell sm" style={{ background: cfg.effects[r] }}>
+                <input type="color" value={cfg.effects[r]} aria-label={`${r} color`}
+                  onChange={(e) => update((c) => { c.effects[r] = e.target.value; })} />
+              </span>
               <span className="mr-role">{r}</span>
               <ChevronRight size={12} strokeWidth={2} style={{ color: "var(--ink3)" }} />
               <span className="mr-hint">{ROLE_HINT[r]}</span>
             </div>
           ))}
         </div>
+        <div className="helper">Click any well to edit — same colors as the chips above.</div>
       </Section>
 
-      {/* ── 6 · Content ───────────────────────────────────── */}
-      <Section id="content" title="Content"
-        summary={<span>{cfg.content.placement === "none" ? "Text" : "Text + Icon"}</span>}>
+      {/* ── Content ───────────────────────────────────────── */}
+      <Section id="content" title="Content" summary={<span>{cfg.content.label || "—"}</span>}>
         <input className="tinput" value={cfg.content.label} maxLength={18} aria-label="Label text"
           onChange={(e) => update((c) => { c.content.label = e.target.value; })} />
         <div className="ctl">
@@ -248,30 +241,35 @@ export function Panel() {
             ))}
           </div>
         </div>
-        <div className="ctl">
-          <label>Icon</label>
-          <span className="curicon" dangerouslySetInnerHTML={{ __html: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${iconInner(cfg.content.icon)}</svg>` }} />
-          <span className="helper" style={{ flex: 1 }}>{cfg.content.icon} — pick another below</span>
+        <div>
+          <div className="sublabel">Text effects</div>
+          <div className="fxrow">
+            {(["emboss", "glow", "outline", "shadow"] as const).map((f) => (
+              <button key={f} className={`fxchip${cfg.content.fx[f] ? " on" : ""}`} aria-pressed={cfg.content.fx[f]}
+                onClick={() => update((c) => { c.content.fx[f] = !c.content.fx[f]; })}>
+                {f[0].toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
       </Section>
 
-      {/* ── 7 · States ────────────────────────────────────── */}
-      <Section id="states" title="States" summary={<span>{1 + Object.values(cfg.visible).filter(Boolean).length} states</span>}>
-        <label className="check"><input type="checkbox" checked disabled /> Default (hero preview)</label>
+      {/* ── States shown on canvas ────────────────────────── */}
+      <Section id="states" title="States shown" summary={<span>{1 + Object.values(cfg.visible).filter(Boolean).length} states</span>}>
+        <label className="check"><input type="checkbox" checked disabled /> Default (hero)</label>
         {(["hover", "pressed", "disabled"] as const).map((s) => (
           <label className="check" key={s}>
             <input type="checkbox" checked={cfg.visible[s]} onChange={(e) => update((c) => { c.visible[s] = e.target.checked; })} />
-            {s[0].toUpperCase() + s.slice(1)}
+            {STATE_LABEL[s]}
           </label>
         ))}
       </Section>
 
-      {/* ── 8 · Randomize ─────────────────────────────────── */}
       <button className="randbtn" onClick={randomize}>
         <Shuffle size={18} strokeWidth={1.9} /> Randomize
       </button>
 
-      {/* ── 9 · Icon search ───────────────────────────────── */}
+      {/* ── Icon search ───────────────────────────────────── */}
       <div className="iconsearch">
         <div className="searchbox">
           <Search size={15} strokeWidth={2} />

@@ -26,7 +26,7 @@ function Logo() {
 }
 
 export function TopBar() {
-  const { cfg, setPreset, saveStatus, update, phase, setPhase } = useGen();
+  const { cfg, setPreset, saveStatus, update, phase, setPhase, selectedState } = useGen();
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -37,7 +37,7 @@ export function TopBar() {
     return () => document.removeEventListener("mousedown", close);
   }, []);
 
-  const svg = () => renderBevel(cfg, "default");
+  const svg = () => renderBevel(cfg, selectedState);
   const stateValue =
     cfg.visible.hover && cfg.visible.pressed && cfg.visible.disabled ? "4" :
     cfg.visible.hover && cfg.visible.pressed ? "3" :
@@ -105,10 +105,10 @@ export function TopBar() {
         </button>
         {menuOpen && (
           <div className="menu-pop">
-            <button onClick={() => { downloadSvg(svg(), `ui-${cfg.presetId}-default.svg`); setMenuOpen(false); }}>
+            <button onClick={() => { downloadSvg(svg(), `ui-${cfg.presetId}-${selectedState}.svg`); setMenuOpen(false); }}>
               <Download size={15} strokeWidth={1.8} /> Export SVG
             </button>
-            <button onClick={() => { void downloadPng(svg(), `ui-${cfg.presetId}-default@2x.png`, 2); setMenuOpen(false); }}>
+            <button onClick={() => { void downloadPng(svg(), `ui-${cfg.presetId}-${selectedState}@2x.png`, 2); setMenuOpen(false); }}>
               <Image size={15} strokeWidth={1.8} /> Export PNG 2×
             </button>
             <button onClick={() => { copyCode(); setMenuOpen(false); }}>
