@@ -335,7 +335,7 @@ export function presetById(id: string): Preset {
 export function defaultStates(): Record<GenStateName, StateAdjust> {
   return {
     default: { brightness: 5, glow: 0, lift: 0, opacity: 100 },
-    hover: { brightness: 8, glow: 38, lift: -3, opacity: 100 },
+    hover: { brightness: 8, glow: 100, lift: -3, opacity: 100 },
     pressed: { brightness: -6, glow: 12, lift: 3, opacity: 100 },
     disabled: { brightness: 0, glow: 0, lift: 0, opacity: 62 },
   };
@@ -359,7 +359,7 @@ export function defaultConfig(): GenConfig {
   const p = PRESETS[0];
   const candy = defaultCandy();
   applyPresetCandy(candy, p);
-  return {
+  const base: GenConfig = {
     presetId: p.id,
     stateDesigns: {},
     shape: "pill",
@@ -377,6 +377,15 @@ export function defaultConfig(): GenConfig {
     visible: { hover: true, pressed: true, disabled: true },
     canvas: "#000000",
   };
+  // shipped state forks (uigeneratorsettings_3): hover flips to the warm
+  // red/orange colorway with a solid tan label; pressed is pinned to the
+  // base design so later Default edits don't drift it
+  const hover = pickDesign(base);
+  hover.effects = { Bevel: "#c82a0e", Glow: "#ff968f", Highlight: "#FFFFFF", Shadow: "#0A4A62", "Inner Fill": "#f08c2d" };
+  hover.type.fillMode = "solid";
+  hover.type.fill = "#b98350";
+  base.stateDesigns = { hover, pressed: pickDesign(base) };
+  return base;
 }
 
 export function applyPresetCandy(candy: CandyTokens, p: Preset) {
