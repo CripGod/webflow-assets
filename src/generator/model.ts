@@ -32,15 +32,44 @@ export interface StateAdjust {
   opacity: number;    // 0..100
 }
 
+/* Icons are parked while the hard-candy surface gets dialed in. The whole
+   icon system stays intact underneath — flip this to bring it back. */
+export const ICONS_ENABLED = false;
+
 /* ── candy surface tokens — the layered shell ─────────────────── */
+export type SpecularMode = "soft" | "hard" | "line" | "dual" | "anime" | "sweep";
+export const SPECULAR_MODES: { id: SpecularMode; name: string }[] = [
+  { id: "soft", name: "Soft spot" },
+  { id: "hard", name: "Hard spot" },
+  { id: "line", name: "Line streak" },
+  { id: "dual", name: "Dual spot" },
+  { id: "anime", name: "Anime" },
+  { id: "sweep", name: "Edge sweep" },
+];
+
 export interface CandyTokens {
   extrusion: { depth: number; darkness: number };                 // px, 0..100
   rim: { width: number; brightness: number };                     // px, 0..100
   innerEdge: { strength: number; width: number };                 // 0..100, px
-  innerGlow: { opacity: number; size: number };                   // 0..100 ×2 (color = Glow well)
-  gloss: { on: boolean; height: number; curve: number; opacity: number; softness: number }; // % face, px bow, %, %
-  specular: { on: boolean; size: number; opacity: number; ox: number; oy: number };         // px, %, % offsets
+  innerGlow: { opacity: number; size: number; color: string | null };   // null = Glow well
+  aura: { color: string | null };                                       // state glow color; null = Glow well
+  gloss: {
+    on: boolean; height: number; curve: number; opacity: number; softness: number;
+    layer: "below" | "above";
+    fill: "highlight" | "custom" | "gradient";  // highlight = Highlight well
+    tint: string; tint2: string;                // custom color / gradient top & bottom
+  };
+  specular: {
+    on: boolean; mode: SpecularMode;
+    size: number;       // px
+    stretch: number;    // 10..100 — height as % of width (shape)
+    intensity: number;  // 0..100
+    softness: number;   // 0..100 — falloff
+    angle: number;      // -80..80° on top of the light-driven tilt
+    ox: number; oy: number; // -50..50 position nudges
+  };
   bloom: { opacity: number; size: number };                       // 0..100 ×2 (bounce light, unlit side)
+  contact: { opacity: number };                                   // tight shadow where body meets ground
   texture: { amount: number; scale: number };                     // 0..100 ×2
 }
 
@@ -49,10 +78,12 @@ export function defaultCandy(): CandyTokens {
     extrusion: { depth: 10, darkness: 55 },
     rim: { width: 3, brightness: 80 },
     innerEdge: { strength: 45, width: 2 },
-    innerGlow: { opacity: 55, size: 55 },
-    gloss: { on: true, height: 46, curve: 26, opacity: 72, softness: 22 },
-    specular: { on: true, size: 26, opacity: 85, ox: 0, oy: 0 },
+    innerGlow: { opacity: 55, size: 55, color: null },
+    aura: { color: null },
+    gloss: { on: true, height: 46, curve: 26, opacity: 72, softness: 22, layer: "below", fill: "highlight", tint: "#FFFFFF", tint2: "#DFF7FF" },
+    specular: { on: true, mode: "hard", size: 26, stretch: 45, intensity: 85, softness: 30, angle: 0, ox: 0, oy: 0 },
     bloom: { opacity: 45, size: 60 },
+    contact: { opacity: 32 },
     texture: { amount: 0, scale: 50 },
   };
 }
@@ -210,16 +241,16 @@ export interface Preset {
 export const PRESETS: Preset[] = [
   { id: "hard-candy", name: "Hard Candy", shape: "round", bevel: { width: 10, softness: 78 },
     effects: { Bevel: "#0E9CC9", Glow: "#8FF0FF", Highlight: "#FFFFFF", Shadow: "#0A4A62", "Inner Fill": "#2CC5F0" },
-    candy: { gloss: { height: 46, curve: 26, opacity: 72 }, specular: { on: true }, extrusion: { depth: 10 } } },
+    candy: { gloss: { height: 46, curve: 26, opacity: 72 }, specular: { on: true, mode: "hard" }, extrusion: { depth: 10 } } },
   { id: "grape-jelly", name: "Grape Jelly", shape: "pill", bevel: { width: 9, softness: 100 },
     effects: { Bevel: "#8B34D8", Glow: "#E29CFF", Highlight: "#FFFFFF", Shadow: "#4A1178", "Inner Fill": "#A855F7" },
-    candy: { gloss: { height: 54, curve: 40, opacity: 62, softness: 46 }, innerGlow: { opacity: 72, size: 66 }, bloom: { opacity: 60, size: 72 }, extrusion: { depth: 12 } } },
+    candy: { gloss: { height: 54, curve: 40, opacity: 62, softness: 46 }, specular: { mode: "dual", softness: 55 }, innerGlow: { opacity: 72, size: 66 }, bloom: { opacity: 60, size: 72 }, extrusion: { depth: 12 } } },
   { id: "hero-chisel", name: "Hero Chisel", shape: "chamfer", bevel: { width: 14, softness: 24 },
     effects: { Bevel: "#D97706", Glow: "#FDE68A", Highlight: "#FFF7E6", Shadow: "#7C2D12", "Inner Fill": "#F59E0B" },
-    candy: { gloss: { height: 38, curve: 10, opacity: 44, softness: 10 }, specular: { size: 18, opacity: 60 }, extrusion: { depth: 14, darkness: 62 }, innerEdge: { strength: 62, width: 3 }, texture: { amount: 10, scale: 50 } } },
+    candy: { gloss: { height: 38, curve: 10, opacity: 44, softness: 10 }, specular: { mode: "sweep", size: 18, intensity: 62 }, extrusion: { depth: 14, darkness: 62 }, innerEdge: { strength: 62, width: 3 }, texture: { amount: 10, scale: 50 } } },
   { id: "bubble-pop", name: "Bubble Pop", shape: "round", bevel: { width: 8, softness: 100 },
     effects: { Bevel: "#E1408F", Glow: "#FFC1DE", Highlight: "#FFFFFF", Shadow: "#8C1D53", "Inner Fill": "#F868B1" },
-    candy: { gloss: { height: 50, curve: 34, opacity: 78, softness: 30 }, specular: { size: 32, opacity: 92 }, bloom: { opacity: 62, size: 68 }, extrusion: { depth: 9 } } },
+    candy: { gloss: { height: 50, curve: 34, opacity: 78, softness: 30 }, specular: { mode: "anime", size: 30, intensity: 92 }, bloom: { opacity: 62, size: 68 }, extrusion: { depth: 9 } } },
 ];
 
 export function presetById(id: string): Preset {

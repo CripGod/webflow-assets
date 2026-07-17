@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle } from "./model";
+import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens } from "./model";
 import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken } from "./model";
 import { getDef } from "./icons";
 
@@ -12,8 +12,37 @@ function retintText(c: GenConfig) {
   c.type.glow.color = c.effects.Glow ?? darken(bevel, -0.4);
 }
 
-const LS_KEY = "ui-generator-v9"; // v9: candy surface, typography+icon systems
+const LS_KEY = "ui-generator-v10"; // v10: specular modes, solid extrusion, gloss layering
+const LS_KEY_V9 = "ui-generator-v9";
 const LS_KEY_V8 = "ui-generator-v8";
+
+/* Deep-merge saved candy tokens over the current defaults so new fields
+   (specular mode, gloss layer, contact…) always arrive with sane values. */
+function mergeCandy(base: CandyTokens, saved?: Record<string, any>): CandyTokens {
+  const out = JSON.parse(JSON.stringify(base)) as Record<string, any>;
+  if (saved) {
+    for (const k of Object.keys(base)) {
+      if (saved[k] && typeof saved[k] === "object") out[k] = { ...out[k], ...saved[k] };
+    }
+    // v9 → v10: specular "opacity" became "intensity"
+    if (saved.specular?.opacity !== undefined && saved.specular?.intensity === undefined) {
+      out.specular.intensity = saved.specular.opacity;
+    }
+    delete out.specular.opacity;
+  }
+  return out as CandyTokens;
+}
+
+function hydrate(parsed: Record<string, any>): GenConfig {
+  const d = defaultConfig();
+  return {
+    ...d, ...parsed,
+    candy: mergeCandy(d.candy, parsed.candy),
+    type: { ...d.type, ...parsed.type },
+    icon: { ...d.icon, ...parsed.icon },
+    face: { ...d.face, ...parsed.face },
+  } as GenConfig;
+}
 
 /* Carry what translates from a v8 save into the candy model. */
 function migrateV8(old: Record<string, any>): GenConfig {
@@ -47,18 +76,11 @@ function migrateV8(old: Record<string, any>): GenConfig {
 
 function load(): GenConfig {
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<GenConfig>;
-      if (parsed.presetId && parsed.candy && parsed.type && parsed.icon) {
-        const d = defaultConfig();
-        return {
-          ...d, ...parsed,
-          candy: { ...d.candy, ...parsed.candy },
-          type: { ...d.type, ...parsed.type },
-          icon: { ...d.icon, ...parsed.icon },
-          face: { ...d.face, ...parsed.face },
-        } as GenConfig;
+    for (const key of [LS_KEY, LS_KEY_V9]) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<GenConfig>;
+        if (parsed.presetId && parsed.candy && parsed.type) return hydrate(parsed as Record<string, any>);
       }
     }
     const v8 = localStorage.getItem(LS_KEY_V8);

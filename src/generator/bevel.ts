@@ -1,5 +1,5 @@
 import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef } from "./model";
-import { lighten, darken, hexMix, desaturate, hexRgba, fontByName, DEFAULT_ICON } from "./model";
+import { lighten, darken, hexMix, desaturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED } from "./model";
 import { iconGroup } from "./icons";
 
 // Candy engine v9 — a hard-candy shell built from ordered, independently
@@ -105,9 +105,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     : rawLabel;
   const label = esc(cased);
 
+  // Config-driven icons are parked behind ICONS_ENABLED; explicit kit icons
+  // (opts.iconDef) still render so the icon-button component keeps working.
   const iconDef = opts.iconDef === null ? null
-    : opts.iconDef ?? (cfg.icon.show ? (cfg.icon.def ?? DEFAULT_ICON) : null);
-  const iconOnly = opts.iconDef !== undefined ? !opts.label : (cfg.icon.only && !!iconDef);
+    : opts.iconDef ?? (ICONS_ENABLED && cfg.icon.show ? (cfg.icon.def ?? DEFAULT_ICON) : null);
+  const iconOnly = opts.iconDef !== undefined ? !opts.label : (ICONS_ENABLED && cfg.icon.only && !!iconDef);
   const showText = !iconOnly && label.length > 0;
   const iconSize = baseIcon * (cfg.icon.size / 100);
   const gap = showText && iconDef ? cfg.icon.gap * K : 0;
@@ -152,22 +154,42 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     ? `<path d="${outer}" transform="translate(${sdx.toFixed(1)} ${sdy.toFixed(1)})" fill="${shC}" opacity="${shOp.toFixed(2)}" filter="url(#${id}sb)"/>`
     : "";
 
-  /* state aura (hover glow etc.) */
+  /* state aura (hover glow etc.) — own color, or the Glow well */
+  const auraC = disabled ? "#B9BEC6" : C.aura.color ? P(C.aura.color) : glowC;
   const glowOp = (adj.glow / 100) * (secondary ? 0.4 : 1) * (disabled ? 0 : 1);
   const aura = glowOp > 0.01
-    ? `<path d="${outer}" transform="translate(0 ${(lift + visDepth * 0.4).toFixed(1)})" fill="${glowC}" opacity="${glowOp.toFixed(2)}" filter="url(#${id}gb)"/>`
+    ? `<path d="${outer}" transform="translate(0 ${(lift + visDepth * 0.4).toFixed(1)})" fill="${auraC}" opacity="${glowOp.toFixed(2)}" filter="url(#${id}gb)"/>`
     : "";
 
-  /* 2 ── extrusion body */
+  /* 2 ── extrusion body — a connected solid, not a dark underlay.
+     The body keeps the shell's saturation, is lit by the same key light
+     (lit flank brighter, far flank darker), darkens toward the ground and
+     carries a thin bounce-light lip along its bottom curve. Interpolated
+     copies keep the silhouette continuous on soft corners. */
+  const dk = C.extrusion.darkness / 100;
+  const deepC = hexMix(darken(bevelC, clamp(0.24 + 0.34 * dk, 0, 0.8)), bevelC, 0.18);
   const extrusion = visDepth > 0.3
-    ? `<path d="${outer}" transform="translate(0 ${visDepth.toFixed(1)})" fill="url(#${id}ext)" stroke="${darken(bevelC, 0.55)}" stroke-width="1"/>`
+    ? `<g>
+        <path d="${outer}" transform="translate(0 ${(visDepth * 0.5).toFixed(1)})" fill="url(#${id}ext)"/>
+        <path d="${outer}" transform="translate(0 ${visDepth.toFixed(1)})" fill="url(#${id}ext)" stroke="${darken(deepC, 0.35)}" stroke-width="1"/>
+        <path d="${outer}" transform="translate(0 ${visDepth.toFixed(1)})" fill="url(#${id}extv)"/>
+        <path d="${outer}" transform="translate(0 ${(visDepth - 0.8).toFixed(1)})" fill="none" stroke="${lighten(deepC, 0.38)}" stroke-width="1.2" opacity="0.45"/>
+      </g>`
+    : "";
+
+  /* contact shadow — grounded occlusion right where the body meets the
+     surface; fades as the button lifts, tightens when pressed */
+  const contactOp = (C.contact.opacity / 100) * (disabled ? 0.4 : 1) * clamp(1 - Math.max(0, -lift) / 10, 0.25, 1) * (pressed ? 1.15 : 1);
+  const contact = contactOp > 0.01
+    ? `<ellipse cx="${(x + w / 2 + sdx * 0.35).toFixed(1)}" cy="${(y + h + visDepth + Math.max(0, lift) + 1.5).toFixed(1)}" rx="${(w * 0.47).toFixed(1)}" ry="${(5.5 * K + visDepth * 0.22).toFixed(1)}" fill="url(#${id}ct)" opacity="${contactOp.toFixed(2)}"/>`
     : "";
 
   /* face box (for screen-space layers) */
   const fx0 = x + bw, fy0 = y + bw, fw = w - bw * 2, fh = h - bw * 2;
   const faceCx = fx0 + fw / 2, faceCy = fy0 + fh / 2;
 
-  /* 7 ── inner glow (color from the Glow well, unlit side) */
+  /* 7 ── inner glow (own color, or the Glow well; unlit side) */
+  const igC = C.innerGlow.color ? P(C.innerGlow.color) : glowC;
   const igOp = (C.innerGlow.opacity / 100) * (disabled ? 0 : 1);
   const igSize = clamp(C.innerGlow.size / 100, 0.05, 1);
 
@@ -182,22 +204,54 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     : `M ${fx0 - 2} ${fy0 - 2} H ${fx0 + fw + 2} V ${gy.toFixed(1)} Q ${apexX.toFixed(1)} ${(gy + bow * 1.8).toFixed(1)} ${fx0 - 2} ${gy.toFixed(1)} Z`;
   const gOpTop = (C.gloss.opacity / 100) * (disabled ? 0.35 : 1) * (pressed ? 0.82 : 1);
   const soft = clamp(C.gloss.softness / 100, 0, 1);
+  const glossC1 = C.gloss.fill === "highlight" ? hiC : P(C.gloss.tint);
+  const glossC2 = C.gloss.fill === "gradient" ? P(C.gloss.tint2) : glossC1;
   const gloss = C.gloss.on && gOpTop > 0.01
     ? `<path d="${glossPath}" fill="url(#${id}gl)"/>`
     : "";
 
-  /* 9 ── sharp specular (lit corner; token offsets nudge it) */
-  const spSize = C.specular.size * K;
-  const spOp = (C.specular.opacity / 100) * (disabled ? 0.25 : 1) * (pressed ? 0.85 : 1);
-  const spX = faceCx + lx * fw * 0.34 + (C.specular.ox / 100) * fw * 0.4;
-  const spY = faceCy + ly * fh * 0.3 + (C.specular.oy / 100) * fh * 0.4;
-  const spRot = clamp((90 - A) * 0.35, -40, 40);
-  const specular = C.specular.on && spOp > 0.01 && spSize > 0.5
-    ? `<g transform="rotate(${spRot.toFixed(1)} ${spX.toFixed(1)} ${spY.toFixed(1)})">
-         <ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spSize.toFixed(1)}" ry="${(spSize * 0.42).toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>
-         <ellipse cx="${(spX - spSize * 1.6).toFixed(1)}" cy="${(spY + spSize * 0.9).toFixed(1)}" rx="${(spSize * 0.34).toFixed(1)}" ry="${(spSize * 0.22).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.7).toFixed(2)}"/>
-       </g>`
-    : "";
+  /* 9 ── specular — six art-directable reflective events, all keyed to the
+     light: position sits toward the lit corner, tilt follows the light,
+     softness shapes the falloff, stretch shapes the aspect. */
+  const SP = C.specular;
+  const spSize = SP.size * K;
+  const spOp = (SP.intensity / 100) * (disabled ? 0.25 : 1) * (pressed ? 0.85 : 1);
+  const spX = faceCx + lx * fw * 0.34 + (SP.ox / 100) * fw * 0.4;
+  const spY = faceCy + ly * fh * 0.3 + (SP.oy / 100) * fh * 0.4;
+  const spRot = clamp((90 - A) * 0.35, -40, 40) + SP.angle;
+  const spAspect = clamp(SP.stretch / 100, 0.1, 1);
+  const soft01 = clamp(SP.softness / 100, 0, 1);
+  const effSoft = SP.mode === "hard" ? Math.min(soft01, 0.15)
+    : SP.mode === "line" ? Math.min(soft01, 0.3)
+    : SP.mode === "soft" ? Math.max(soft01, 0.35)
+    : soft01;
+  const spRx = SP.mode === "line" ? spSize * 2.1 : spSize;
+  const spRy = SP.mode === "line" ? Math.max(1.6, spSize * 0.6 * spAspect) : Math.max(2, spSize * spAspect);
+  let specular = "";
+  if (SP.on && spOp > 0.01 && spSize > 0.5) {
+    if (SP.mode === "anime") {
+      // stylized crisp double-bar highlight: one long swoosh + one short block
+      const bh = Math.max(3, spSize * 0.9 * Math.max(spAspect, 0.28));
+      const b1w = spSize * 2.2, b2w = Math.max(bh, spSize * 0.66);
+      specular = `<g transform="rotate(${spRot.toFixed(1)} ${spX.toFixed(1)} ${spY.toFixed(1)})" opacity="${spOp.toFixed(2)}">
+        <rect x="${(spX - b1w / 2 - b2w * 0.75).toFixed(1)}" y="${(spY - bh / 2).toFixed(1)}" width="${b1w.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${hiC}"/>
+        <rect x="${(spX + b1w / 2 - b2w * 0.25).toFixed(1)}" y="${(spY - bh / 2).toFixed(1)}" width="${b2w.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${hiC}"/>
+      </g>`;
+    } else if (SP.mode === "sweep") {
+      // reflective event hugging the shell's edge curve on the lit side
+      const swW = Math.max(2, spSize * 0.32);
+      const sweepP = shapePath(shape, x + bw * 0.55, y + bw * 0.55, w - bw * 1.1, h - bw * 1.1, Math.max(0, cfg.bevel.softness - 4));
+      specular = `<path d="${sweepP}" fill="none" stroke="url(#${id}sw)" stroke-width="${swW.toFixed(1)}" opacity="${spOp.toFixed(2)}"/>`;
+    } else {
+      const main = `<ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spRx.toFixed(1)}" ry="${spRy.toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>`;
+      const sat = SP.mode === "dual"
+        ? `<ellipse cx="${(spX - spRx * 1.8).toFixed(1)}" cy="${(spY + spRy * 2.2).toFixed(1)}" rx="${(spRx * 0.42).toFixed(1)}" ry="${(spRy * 0.5).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.8).toFixed(2)}"/>`
+        : SP.mode === "hard"
+          ? `<ellipse cx="${(spX - spRx * 1.6).toFixed(1)}" cy="${(spY + spRy * 1.9).toFixed(1)}" rx="${(spRx * 0.3).toFixed(1)}" ry="${(spRy * 0.4).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.6).toFixed(2)}"/>`
+          : "";
+      specular = `<g transform="rotate(${spRot.toFixed(1)} ${spX.toFixed(1)} ${spY.toFixed(1)})">${main}${sat}</g>`;
+    }
+  }
 
   /* 10 ── lower reflective bloom (bounce light, unlit side) */
   const blOp = (C.bloom.opacity / 100) * (disabled ? 0.3 : 1);
@@ -268,10 +322,19 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <stop offset=".5" stop-color="${bevelC}"/>
     <stop offset="1" stop-color="${lighten(bevelC, clamp(0.45 * hiK, 0, 0.75))}"/>
   </linearGradient>
-  <linearGradient id="${id}ext" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="${darken(bevelC, clamp(0.25 + 0.4 * (C.extrusion.darkness / 100), 0, 0.85))}"/>
-    <stop offset="1" stop-color="${darken(bevelC, clamp(0.45 + 0.45 * (C.extrusion.darkness / 100), 0, 0.92))}"/>
+  <linearGradient id="${id}ext" x1="${lx >= 0 ? 1 : 0}" y1="0.5" x2="${lx >= 0 ? 0 : 1}" y2="0.5">
+    <stop offset="0" stop-color="${lighten(deepC, clamp(0.06 + 0.26 * Math.abs(lx) * hiK, 0, 0.5))}"/>
+    <stop offset="0.55" stop-color="${deepC}"/>
+    <stop offset="1" stop-color="${darken(deepC, clamp(0.05 + 0.2 * Math.abs(lx) * lowK, 0, 0.5))}"/>
   </linearGradient>
+  <linearGradient id="${id}extv" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0.5" stop-color="${darken(deepC, 0.55)}" stop-opacity="0"/>
+    <stop offset="1" stop-color="${darken(deepC, 0.55)}" stop-opacity="0.38"/>
+  </linearGradient>
+  <radialGradient id="${id}ct">
+    <stop offset="0" stop-color="${shC}" stop-opacity="1"/>
+    <stop offset="1" stop-color="${shC}" stop-opacity="0"/>
+  </radialGradient>
   <linearGradient id="${id}rim" ${axis}>
     <stop offset="0" stop-color="${hiC}" stop-opacity="0.45"/>
     <stop offset=".4" stop-color="${hiC}" stop-opacity="0.08"/>
@@ -288,20 +351,26 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <stop offset="1" stop-color="${hexRgba(darken(bevelC, 0.58), 0.9)}"/>
   </linearGradient>
   <linearGradient id="${id}ig" ${axis}>
-    <stop offset="0" stop-color="${glowC}" stop-opacity="${igOp.toFixed(2)}"/>
-    <stop offset="${igSize.toFixed(2)}" stop-color="${glowC}" stop-opacity="0"/>
+    <stop offset="0" stop-color="${igC}" stop-opacity="${igOp.toFixed(2)}"/>
+    <stop offset="${igSize.toFixed(2)}" stop-color="${igC}" stop-opacity="0"/>
   </linearGradient>
   <linearGradient id="${id}gl" x1="0" y1="${flip ? 1 : 0}" x2="0" y2="${flip ? 0 : 1}">
-    <stop offset="0" stop-color="${hiC}" stop-opacity="${gOpTop.toFixed(2)}"/>
-    <stop offset="${(1 - soft * 0.55).toFixed(2)}" stop-color="${hiC}" stop-opacity="${(gOpTop * (1 - 0.3 * soft)).toFixed(2)}"/>
-    <stop offset="1" stop-color="${hiC}" stop-opacity="${(gOpTop * (1 - soft)).toFixed(2)}"/>
+    <stop offset="0" stop-color="${glossC1}" stop-opacity="${gOpTop.toFixed(2)}"/>
+    <stop offset="${(1 - soft * 0.55).toFixed(2)}" stop-color="${hexMix(glossC1, glossC2, 0.6)}" stop-opacity="${(gOpTop * (1 - 0.3 * soft)).toFixed(2)}"/>
+    <stop offset="1" stop-color="${glossC2}" stop-opacity="${(gOpTop * (1 - soft)).toFixed(2)}"/>
   </linearGradient>
   <radialGradient id="${id}sp">
     <stop offset="0" stop-color="${hiC}" stop-opacity="1"/>
-    <stop offset=".68" stop-color="${hiC}" stop-opacity="0.98"/>
-    <stop offset=".85" stop-color="${hiC}" stop-opacity="0.4"/>
+    <stop offset="${clamp(0.85 - effSoft * 0.7, 0.1, 0.85).toFixed(2)}" stop-color="${hiC}" stop-opacity="1"/>
+    <stop offset="${clamp(0.92 - effSoft * 0.35, 0.2, 0.95).toFixed(2)}" stop-color="${hiC}" stop-opacity="${(0.5 - effSoft * 0.25).toFixed(2)}"/>
     <stop offset="1" stop-color="${hiC}" stop-opacity="0"/>
   </radialGradient>
+  ${SP.mode === "sweep" ? `<linearGradient id="${id}sw" ${axis}>
+    <stop offset="0" stop-color="${hiC}" stop-opacity="0"/>
+    <stop offset="${(0.5 + 0.22 * (1 - effSoft)).toFixed(2)}" stop-color="${hiC}" stop-opacity="0"/>
+    <stop offset="${(0.66 + 0.18 * (1 - effSoft)).toFixed(2)}" stop-color="${hiC}" stop-opacity="0.85"/>
+    <stop offset="1" stop-color="${hiC}" stop-opacity="1"/>
+  </linearGradient>` : ""}
   <radialGradient id="${id}bl">
     <stop offset="0" stop-color="${hiC}" stop-opacity="1"/>
     <stop offset="1" stop-color="${hiC}" stop-opacity="0"/>
@@ -315,6 +384,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
 </defs>
 <g opacity="${(adj.opacity / 100).toFixed(2)}">
   ${castShadow}
+  ${contact}
   ${aura}
   <g transform="translate(0 ${lift})">
     ${extrusion}
@@ -328,8 +398,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       <g clip-path="url(#${id}fc)">
         ${bloom}
         ${pressShade}
-        ${gloss}
-        ${specular}
+        ${C.gloss.layer === "above" ? "" : gloss + specular}
         ${noise}
       </g>
       ${innerEdge}
@@ -343,6 +412,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
         filter: iconFilter,
       }) : ""}
     </g>
+    ${C.gloss.layer === "above" ? `<g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${gloss}${specular}</g>` : ""}
   </g>
 </g>
 </svg>`;
