@@ -6,6 +6,7 @@ import { fileURLToPath, URL } from "node:url";
 // (README.md, pb-*.js). Those are intentionally excluded from the app build.
 export default defineConfig({
   plugins: [react()],
+  base: "./",
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },

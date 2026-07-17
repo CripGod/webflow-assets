@@ -1,32 +1,33 @@
-# Run FORGE locally
-
-This archive is the FORGE Component Kit Builder (Vite + React + TypeScript).
-The unrelated legacy files (`README.md`, `pb-*.js`) are untouched and not part
-of the app.
-
-## Quick start
+# Run The UI Generator locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the printed URL (defaults to http://localhost:5175/).
+Open the printed URL (http://localhost:5175/). Best at a wide window (~1672px).
 
-For the intended visual, view at the reference viewport **1672 × 941**, 100% zoom.
+## What works (all of it)
+- **Style preset** (a collection: surface + bevel + lighting + effect colors) —
+  Arcane, Ember, Tide, Verdant Bevel.
+- **Effect colors (component only)** — Bevel / Glow / Highlight / Shadow /
+  Inner Fill chips; click any chip to edit, +/− to add/remove. Component-only,
+  never the shell.
+- **Surface** — Light/Dark face mode (visible in the header row) + Finish sheen.
+- **Bevel** — width, depth, edge softness (open by default).
+- **Lighting** — draggable angle dial + numeric °, highlight, shadow, and
+  “Add light” (rim → edge glow, fill → softer ambient), each removable.
+- **Color Mapping** — live strip + per-role mapping list.
+- **Content** — label, icon placement (left/right/none), current icon.
+- **States** — visibility checkboxes; States dropdown in the top bar (4/3/2/1).
+- **Randomize** — new effect-color treatment + lighting nudge.
+- **Icon search** — the full Lucide set, searchable; click to apply; “Explore
+  the full icon set ↗” opens the library.
+- **Canvas** — Default hero + right-side stacked Hover/Pressed/Disabled cards;
+  pan, zoom, dotted-grid toggle.
+- **Design ↔ HTML Preview** — code view shows the exact SVG the canvas renders.
+- **⋯ menu** — Export SVG / PNG 2× / Copy code / Reset. Autosave to localStorage.
 
-## Scripts
-- `npm run dev` — start the dev server (hot reload)
-- `npm run build` — typecheck + production build to `dist/`
-- `npm run preview` — serve the production build
-- `npm run typecheck` — TypeScript only
+One `(config, state) → SVG` renderer drives the canvas, code view, and exports.
 
-## What you're looking at
-- Flat, quiet application shell (top bar, icon rail, settings panel, ruler/grid
-  canvas, floating toolbar, auto-collapsing help bar).
-- The **hero** ("FORGE CARBON MATTE") is real semantic HTML+CSS rendered from one
-  canonical model (`src/model` → `src/resolver` → `src/render`/`src/export`).
-- Top-bar **State** selector switches Default / Hover / Pressed / Disabled.
-- **Design / HTML Preview** toggle shows the generated markup from the same model.
-
-Node 18+ recommended (built and validated on Node 22).
+Node 18+ (built on Node 22).

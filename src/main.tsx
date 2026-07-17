@@ -1,10 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-// Self-hosted Inter Variable via Fontsource (design lock §Typography — no system
-// substitution). The variable file covers weights 400/500/600/700 in one asset.
+// Self-hosted Inter Variable via Fontsource — weights 400–700 in one variable file.
 import "@fontsource-variable/inter";
-import "./styles/tokens.css";
-import "./styles/global.css";
+import "./styles/gen.css";
 import { App } from "./App";
 
 createRoot(document.getElementById("root")!).render(

@@ -1,18 +1,15 @@
-import { TopBar } from "./editor/TopBar";
-import { IconRail } from "./editor/IconRail";
-import { SettingsPanel } from "./editor/SettingsPanel";
-import { Canvas } from "./editor/Canvas";
-import { EduBar } from "./editor/EduBar";
+import { TopBar } from "./ui/TopBar";
+import { Rail, Panel } from "./ui/Panel";
+import { CanvasView } from "./ui/CanvasView";
 
 export function App() {
   return (
-    <div className="forge-app">
+    <div className="app">
       <TopBar />
-      <div className="forge-body">
-        <IconRail />
-        <SettingsPanel />
-        <Canvas />
-        <EduBar />
+      <div className="body">
+        <Rail />
+        <Panel />
+        <CanvasView />
       </div>
     </div>
   );
