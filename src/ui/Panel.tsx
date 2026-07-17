@@ -132,6 +132,40 @@ function AngleDial({ value, onChange }: { value: number; onChange: (v: number) =
 
 const STATE_LABEL: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
+/** Font dropdown with each family previewed in its own face. */
+function FontPicker({ value, customFonts, onPick }: { value: string; customFonts: string[]; onPick: (name: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const names = [...GAME_FONTS.map((f) => f.name), ...customFonts];
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  useEffect(() => { if (open) names.forEach(ensureFont); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div ref={ref} className="fontpick">
+      <button className="fieldbox fontpick-btn" aria-label="Font" aria-haspopup="listbox" aria-expanded={open}
+        onClick={() => setOpen(!open)}>
+        <span className="fl">Font</span>
+        <span className="fontpick-cur" style={{ fontFamily: `'${value}', Inter, sans-serif` }}>{value}</span>
+        <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+      </button>
+      {open && (
+        <div className="fontpick-pop" role="listbox" aria-label="Fonts">
+          {names.map((n) => (
+            <button key={n} role="option" aria-selected={n === value} className={n === value ? "on" : ""}
+              onClick={() => { onPick(n); setOpen(false); }}>
+              <span className="fp-name">{n}</span>
+              <span className="fp-preview" style={{ fontFamily: `'${n}', Inter, sans-serif` }}>PLAY</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Panel() {
   const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase } = useGen();
   const [iconQuery, setIconQuery] = useState("");
@@ -275,6 +309,7 @@ export function Panel() {
           </select>
           <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
         </label>
+        <Slider label="Skew" value={cfg.skew ?? 0} min={-30} max={30} unit="°" onChange={(v) => update((c) => { c.skew = v; })} />
         <Slider label="Corner softness" value={cfg.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
         <Slider label="Wall width" value={cfg.bevel.width} min={4} max={26} unit="px" onChange={(v) => update((c) => { c.bevel.width = v; })} />
         <Slider label="Rim width" value={C.rim.width} min={0} max={10} unit="px" onChange={(v) => update((c) => { c.candy.rim.width = v; })} />
@@ -318,16 +353,6 @@ export function Panel() {
           {C.pattern.color !== null && (
             <Well label="Pattern color" value={C.pattern.color} onChange={(v) => update((c) => { c.candy.pattern.color = v; })} />
           )}
-        </>)}
-
-        <div className="sublabel">Inner shade</div>
-        <label className="check"><input type="checkbox" checked={C.blob.on}
-          onChange={(e) => update((c) => { c.candy.blob.on = e.target.checked; })} /> Organic dark blob</label>
-        {C.blob.on && (<>
-          <Slider label="Opacity" value={C.blob.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.blob.opacity = v; })} />
-          <Slider label="Size" value={C.blob.size} min={20} max={120} unit="%" onChange={(v) => update((c) => { c.candy.blob.size = v; })} />
-          <Slider label="Position X" value={C.blob.x} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.blob.x = v; })} />
-          <Slider label="Position Y" value={C.blob.y} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.blob.y = v; })} />
         </>)}
 
         <div className="sublabel">Micro grain</div>
@@ -454,15 +479,8 @@ export function Panel() {
       <Section id="typography" title="Typography" summary={<span>{cfg.content.label || T2.font}</span>}>
         <input className="tinput" value={cfg.content.label} maxLength={18} aria-label="Label text"
           onChange={(e) => update((c) => { c.content.label = e.target.value; })} />
-        <label className="fieldbox" style={{ minWidth: 0 }}>
-          <span className="fl">Font</span>
-          <select value={T2.font} aria-label="Font"
-            onChange={(e) => { const f = e.target.value; ensureFont(f); update((c) => { c.type.font = f; }); }}>
-            {GAME_FONTS.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
-            {(T2.customFonts ?? []).map((f) => <option key={f} value={f}>{f} ★</option>)}
-          </select>
-          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-        </label>
+        <FontPicker value={T2.font} customFonts={T2.customFonts ?? []}
+          onPick={(f) => { ensureFont(f); update((c) => { c.type.font = f; }); }} />
         <div className="addfont">
           <input className="tinput" value={fontDraft} placeholder="Add Google Font — exact family name" aria-label="Add Google Font"
             onChange={(e) => setFontDraft(e.target.value)}
@@ -509,7 +527,12 @@ export function Panel() {
         <div className="helper">Presets fill the controls below — keep tweaking, nothing locks.</div>
 
         <FxToggle label="Outline" on={T2.outline.on} onToggle={(v) => update((c) => { c.type.outline.on = v; })}>
-          <Well label="Color" value={T2.outline.color} onChange={(v) => update((c) => { c.type.outline.color = v; })} />
+          <Well label={T2.outline.color2 ? "Stroke top" : "Color"} value={T2.outline.color} onChange={(v) => update((c) => { c.type.outline.color = v; })} />
+          <label className="check"><input type="checkbox" checked={T2.outline.color2 !== null}
+            onChange={(e) => update((c) => { c.type.outline.color2 = e.target.checked ? darken(c.type.outline.color, 0.35) : null; })} /> Gradient stroke</label>
+          {T2.outline.color2 !== null && (
+            <Well label="Stroke bottom" value={T2.outline.color2} onChange={(v) => update((c) => { c.type.outline.color2 = v; })} />
+          )}
           <Slider label="Width" value={T2.outline.width} min={0.5} max={8} step={0.5} unit="px" onChange={(v) => update((c) => { c.type.outline.width = v; })} />
         </FxToggle>
         <FxToggle label="Shadow" on={T2.shadow.on} onToggle={(v) => update((c) => { c.type.shadow.on = v; })}>
@@ -519,10 +542,10 @@ export function Panel() {
           <Slider label="Blur" value={T2.shadow.blur} min={0} max={12} step={0.5} unit="px" onChange={(v) => update((c) => { c.type.shadow.blur = v; })} />
           <Slider label="Opacity" value={T2.shadow.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.shadow.opacity = v; })} />
         </FxToggle>
-        <FxToggle label="Boss / Deboss" on={T2.emboss.on} onToggle={(v) => update((c) => { c.type.emboss.on = v; })}>
+        <FxToggle label="Emboss / Deboss" on={T2.emboss.on} onToggle={(v) => update((c) => { c.type.emboss.on = v; })}>
           <Slider label="Depth" value={T2.emboss.strength} min={-100} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.strength = v; })} />
           <Slider label="Softness" value={T2.emboss.softness ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.softness = v; })} />
-          <div className="helper">Positive bosses, negative debosses. High softness + low fill opacity reads as frosted glass — try the Glass preset.</div>
+          <div className="helper">Positive embosses, negative debosses. High softness + low fill opacity reads as frosted glass — try the Glass preset.</div>
         </FxToggle>
         <FxToggle label="Glow" on={T2.glow.on} onToggle={(v) => update((c) => { c.type.glow.on = v; })}>
           <Well label="Color" value={T2.glow.color} onChange={(v) => update((c) => { c.type.glow.color = v; })} />

@@ -135,7 +135,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const gap = showText && iconDef ? cfg.icon.gap * K : 0;
   const spacingEm = T2.spacing / 100;
   const weightK = 1 + Math.max(0, T2.weight - 700) * 0.0004;
-  const textW = showText ? label.length * fs * fontDef.factor * (1 + spacingEm) * weightK * 1.06 : 0;
+  const italicPad = T2.italic ? fs * 0.22 : 0; // slanted glyphs overhang their advance
+  const textW = (showText ? label.length * fs * fontDef.factor * (1 + spacingEm) * weightK * 1.06 : 0) + italicPad;
   const contentW = textW + (iconDef ? iconSize : 0) + gap;
   const endRoom = shape === "pill" ? h * 0.16 : 0; // rounded ends eat width
   const padX = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + endRoom;
@@ -146,6 +147,12 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const depth = C.extrusion.depth * K * (secondary ? 0.55 : 1);
   const visDepth = Math.max(0, depth * (pressed ? 0.4 : 1));
   const lift = adj.lift;
+
+  /* ── skew: shear the object into a parallelogram; type stays level ── */
+  const skew = clamp(cfg.skew ?? 0, -30, 30);
+  const skewT = skew
+    ? ` transform="translate(${(x + w / 2).toFixed(1)} ${(y + h / 2).toFixed(1)}) skewX(${(-skew).toFixed(1)}) translate(${(-(x + w / 2)).toFixed(1)} ${(-(y + h / 2)).toFixed(1)})"`
+    : "";
   const vw = x * 2 + w, vh = y * 2 + h + Math.ceil(depth) + 40; // generous room so big shadows never clip
 
   const bw = (secondary ? Math.max(4, cfg.bevel.width * 0.7) : cfg.bevel.width) * K;
@@ -227,7 +234,9 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const igOp = (C.innerGlow.opacity / 100) * (disabled ? 0 : 1);
   const igSize = clamp(C.innerGlow.size / 100, 0.05, 1);
 
-  /* pattern overlay — tone-on-tone by default, like printed candy wrap */
+  /* pattern overlay — tone-on-tone by default, like printed candy wrap.
+     Halftone fades its dot grid along the light axis for that comic-print
+     hard-gradient read. */
   const PT = C.pattern;
   const patC = PT.color ? P(PT.color) : darken(face, 0.2);
   const patOp = (PT.type !== "none" ? PT.opacity / 100 : 0) * (disabled ? 0.5 : 1);
@@ -240,22 +249,16 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     else if (PT.type === "dots") patternDef = `<pattern ${cell}${rot}><circle cx="${(ps / 2).toFixed(1)}" cy="${(ps / 2).toFixed(1)}" r="${(ps * 0.22).toFixed(1)}" fill="${patC}"/></pattern>`;
     else if (PT.type === "stars") patternDef = `<pattern ${cell}${rot}><path d="${starPath(ps)}" fill="${patC}"/></pattern>`;
     else if (PT.type === "checker") patternDef = `<pattern ${cell}${rot}><rect width="${(ps / 2).toFixed(1)}" height="${(ps / 2).toFixed(1)}" fill="${patC}"/><rect x="${(ps / 2).toFixed(1)}" y="${(ps / 2).toFixed(1)}" width="${(ps / 2).toFixed(1)}" height="${(ps / 2).toFixed(1)}" fill="${patC}"/></pattern>`;
-    if (patternDef) patternUse = `<rect x="${fx0 - 20}" y="${fy0 - 20}" width="${fw + 40}" height="${fh + 40}" fill="url(#${id}pt)" opacity="${patOp.toFixed(2)}"/>`;
+    else if (PT.type === "halftone") {
+      patternDef = `<pattern ${cell} patternTransform="rotate(45)"><circle cx="${(ps / 2).toFixed(1)}" cy="${(ps / 2).toFixed(1)}" r="${(ps * 0.3).toFixed(1)}" fill="${patC}"/></pattern>
+      <linearGradient id="${id}pmg" ${axis}><stop offset="0" stop-color="#fff"/><stop offset=".85" stop-color="#000"/></linearGradient>
+      <mask id="${id}pm"><rect x="${fx0 - 20}" y="${fy0 - 20}" width="${fw + 40}" height="${fh + 40}" fill="url(#${id}pmg)"/></mask>`;
+    }
+    if (patternDef) {
+      const maskAttr = PT.type === "halftone" ? ` mask="url(#${id}pm)"` : "";
+      patternUse = `<rect x="${fx0 - 20}" y="${fy0 - 20}" width="${fw + 40}" height="${fh + 40}" fill="url(#${id}pt)" opacity="${patOp.toFixed(2)}"${maskAttr}/>`;
+    }
   }
-
-  /* organic inner shade — a bulbous dark blob deep in the candy */
-  const BL = C.blob;
-  const blobOp = BL.on ? (BL.opacity / 100) * (disabled ? 0.4 : 1) : 0;
-  const blobC = darken(face, 0.52);
-  const bbx = faceCx + (BL.x / 100) * fw * 0.4, bby = faceCy + (BL.y / 100) * fh * 0.5;
-  const bbs = BL.size / 100;
-  const blob = blobOp > 0.005
-    ? `<g opacity="${blobOp.toFixed(2)}" style="mix-blend-mode:multiply">
-        <ellipse cx="${bbx.toFixed(1)}" cy="${bby.toFixed(1)}" rx="${(fw * 0.36 * bbs).toFixed(1)}" ry="${(fh * 0.34 * bbs).toFixed(1)}" fill="url(#${id}bb)" transform="rotate(9 ${bbx.toFixed(1)} ${bby.toFixed(1)})"/>
-        <ellipse cx="${(bbx + fw * 0.09 * bbs).toFixed(1)}" cy="${(bby - fh * 0.07 * bbs).toFixed(1)}" rx="${(fw * 0.27 * bbs).toFixed(1)}" ry="${(fh * 0.24 * bbs).toFixed(1)}" fill="url(#${id}bb)" transform="rotate(-16 ${bbx.toFixed(1)} ${bby.toFixed(1)})" opacity="0.75"/>
-        <ellipse cx="${(bbx - fw * 0.11 * bbs).toFixed(1)}" cy="${(bby + fh * 0.05 * bbs).toFixed(1)}" rx="${(fw * 0.22 * bbs).toFixed(1)}" ry="${(fh * 0.26 * bbs).toFixed(1)}" fill="url(#${id}bb)" transform="rotate(24 ${bbx.toFixed(1)} ${bby.toFixed(1)})" opacity="0.6"/>
-      </g>`
-    : "";
 
   /* 8 ── broad curved gloss (screen space, flips if lit from below) */
   const flip = ly > 0.25; // light from below
@@ -350,19 +353,23 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const tFill = T2.fillMode === "auto" ? autoLabel
     : T2.fillMode === "gradient" ? `url(#${id}tg)` : P(T2.fill);
   const tFilters: string[] = [];
+  // Effect geometry scales with the type size so a 76px headline carries the
+  // same visual relief as 40px UI copy — fixed pixels vanish at display sizes.
+  const fsc = fs / 40;
   if (T2.emboss.on && !disabled) {
-    // boss (raised) or deboss (engraved); softness turns the crisp chisel
+    // emboss (raised) or deboss (engraved); softness turns the crisp chisel
     // into a frosted, glassy relief
     const s = clamp(T2.emboss.strength / 100, -1, 1);
-    const ebl = (0.35 + ((T2.emboss.softness ?? 30) / 100) * 2.6).toFixed(1);
-    if (s > 0) tFilters.push(`drop-shadow(0 ${-1.2 * s}px ${ebl}px rgba(255,255,255,${(0.7 * s).toFixed(2)})) drop-shadow(0 ${1.8 * s}px ${ebl}px rgba(4,8,14,${(0.55 * s).toFixed(2)}))`);
-    else if (s < 0) { const a = -s; tFilters.push(`drop-shadow(0 ${1.2 * a}px ${ebl}px rgba(255,255,255,${(0.6 * a).toFixed(2)})) drop-shadow(0 ${-1.6 * a}px ${ebl}px rgba(4,8,14,${(0.6 * a).toFixed(2)}))`); }
+    const ebl = ((0.35 + ((T2.emboss.softness ?? 30) / 100) * 2.6) * fsc).toFixed(1);
+    if (s > 0) tFilters.push(`drop-shadow(0 ${(-1.5 * s * fsc).toFixed(1)}px ${ebl}px rgba(255,255,255,${(0.75 * s).toFixed(2)})) drop-shadow(0 ${(2.2 * s * fsc).toFixed(1)}px ${ebl}px rgba(4,8,14,${(0.6 * s).toFixed(2)}))`);
+    else if (s < 0) { const a = -s; tFilters.push(`drop-shadow(0 ${(1.5 * a * fsc).toFixed(1)}px ${ebl}px rgba(255,255,255,${(0.65 * a).toFixed(2)})) drop-shadow(0 ${(-2 * a * fsc).toFixed(1)}px ${ebl}px rgba(4,8,14,${(0.65 * a).toFixed(2)}))`); }
   }
-  if (T2.shadow.on) tFilters.push(`drop-shadow(${T2.shadow.x}px ${T2.shadow.y}px ${T2.shadow.blur}px ${hexRgba(T2.shadow.color, T2.shadow.opacity / 100)})`);
+  if (T2.shadow.on) tFilters.push(`drop-shadow(${(T2.shadow.x * fsc).toFixed(1)}px ${(T2.shadow.y * fsc).toFixed(1)}px ${(T2.shadow.blur * fsc).toFixed(1)}px ${hexRgba(T2.shadow.color, T2.shadow.opacity / 100)})`);
   if (T2.glow.on && !disabled) tFilters.push(`drop-shadow(0 0 ${(T2.glow.size * 0.6).toFixed(1)}px ${hexRgba(T2.glow.color, T2.glow.opacity / 100)}) drop-shadow(0 0 ${(T2.glow.size * 1.6).toFixed(1)}px ${hexRgba(T2.glow.color, (T2.glow.opacity / 100) * 0.6)})`);
   const textFilter = tFilters.length ? ` style="filter:${tFilters.join(" ")}"` : "";
+  const outlineStroke = T2.outline.color2 ? `url(#${id}og)` : P(T2.outline.color);
   const outlineAttrs = T2.outline.on
-    ? ` stroke="${P(T2.outline.color)}" stroke-width="${(T2.outline.width * (fs / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
+    ? ` stroke="${outlineStroke}" stroke-width="${(T2.outline.width * (fs / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
     : "";
 
   const iFx = cfg.icon.fx;
@@ -407,7 +414,6 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   ${baseGlow ? `<clipPath id="${id}ec"><path d="${outer}" transform="translate(0 ${visDepth.toFixed(1)})"/></clipPath>
   <radialGradient id="${id}eg"><stop offset="0" stop-color="${egC}" stop-opacity="1"/><stop offset="1" stop-color="${egC}" stop-opacity="0"/></radialGradient>` : ""}
   ${patternDef}
-  ${blob ? `<radialGradient id="${id}bb"><stop offset="0" stop-color="${blobC}" stop-opacity="1"/><stop offset="0.55" stop-color="${blobC}" stop-opacity="0.8"/><stop offset="1" stop-color="${blobC}" stop-opacity="0"/></radialGradient>` : ""}
   <linearGradient id="${id}rim" ${axis}>
     <stop offset="0" stop-color="${hiC}" stop-opacity="0.45"/>
     <stop offset=".4" stop-color="${hiC}" stop-opacity="0.08"/>
@@ -450,16 +456,20 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   </radialGradient>
   ${pressed ? `<linearGradient id="${id}ps" ${axis}><stop offset=".5" stop-color="${darken(bevelC, 0.5)}" stop-opacity="0"/><stop offset="1" stop-color="${darken(bevelC, 0.55)}" stop-opacity="0.75"/></linearGradient>` : ""}
   ${T2.fillMode === "gradient" ? `<linearGradient id="${id}tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.fill)}"/><stop offset="1" stop-color="${P(T2.fill2)}"/></linearGradient>` : ""}
+  ${T2.outline.on && T2.outline.color2 ? `<linearGradient id="${id}og" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.outline.color)}"/><stop offset="1" stop-color="${P(T2.outline.color2)}"/></linearGradient>` : ""}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
   ${aura ? `<filter id="${id}gb" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="11"/></filter>` : ""}
   ${noise ? `<filter id="${id}nz"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="3" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="2.6" intercept="-0.8"/><feFuncG type="linear" slope="2.6" intercept="-0.8"/><feFuncB type="linear" slope="2.6" intercept="-0.8"/></feComponentTransfer></filter>` : ""}
 </defs>
 <g opacity="${(adj.opacity / 100).toFixed(2)}">
+  <g${skewT}>
   ${castShadow}
   ${contact}
   ${aura}
+  </g>
   <g transform="translate(0 ${lift})">
+    <g${skewT}>
     ${extrusion}
     <g opacity="${(T.frame / 100).toFixed(2)}">
       <path d="${outer}" fill="url(#${id}band)" stroke="${darken(bevelC, disabled ? 0.25 : 0.5)}" stroke-width="1.5"/>
@@ -469,7 +479,6 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       <path d="${faceP}" fill="url(#${id}face)"/>
       <g clip-path="url(#${id}fc)">
         ${patternUse}
-        ${blob}
         ${igOp > 0.01 ? `<path d="${faceP}" fill="url(#${id}ig)"/>` : ""}
         ${bloom}
         ${pressShade}
@@ -477,6 +486,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
         ${noise}
       </g>
       ${innerEdge}
+    </g>
     </g>
     <g opacity="${(T.content / 100).toFixed(2)}">
       ${showText ? `<text x="${textX.toFixed(1)}" y="${cy + 1}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${label}</text>` : ""}
@@ -487,7 +497,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
         filter: iconFilter,
       }) : ""}
     </g>
-    ${C.gloss.layer === "above" ? `<g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${gloss}${specular}</g>` : ""}
+    ${C.gloss.layer === "above" ? `<g${skewT}><g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${gloss}${specular}</g></g>` : ""}
   </g>
 </g>
 </svg>`;

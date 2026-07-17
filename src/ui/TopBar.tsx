@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Code2, Check, CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn } from "lucide-react";
+import { Code2, Check, CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun } from "lucide-react";
 import { useGen, hydrate } from "@/generator/store";
 import { defaultConfig } from "@/generator/model";
 import { renderBevel } from "@/generator/bevel";
@@ -14,7 +14,7 @@ function Logo() {
 }
 
 export function TopBar() {
-  const { cfg, saveStatus, update, selectedState } = useGen();
+  const { cfg, saveStatus, update, selectedState, theme, setTheme } = useGen();
   const [menuOpen, setMenuOpen] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -77,6 +77,12 @@ export function TopBar() {
         {saveStatus === "saved" ? "All changes saved" : "Saving…"}
       </div>
 
+      <button className="acct" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        title={theme === "dark" ? "Light mode" : "Dark mode"}>
+        {theme === "dark" ? <Sun size={17} strokeWidth={1.9} /> : <Moon size={17} strokeWidth={1.9} />}
+      </button>
+
       {/* account placeholder — carves out the spot; real auth comes later */}
       <div ref={acctRef} style={{ position: "relative" }}>
         <button className="acct" onClick={() => setAcctOpen(!acctOpen)} aria-label="Account" title="Account">
@@ -115,8 +121,14 @@ export function TopBar() {
             <button onClick={() => { fileRef.current?.click(); }}>
               <FileUp size={15} strokeWidth={1.8} /> Import settings…
             </button>
-            <button onClick={() => { const d = defaultConfig(); update((c) => Object.assign(c, d)); setMenuOpen(false); }}>
-              <RotateCcw size={15} strokeWidth={1.8} /> Reset everything
+            <button onClick={() => {
+              // component-only reset: the stage (canvas color, grid, zoom) is
+              // the user's workspace and stays put
+              const d = defaultConfig();
+              update((c) => { const canvas = c.canvas; Object.assign(c, d); c.canvas = canvas; });
+              setMenuOpen(false);
+            }}>
+              <RotateCcw size={15} strokeWidth={1.8} /> Reset component
             </button>
           </div>
         )}

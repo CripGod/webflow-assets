@@ -53,6 +53,20 @@ export function buildHtml(cfg: GenConfig): string {
     `<figure><div class="art">${renderBevel(cfg, s)}</div><figcaption>${cap[s]}</figcaption></figure>`
   ).join("\n");
   const label = (cfg.content.label || "component").replace(/[<>&"]/g, "");
+
+  // live, playable button — CSS swaps the pre-rendered state art
+  const hasHover = cfg.visible.hover, hasPressed = cfg.visible.pressed;
+  const live = `<div class="live" role="button" tabindex="0" aria-label="${label}">
+  <span class="s s-default">${renderBevel(cfg, "default")}</span>
+  ${hasHover ? `<span class="s s-hover">${renderBevel(cfg, "hover")}</span>` : ""}
+  ${hasPressed ? `<span class="s s-pressed">${renderBevel(cfg, "pressed")}</span>` : ""}
+</div>`;
+  const liveCss = `
+  .live { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .live .s { display: none; }
+  .live .s-default { display: block; }
+  ${hasHover ? `.live:hover .s-default { display: none; } .live:hover .s-hover { display: block; }` : ""}
+  ${hasPressed ? `.live:active .s-default, .live:active .s-hover { display: none; } .live:active .s-pressed { display: block; }` : ""}`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -67,11 +81,15 @@ ${fontLink}
   .row { display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-end; justify-content: center; }
   figure { display: flex; flex-direction: column; align-items: center; gap: 8px; }
   figcaption { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: ${ink}; }
-  .art svg { display: block; }
+  .art svg, .live svg { display: block; }
+  .try { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: ${ink}; }
   footer { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: ${ink}; opacity: 0.7; }
+${liveCss}
 </style>
 </head>
 <body>
+${live}
+<div class="try">↑ try me — hover &amp; press</div>
 <div class="row">
 ${cards}
 </div>

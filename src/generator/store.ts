@@ -104,6 +104,8 @@ interface GenStore {
   open: Record<string, boolean>;
 
   panelW: number;
+  theme: "light" | "dark";
+  setTheme: (t: "light" | "dark") => void;
 
   update: (fn: (c: GenConfig) => void) => void;
   undo: () => void;
@@ -147,10 +149,17 @@ export const useGen = create<GenStore>((set, get) => ({
   saveStatus: "saved",
   open: { state: true, shape: true, mapping: true, gloss: true },
   panelW: loadPanelW(),
+  theme: (localStorage.getItem("ui-generator-theme") === "dark" ? "dark" : "light") as "light" | "dark",
+  setTheme: (t) => {
+    try { localStorage.setItem("ui-generator-theme", t); } catch { /* ignore */ }
+    set({ theme: t });
+  },
 
   update: (fn) => {
     const prev = get().cfg;
-    const cfg = JSON.parse(JSON.stringify(prev)) as GenConfig;
+    // structuredClone is ~3-4x faster than JSON round-tripping — keeps rapid
+    // slider drags responsive
+    const cfg = (typeof structuredClone === "function" ? structuredClone(prev) : JSON.parse(JSON.stringify(prev))) as GenConfig;
     fn(cfg);
     const now = Date.now();
     if (now - lastPush > 350) {

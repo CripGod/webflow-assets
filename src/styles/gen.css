@@ -353,3 +353,47 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .fxsub.dim { opacity: 0.55; }
 .addfont { display: flex; gap: 8px; align-items: center; }
 .addfont .tinput { flex: 1; min-width: 0; }
+
+/* ── v12: dark mode, font picker, well sizing, selected state card ── */
+.fontpick { position: relative; }
+.fontpick-btn { width: 100%; text-align: left; }
+.fontpick-cur { font-size: 15px; font-weight: 600; padding-top: 14px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fontpick-pop {
+  position: absolute; left: 0; right: 0; top: 58px; z-index: 70; max-height: 340px; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px;
+}
+.fontpick-pop button {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px;
+  border: 0; background: none; padding: 9px 10px; border-radius: 8px; cursor: pointer; color: var(--ink);
+}
+.fontpick-pop button:hover { background: var(--soft); }
+.fontpick-pop button.on { box-shadow: inset 0 0 0 1px var(--ink); }
+.fp-name { font-size: 12.5px; font-weight: 500; color: var(--ink2); white-space: nowrap; }
+.fp-preview { font-size: 19px; letter-spacing: 0.02em; }
+.ctl .chipwell.sm { width: 26px; height: 26px; border-radius: 8px; }
+.stack .scard.sel { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+
+/* dark theme — same chrome, inverted neutrals */
+[data-theme="dark"] {
+  --line: #26282e; --line2: #33363e;
+  --ink: #ecedf1; --ink2: #a6adba; --ink3: #6f7683;
+  --soft: #23252b; --card: #1b1c21;
+}
+[data-theme="dark"] body { background: #131418; color: var(--ink); }
+[data-theme="dark"] .top, [data-theme="dark"] .menu-pop, [data-theme="dark"] .zoolbar,
+[data-theme="dark"] .gridpop, [data-theme="dark"] .fontpick-pop { background: var(--card); }
+[data-theme="dark"] .fieldbox, [data-theme="dark"] .menu-btn, [data-theme="dark"] .acct,
+[data-theme="dark"] .copycode, [data-theme="dark"] .buildkit, [data-theme="dark"] .randbtn,
+[data-theme="dark"] .tinput, [data-theme="dark"] .icongrid button, [data-theme="dark"] .fxchip,
+[data-theme="dark"] .chipbtn, [data-theme="dark"] .segmini button, [data-theme="dark"] .viewseg button,
+[data-theme="dark"] .kitcard, [data-theme="dark"] .scard, [data-theme="dark"] .tinysel,
+[data-theme="dark"] .numin, [data-theme="dark"] .searchbox input { background: var(--card); color: var(--ink); }
+[data-theme="dark"] .fieldbox select { color: var(--ink); }
+[data-theme="dark"] .fieldbox select option { background: var(--card); }
+[data-theme="dark"] .segmini { background: var(--soft); }
+[data-theme="dark"] .segmini button.on, [data-theme="dark"] .fxchip.on { background: #e9eaef; border-color: #e9eaef; color: #17181c; }
+[data-theme="dark"] .btnrow .randbtn.kit.on { background: #e9eaef; border-color: #e9eaef; color: #17181c; }
+[data-theme="dark"] input[type="range"] { background: var(--line2); }
+[data-theme="dark"] input[type="range"]::-webkit-slider-thumb { background: #2b2d34; border-color: #4a4e58; }
+[data-theme="dark"] ::selection { background: #e9eaef; color: #17181c; }
+[data-theme="dark"] .panel-resize:hover, [data-theme="dark"] .panel-resize:active { background: rgba(236, 237, 241, 0.1); }

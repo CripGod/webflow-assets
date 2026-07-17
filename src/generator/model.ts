@@ -54,13 +54,14 @@ export const SPECULAR_MODES: { id: SpecularMode; name: string }[] = [
   { id: "sweep", name: "Edge sweep" },
 ];
 
-export type PatternType = "none" | "stripes" | "dots" | "stars" | "checker";
+export type PatternType = "none" | "stripes" | "dots" | "stars" | "checker" | "halftone";
 export const PATTERN_TYPES: { id: PatternType; name: string }[] = [
   { id: "none", name: "None" },
   { id: "stripes", name: "Stripes" },
   { id: "dots", name: "Polka dots" },
   { id: "stars", name: "Stars" },
   { id: "checker", name: "Checker" },
+  { id: "halftone", name: "Halftone — comic fade" },
 ];
 
 export interface CandyTokens {
@@ -89,7 +90,6 @@ export interface CandyTokens {
   contact: { opacity: number };                                   // tight shadow where body meets ground
   texture: { amount: number; scale: number };                     // 0..100 ×2 (micro grain)
   pattern: { type: PatternType; scale: number; angle: number; opacity: number; color: string | null }; // null = tone-on-tone
-  blob: { on: boolean; opacity: number; size: number; x: number; y: number };  // organic inner shade
 }
 
 export function defaultCandy(): CandyTokens {
@@ -104,8 +104,7 @@ export function defaultCandy(): CandyTokens {
     bloom: { opacity: 45, size: 60 },
     contact: { opacity: 32 },
     texture: { amount: 0, scale: 50 },
-    pattern: { type: "none", scale: 40, angle: 45, opacity: 25, color: null },
-    blob: { on: false, opacity: 35, size: 60, x: 0, y: 10 },
+    pattern: { type: "stripes", scale: 55, angle: 45, opacity: 18, color: null },
   };
 }
 
@@ -123,7 +122,7 @@ export interface TypeCfg {
   fill: string;
   fill2: string;       // gradient bottom
   fillOpacity: number; // 0..100 — translucent fills read as glass
-  outline: { on: boolean; color: string; width: number };                              // px at 52px type
+  outline: { on: boolean; color: string; color2: string | null; width: number };       // color2 set = gradient stroke
   shadow: { on: boolean; color: string; x: number; y: number; blur: number; opacity: number };
   emboss: { on: boolean; strength: number; softness: number };   // strength -100..100 (neg = deboss/engrave)
   glow: { on: boolean; color: string; size: number; opacity: number };
@@ -149,7 +148,7 @@ export const TEXT_PRESETS: { id: string; name: string }[] = [
 export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string; glow: string }) {
   t.preset = id;
   t.fillOpacity = 100;
-  t.outline = { on: false, color: palette.dark, width: 2.5 };
+  t.outline = { on: false, color: palette.dark, color2: null, width: 2.5 };
   t.shadow = { on: false, color: palette.dark, x: 0, y: 3, blur: 2, opacity: 50 };
   t.emboss = { on: false, strength: 55, softness: 30 };
   t.glow = { on: false, color: palette.glow, size: 8, opacity: 80 };
@@ -163,14 +162,14 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
   if (id === "outemboss") { t.outline.on = true; t.emboss.on = true; return; }
   if (id === "candy") {
     t.fillMode = "solid"; t.fill = "#FFFFFF";
-    t.outline = { on: true, color: palette.dark, width: 2.6 };
+    t.outline = { on: true, color: palette.dark, color2: null, width: 2.6 };
     t.shadow = { on: true, color: palette.dark, x: 0, y: 3, blur: 1.5, opacity: 45 };
     t.emboss = { on: true, strength: 30, softness: 25 };
     return;
   }
   if (id === "arcade") {
     t.fillMode = "gradient"; t.fill = "#FFE45C"; t.fill2 = "#FF9A3D";
-    t.outline = { on: true, color: "#5A2B00", width: 3.4 };
+    t.outline = { on: true, color: "#5A2B00", color2: null, width: 3.4 };
     t.shadow = { on: true, color: "#000000", x: 0, y: 4, blur: 0, opacity: 65 };
     return;
   }
@@ -235,6 +234,17 @@ export const GAME_FONTS: { name: string; css: string | null; factor: number }[] 
   { name: "Orbitron", css: "Orbitron:wght@700", factor: 0.74 },
   { name: "Cinzel", css: "Cinzel:wght@700", factor: 0.62 },
   { name: "Creepster", css: "Creepster", factor: 0.48 },
+  { name: "Titan One", css: "Titan+One", factor: 0.6 },
+  { name: "Lilita One", css: "Lilita+One", factor: 0.55 },
+  { name: "Chewy", css: "Chewy", factor: 0.52 },
+  { name: "Baloo 2", css: "Baloo+2:wght@700", factor: 0.58 },
+  { name: "Fredoka", css: "Fredoka:wght@600", factor: 0.6 },
+  { name: "Passion One", css: "Passion+One:wght@700", factor: 0.5 },
+  { name: "Sigmar One", css: "Sigmar+One", factor: 0.66 },
+  { name: "Rubik Mono One", css: "Rubik+Mono+One", factor: 0.85 },
+  { name: "Audiowide", css: "Audiowide", factor: 0.68 },
+  { name: "Silkscreen", css: "Silkscreen:wght@700", factor: 0.72 },
+  { name: "Pixelify Sans", css: "Pixelify+Sans:wght@600", factor: 0.58 },
 ];
 /* User-added Google Fonts — registered at runtime, names persisted in the
    config. Any family from fonts.google.com works; we request the full weight
@@ -258,6 +268,7 @@ export type GridStyle = "dots" | "lines" | "both" | "off";
 export interface GenConfig {
   presetId: string;
   shape: Shape;
+  skew: number;   // -30..30° horizontal shear — shape only, type stays level
   effects: Partial<Record<EffectRole, string>>;
   face: { mode: "light" | "dark"; contrast: number; midpoint: number };
   bevel: { width: number; softness: number };       // wall width + corner softness
@@ -311,11 +322,13 @@ export function defaultStates(): Record<GenStateName, StateAdjust> {
   };
 }
 
+/* Universal default type treatment — Chevon's approved look (v12):
+   Russo One italic, white→ice gradient, soft shadow + emboss. */
 export function defaultType(): TypeCfg {
   return {
-    font: "Inter", customFonts: [], size: 52, weight: 800, italic: false, spacing: 2, case: "upper",
-    fillMode: "solid", fill: "#FFFFFF", fill2: "#DCF6FF", fillOpacity: 100,
-    outline: { on: true, color: "#0B6183", width: 2.6 },
+    font: "Russo One", customFonts: [], size: 76, weight: 700, italic: true, spacing: 2, case: "upper",
+    fillMode: "gradient", fill: "#FFFFFF", fill2: "#DCF6FF", fillOpacity: 100,
+    outline: { on: false, color: "#0B6183", color2: null, width: 2.6 },
     shadow: { on: true, color: "#083D52", x: 0, y: 3, blur: 1.5, opacity: 45 },
     emboss: { on: true, strength: 30, softness: 25 },
     glow: { on: false, color: "#8FF0FF", size: 8, opacity: 80 },
@@ -329,7 +342,8 @@ export function defaultConfig(): GenConfig {
   applyPresetCandy(candy, p);
   return {
     presetId: p.id,
-    shape: p.shape,
+    shape: "pill",
+    skew: 0,
     effects: { ...p.effects },
     face: { mode: "light", contrast: 55, midpoint: 50 },
     bevel: { ...p.bevel },
@@ -342,7 +356,7 @@ export function defaultConfig(): GenConfig {
     icon: defaultIconCfg(),
     states: defaultStates(),
     visible: { hover: true, pressed: true, disabled: true },
-    canvas: "#F4F5F7",
+    canvas: "#000000",
   };
 }
 

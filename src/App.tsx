@@ -5,8 +5,10 @@ import { CanvasView } from "./ui/CanvasView";
 import { useGen } from "./generator/store";
 
 export function App() {
-  const { panelW, setPanelW, undo, redo } = useGen();
+  const { panelW, setPanelW, undo, redo, theme } = useGen();
   const dragFrom = useRef<{ x: number; w: number } | null>(null);
+
+  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
   // Cmd/Ctrl+Z undo, Shift for redo. Text fields keep their native undo.
   useEffect(() => {

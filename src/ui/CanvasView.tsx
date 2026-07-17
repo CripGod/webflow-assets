@@ -25,8 +25,9 @@ export function CanvasView() {
 
   const displayed: GenStateName = phase === "master" && live && selectedState !== "disabled" ? live : selectedState;
   const heroSvg = useMemo(() => renderBevel(cfg, displayed), [cfg, displayed]);
+  // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
-    (s) => s !== selectedState && (s === "default" || cfg.visible[s as Exclude<GenStateName, "default">])
+    (s) => s === "default" || cfg.visible[s as Exclude<GenStateName, "default">]
   );
   const dark = cfg.canvas === "#1C1D22" || cfg.canvas === "#000000";
   const capColor = dark ? "rgba(235,238,255,0.62)" : undefined;
@@ -79,9 +80,6 @@ export function CanvasView() {
               onPointerCancel={() => setLive(null)}
               dangerouslySetInnerHTML={{ __html: heroSvg }}
             />
-            <div className="editing-note" style={{ color: capColor ?? "rgba(60,64,78,0.55)" }}>
-              editing: {CAP[selectedState]}
-            </div>
           </div>
         ) : (
           <div className="kitgrid" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
@@ -152,8 +150,9 @@ export function CanvasView() {
       {phase === "master" && sideStates.length > 0 && (
         <div className="stack" aria-label="State previews">
           {sideStates.map((s) => (
-            <button className="scard clickable" key={s} onClick={() => setSelectedState(s)} title={`Edit ${CAP[s]}`}>
-              <div className="scard-title">{CAP[s]}</div>
+            <button className={`scard clickable${s === selectedState ? " sel" : ""}`} key={s}
+              onClick={() => setSelectedState(s)} title={`Edit ${CAP[s]}`} aria-pressed={s === selectedState}>
+              <div className="scard-title">{CAP[s]}{s === selectedState ? " · editing" : ""}</div>
               <div className="scard-body" dangerouslySetInnerHTML={{ __html: renderBevel(cfg, s) }} />
             </button>
           ))}
