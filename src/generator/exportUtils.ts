@@ -107,3 +107,52 @@ export function downloadHtml(cfg: GenConfig, name: string) {
 export function downloadSettings(cfg: GenConfig) {
   download("ui-generator-settings.json", new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" }));
 }
+
+/** Game-engine kit: one sprite sheet PNG @2x (states stacked vertically) plus
+ *  a JSON manifest with per-state rects and suggested 9-slice insets — the
+ *  shape Unity's Sprite Editor and Unreal's UMG box-draw both ingest. */
+export async function downloadGameKit(cfg: GenConfig): Promise<void> {
+  const scale = 2;
+  const states = STATE_NAMES.filter(
+    (s) => s === "default" || cfg.visible[s as Exclude<GenStateName, "default">]
+  );
+  const loaded = await Promise.all(states.map((s) => new Promise<{ s: GenStateName; img: HTMLImageElement }>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ s, img });
+    img.onerror = () => reject(new Error("svg load failed"));
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(renderBevel(cfg, s))));
+  })));
+  const w = Math.max(...loaded.map((l) => l.img.width)) * scale;
+  const heights = loaded.map((l) => l.img.height * scale);
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = heights.reduce((a, b) => a + b, 0);
+  const ctx = cv.getContext("2d")!;
+  ctx.imageSmoothingQuality = "high";
+  const rects: { name: GenStateName; x: number; y: number; width: number; height: number }[] = [];
+  let yy = 0;
+  loaded.forEach((l, i) => {
+    const sw = l.img.width * scale, sh = heights[i];
+    ctx.drawImage(l.img, Math.round((w - sw) / 2), yy, sw, sh);
+    rects.push({ name: l.s, x: Math.round((w - sw) / 2), y: yy, width: sw, height: sh });
+    yy += sh;
+  });
+  // conservative 9-slice caps: wall + rim + corner sweep, at sheet scale
+  const cap = Math.round((cfg.bevel.width + cfg.candy.rim.width + 34) * scale);
+  const manifest = {
+    generator: "The UI Generator (PatternBreak)",
+    sheet: `ui-${cfg.presetId}-sheet@${scale}x.png`,
+    scale,
+    label: cfg.content.label,
+    states: rects,
+    nineSlice: { left: cap, right: cap, top: cap, bottom: cap,
+      note: "Suggested border insets in sheet pixels. Unity: Sprite Editor > Border. Unreal: Brush > Margin (divide by width/height for 0–1 values)." },
+    engines: {
+      unity: "Import sheet as Sprite (2D and UI), Sprite Mode: Multiple, slice with the state rects, set Border for 9-slice, use on UI Image (Sliced).",
+      unreal: "Import sheet as Texture2D, make one Material or use DrawAs: Box in a Widget Brush per state rect, set Margin from nineSlice.",
+    },
+  };
+  await new Promise<void>((resolve, reject) => {
+    cv.toBlob((b) => { if (b) { download(manifest.sheet, b); resolve(); } else reject(new Error("raster failed")); }, "image/png");
+  });
+  download(`ui-${cfg.presetId}-kit.json`, new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" }));
+}

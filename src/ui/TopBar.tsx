@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { Code2, Check, CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun } from "lucide-react";
+import { Code2, Check, CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun, Gamepad2 } from "lucide-react";
 import { useGen, hydrate } from "@/generator/store";
 import { defaultConfig } from "@/generator/model";
 import { renderBevel } from "@/generator/bevel";
-import { downloadSvg, downloadPng, downloadHtml, downloadSettings, copyText } from "@/generator/exportUtils";
+import { downloadSvg, downloadPng, downloadHtml, downloadSettings, downloadGameKit, copyText } from "@/generator/exportUtils";
 
 // The actual PatternBreak logo file, bundled from the repo's top-level
 // pb-logo.png — never redrawn or interpreted.
@@ -14,7 +14,7 @@ function Logo() {
 }
 
 export function TopBar() {
-  const { cfg, saveStatus, update, selectedState, theme, setTheme } = useGen();
+  const { cfg, saveStatus, selectedState, theme, setTheme, replaceConfig } = useGen();
   const [menuOpen, setMenuOpen] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -45,8 +45,7 @@ export function TopBar() {
       try {
         const parsed = JSON.parse(String(reader.result));
         if (!parsed || typeof parsed !== "object" || !parsed.presetId || !parsed.candy) return;
-        const next = hydrate(parsed);
-        update((c) => Object.assign(c, next));
+        replaceConfig(hydrate(parsed));
       } catch { /* not a settings file — ignore */ }
     };
     reader.readAsText(file);
@@ -115,6 +114,9 @@ export function TopBar() {
             <button onClick={() => { copyCode(); setMenuOpen(false); }}>
               <Copy size={15} strokeWidth={1.8} /> Copy SVG code
             </button>
+            <button onClick={() => { void downloadGameKit(cfg); setMenuOpen(false); }}>
+              <Gamepad2 size={15} strokeWidth={1.8} /> Export game kit
+            </button>
             <button onClick={() => { downloadSettings(cfg); setMenuOpen(false); }}>
               <FileJson size={15} strokeWidth={1.8} /> Export settings
             </button>
@@ -125,7 +127,8 @@ export function TopBar() {
               // component-only reset: the stage (canvas color, grid, zoom) is
               // the user's workspace and stays put
               const d = defaultConfig();
-              update((c) => { const canvas = c.canvas; Object.assign(c, d); c.canvas = canvas; });
+              d.canvas = cfg.canvas;
+              replaceConfig(d);
               setMenuOpen(false);
             }}>
               <RotateCcw size={15} strokeWidth={1.8} /> Reset component

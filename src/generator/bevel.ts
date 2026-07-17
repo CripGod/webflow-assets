@@ -1,4 +1,4 @@
-import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef } from "./model";
+import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef, StateDesign } from "./model";
 import { lighten, darken, hexMix, desaturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED } from "./model";
 import { iconGroup } from "./icons";
 
@@ -40,19 +40,6 @@ function roundRect(x: number, y: number, w: number, h: number, r: number): strin
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
   if (shape === "pill") return roundRect(x, y, w, h, h / 2);
   if (shape === "round") return roundRect(x, y, w, h, 10 + softness * 0.34);
-  if (shape === "shard") {
-    // Irregular angular cut — every corner carries a different chamfer, with
-    // long diagonals top-right and bottom-left for that kinetic card energy.
-    // Deterministic: the same proportions at every size.
-    const cTL = Math.min(20, h * 0.12), cTR = Math.min(52, h * 0.30);
-    const cBR = Math.min(16, h * 0.10), cBL = Math.min(42, h * 0.24);
-    const v: [number, number][] = [
-      [x + cTL, y], [x + w - cTR * 1.6, y], [x + w, y + cTR],
-      [x + w, y + h - cBR], [x + w - cBR, y + h],
-      [x + cBL * 1.5, y + h], [x, y + h - cBL], [x, y + cTL],
-    ];
-    return polyRounded(v, 1.5 + softness * 0.06);
-  }
   const cut = shape === "sharp" ? Math.min(34, h * 0.22) : Math.min(28, h * 0.17);
   const r = shape === "sharp" ? 1.5 : 3 + softness * 0.14;
   const v: [number, number][] = [
@@ -69,10 +56,10 @@ function starPath(cell: number): string {
   return "M " + pts.map(([px, py]) => `${(ox + px * k).toFixed(1)} ${(oy + py * k).toFixed(1)}`).join(" L ") + " Z";
 }
 
-function effect(cfg: GenConfig, role: EffectRole): string {
-  const e = cfg.effects[role];
+function effect(effects: GenConfig["effects"], role: EffectRole): string {
+  const e = effects[role];
   if (e) return e;
-  const bevel = cfg.effects.Bevel ?? "#0E9CC9";
+  const bevel = effects.Bevel ?? "#0E9CC9";
   switch (role) {
     case "Bevel": return bevel;
     case "Glow": return lighten(bevel, 0.55);
@@ -84,6 +71,18 @@ function effect(cfg: GenConfig, role: EffectRole): string {
 
 const bright = (c: string, b: number) => (b >= 0 ? lighten(c, b / 100) : darken(c, -b / 100));
 
+/** Resolve which design renders a state: forked snapshot, else live mirror of
+ *  Default. Each field falls back independently so partial saves stay safe. */
+function designFor(cfg: GenConfig, state: GenStateName): StateDesign {
+  const d = state !== "default" ? cfg.stateDesigns?.[state as Exclude<GenStateName, "default">] : undefined;
+  if (!d) return cfg;
+  return {
+    shape: d.shape ?? cfg.shape, effects: d.effects ?? cfg.effects, face: d.face ?? cfg.face,
+    bevel: d.bevel ?? cfg.bevel, candy: d.candy ?? cfg.candy, lighting: d.lighting ?? cfg.lighting,
+    shadow: d.shadow ?? cfg.shadow, transparency: d.transparency ?? cfg.transparency, type: d.type ?? cfg.type,
+  };
+}
+
 interface Geom { x: number; y: number; h: number; fs: number; iconSize: number; minW?: number; maxW?: number }
 
 /** Core builder — the candy stack. Width grows with the content. */
@@ -92,21 +91,21 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
 } = {}): string {
   const id = "b" + UID++;
   const disabled = state === "disabled";
-  const pressed = state === "pressed";
   const adj = cfg.states[state];
   const P = (c: string) => (disabled ? lighten(desaturate(c, 0.82), 0.1) : bright(c, adj.brightness));
   const secondary = !!opts.secondary;
-  const shape = opts.shapeOverride ?? cfg.shape;
-  const C = cfg.candy;
+  const D = designFor(cfg, state);
+  const shape = opts.shapeOverride ?? D.shape;
+  const C = D.candy;
   const K = g0.h / 168; // token px scale for kit sizes
 
-  const bevelC = P(effect(cfg, "Bevel"));
-  const glowC = disabled ? "#B9BEC6" : P(effect(cfg, "Glow"));
-  const hiC = P(effect(cfg, "Highlight"));
-  const shC = effect(cfg, "Shadow");
-  const fillC = P(effect(cfg, "Inner Fill"));
+  const bevelC = P(effect(D.effects, "Bevel"));
+  const glowC = disabled ? "#B9BEC6" : P(effect(D.effects, "Glow"));
+  const hiC = P(effect(D.effects, "Highlight"));
+  const shC = effect(D.effects, "Shadow");
+  const fillC = P(effect(D.effects, "Inner Fill"));
 
-  const darkFace = cfg.face.mode === "dark";
+  const darkFace = D.face.mode === "dark";
   let face = darkFace ? hexMix(bevelC, "#0B0714", 0.72) : fillC;
   if (secondary) face = hexMix(face, darkFace ? "#100A1C" : "#FFFFFF", 0.78);
   const autoLabel = disabled ? "#A7AAB4"
@@ -115,7 +114,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
 
   /* ── auto-size geometry: the shape grows with the content ────── */
   const { x, y, h, iconSize: baseIcon } = g0;
-  const T2 = cfg.type;
+  const T2 = D.type;
   const fontDef = fontByName(T2.font);
   const fs = g0.fs * (T2.size / 52);
   const rawLabel = opts.label ?? cfg.content.label ?? "PLAY";
@@ -143,40 +142,34 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const minW = opts.fixedW ?? (iconOnly ? Math.max(h, contentW + padX * 2) : Math.max(g0.minW ?? 230 * K, contentW + padX * 2));
   const w = opts.fixedW ?? Math.min(g0.maxW ?? 980, minW);
 
-  /* ── extrusion & lift (pressed physically sinks + squashes) ──── */
+  /* ── extrusion & lift ─────────────────────────────────────────── */
   const depth = C.extrusion.depth * K * (secondary ? 0.55 : 1);
-  const visDepth = Math.max(0, depth * (pressed ? 0.4 : 1));
+  const visDepth = Math.max(0, depth);
   const lift = adj.lift;
 
-  /* ── skew: shear the object into a parallelogram; type stays level ── */
-  const skew = clamp(cfg.skew ?? 0, -30, 30);
-  const skewT = skew
-    ? ` transform="translate(${(x + w / 2).toFixed(1)} ${(y + h / 2).toFixed(1)}) skewX(${(-skew).toFixed(1)}) translate(${(-(x + w / 2)).toFixed(1)} ${(-(y + h / 2)).toFixed(1)})"`
-    : "";
   const vw = x * 2 + w, vh = y * 2 + h + Math.ceil(depth) + 40; // generous room so big shadows never clip
 
-  const bw = (secondary ? Math.max(4, cfg.bevel.width * 0.7) : cfg.bevel.width) * K;
+  const bw = (secondary ? Math.max(4, D.bevel.width * 0.7) : D.bevel.width) * K;
   const rimW = C.rim.width * K;
-  const outer = shapePath(shape, x, y, w, h, cfg.bevel.softness);
-  const faceP = shapePath(shape, x + bw, y + bw, w - bw * 2, h - bw * 2, Math.max(0, cfg.bevel.softness - 8));
-  const rimP = shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, cfg.bevel.softness);
+  const outer = shapePath(shape, x, y, w, h, D.bevel.softness);
+  const faceP = shapePath(shape, x + bw, y + bw, w - bw * 2, h - bw * 2, Math.max(0, D.bevel.softness - 8));
+  const rimP = shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, D.bevel.softness);
 
   /* ── key light — global source of truth ──────────────────────── */
-  const A = ((cfg.lighting.angle % 360) + 360) % 360;
+  const A = ((D.lighting.angle % 360) + 360) % 360;
   const rad = (A * Math.PI) / 180;
   const lx = Math.cos(rad), ly = -Math.sin(rad); // +l points toward the light
   const gpos = (k: number) => (0.5 + clamp(k, -1, 1) * 0.5).toFixed(3);
   const axis = `x1="${gpos(-lx)}" y1="${gpos(-ly)}" x2="${gpos(lx)}" y2="${gpos(ly)}"`;
-  const hiK = (disabled ? 0.35 : 1) * (cfg.lighting.highlight / 78);
-  const lowK = Math.max(0.1, cfg.lighting.lowlight / 46);
+  const hiK = (disabled ? 0.35 : 1) * (D.lighting.highlight / 78);
+  const lowK = Math.max(0.1, D.lighting.lowlight / 46);
 
   /* 1 ── cast shadow (grounded — does not travel with the lift) ── */
-  const distK = pressed ? 0.45 : state === "hover" ? 1.35 : 1;
-  const sd = cfg.shadow.distance * K * distK;
+  const sd = D.shadow.distance * K;
   const sdx = -lx * sd * 0.55;
   const sdy = visDepth + Math.max(1.5, sd * 0.7 - ly * sd * 0.3) + Math.max(0, lift);
-  const sBlur = Math.max(0.5, cfg.shadow.blur * 0.5 * (pressed ? 0.7 : state === "hover" ? 1.25 : 1));
-  const shOp = (cfg.shadow.opacity / 100) * (disabled ? 0.35 : state === "hover" ? 0.85 : 1);
+  const sBlur = Math.max(0.5, D.shadow.blur * 0.5);
+  const shOp = (D.shadow.opacity / 100) * (disabled ? 0.35 : 1);
   const castShadow = shOp > 0.005
     ? `<path d="${outer}" transform="translate(${sdx.toFixed(1)} ${sdy.toFixed(1)})" fill="${shC}" opacity="${shOp.toFixed(2)}" filter="url(#${id}sb)"/>`
     : "";
@@ -220,7 +213,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
 
   /* contact shadow — grounded occlusion right where the body meets the
      surface; fades as the button lifts, tightens when pressed */
-  const contactOp = (C.contact.opacity / 100) * (disabled ? 0.4 : 1) * clamp(1 - Math.max(0, -lift) / 10, 0.25, 1) * (pressed ? 1.15 : 1);
+  const contactOp = (C.contact.opacity / 100) * (disabled ? 0.4 : 1) * clamp(1 - Math.max(0, -lift) / 10, 0.25, 1);
   const contact = contactOp > 0.01
     ? `<ellipse cx="${(x + w / 2 + sdx * 0.35).toFixed(1)}" cy="${(y + h + visDepth + Math.max(0, lift) + 1.5).toFixed(1)}" rx="${(w * 0.47).toFixed(1)}" ry="${(5.5 * K + visDepth * 0.22).toFixed(1)}" fill="url(#${id}ct)" opacity="${contactOp.toFixed(2)}"/>`
     : "";
@@ -269,7 +262,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const glossPath = flip
     ? `M ${fx0 - 2} ${fy0 + fh + 2} H ${fx0 + fw + 2} V ${gy.toFixed(1)} Q ${apexX.toFixed(1)} ${(gy + bow * 1.8).toFixed(1)} ${fx0 - 2} ${gy.toFixed(1)} Z`
     : `M ${fx0 - 2} ${fy0 - 2} H ${fx0 + fw + 2} V ${gy.toFixed(1)} Q ${apexX.toFixed(1)} ${(gy + bow * 1.8).toFixed(1)} ${fx0 - 2} ${gy.toFixed(1)} Z`;
-  const gOpTop = (C.gloss.opacity / 100) * (disabled ? 0.35 : 1) * (pressed ? 0.82 : 1);
+  const gOpTop = (C.gloss.opacity / 100) * (disabled ? 0.35 : 1);
   const soft = clamp(C.gloss.softness / 100, 0, 1);
   const glossC1 = C.gloss.fill === "highlight" ? hiC : P(C.gloss.tint);
   const glossC2 = C.gloss.fill === "gradient" ? P(C.gloss.tint2) : glossC1;
@@ -282,7 +275,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
      softness shapes the falloff, stretch shapes the aspect. */
   const SP = C.specular;
   const spSize = SP.size * K;
-  const spOp = (SP.intensity / 100) * (disabled ? 0.25 : 1) * (pressed ? 0.85 : 1);
+  const spOp = (SP.intensity / 100) * (disabled ? 0.25 : 1);
   const spX = faceCx + lx * fw * 0.34 + (SP.ox / 100) * fw * 0.4;
   const spY = faceCy + ly * fh * 0.3 + (SP.oy / 100) * fh * 0.4;
   const spRot = clamp((90 - A) * 0.35, -40, 40) + SP.angle;
@@ -308,7 +301,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     } else if (SP.mode === "sweep") {
       // reflective event hugging the shell's edge curve on the lit side
       const swW = Math.max(2, spSize * 0.32);
-      const sweepP = shapePath(shape, x + bw * 0.55, y + bw * 0.55, w - bw * 1.1, h - bw * 1.1, Math.max(0, cfg.bevel.softness - 4));
+      const sweepP = shapePath(shape, x + bw * 0.55, y + bw * 0.55, w - bw * 1.1, h - bw * 1.1, Math.max(0, D.bevel.softness - 4));
       specular = `<path d="${sweepP}" fill="none" stroke="url(#${id}sw)" stroke-width="${swW.toFixed(1)}" opacity="${spOp.toFixed(2)}"/>`;
     } else {
       const main = `<ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spRx.toFixed(1)}" ry="${spRy.toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>`;
@@ -339,14 +332,9 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     : "";
 
   /* 6 ── inner edge shading */
-  const edgeOp = (C.innerEdge.strength / 100) * (pressed ? 1.35 : 1);
+  const edgeOp = C.innerEdge.strength / 100;
   const innerEdge = edgeOp > 0.01 && C.innerEdge.width > 0.1
     ? `<path d="${faceP}" fill="none" stroke="url(#${id}ie)" stroke-width="${(C.innerEdge.width * K).toFixed(1)}" opacity="${clamp(edgeOp, 0, 1).toFixed(2)}"/>`
-    : "";
-
-  /* pressed: extra occlusion from the lit side (the cap sank into the rim) */
-  const pressShade = pressed && !disabled
-    ? `<path d="${faceP}" fill="url(#${id}ps)" opacity="0.3"/>`
     : "";
 
   /* ── 12 · content: expanded text & icon treatment ────────────── */
@@ -357,12 +345,22 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   // same visual relief as 40px UI copy — fixed pixels vanish at display sizes.
   const fsc = fs / 40;
   if (T2.emboss.on && !disabled) {
-    // emboss (raised) or deboss (engraved); softness turns the crisp chisel
-    // into a frosted, glassy relief
+    // emboss (raised) or deboss (engraved). The relief follows the master
+    // light: the highlight offsets toward it, the shade away from it, and
+    // deboss flips the pair. Distance, softness and each side's opacity are
+    // all independently art-directable.
     const s = clamp(T2.emboss.strength / 100, -1, 1);
-    const ebl = ((0.35 + ((T2.emboss.softness ?? 30) / 100) * 2.6) * fsc).toFixed(1);
-    if (s > 0) tFilters.push(`drop-shadow(0 ${(-1.5 * s * fsc).toFixed(1)}px ${ebl}px rgba(255,255,255,${(0.75 * s).toFixed(2)})) drop-shadow(0 ${(2.2 * s * fsc).toFixed(1)}px ${ebl}px rgba(4,8,14,${(0.6 * s).toFixed(2)}))`);
-    else if (s < 0) { const a = -s; tFilters.push(`drop-shadow(0 ${(1.5 * a * fsc).toFixed(1)}px ${ebl}px rgba(255,255,255,${(0.65 * a).toFixed(2)})) drop-shadow(0 ${(-2 * a * fsc).toFixed(1)}px ${ebl}px rgba(4,8,14,${(0.65 * a).toFixed(2)}))`); }
+    if (s !== 0) {
+      const a = Math.abs(s);
+      const dist = (T2.emboss.distance ?? 2) * fsc * (0.6 + a * 0.8);
+      const ebl = ((0.3 + ((T2.emboss.softness ?? 30) / 100) * 2.6) * fsc).toFixed(1);
+      const sign = s > 0 ? 1 : -1;
+      const hx = (lx * dist * sign).toFixed(1), hy = (ly * dist * sign).toFixed(1);
+      const sxo = (-lx * dist * sign).toFixed(1), syo = (-ly * dist * sign).toFixed(1);
+      const hiO = (a * ((T2.emboss.hiOpacity ?? 70) / 100)).toFixed(2);
+      const shO = (a * ((T2.emboss.shOpacity ?? 60) / 100)).toFixed(2);
+      tFilters.push(`drop-shadow(${hx}px ${hy}px ${ebl}px rgba(255,255,255,${hiO})) drop-shadow(${sxo}px ${syo}px ${ebl}px rgba(4,8,14,${shO}))`);
+    }
   }
   if (T2.shadow.on) tFilters.push(`drop-shadow(${(T2.shadow.x * fsc).toFixed(1)}px ${(T2.shadow.y * fsc).toFixed(1)}px ${(T2.shadow.blur * fsc).toFixed(1)}px ${hexRgba(T2.shadow.color, T2.shadow.opacity / 100)})`);
   if (T2.glow.on && !disabled) tFilters.push(`drop-shadow(0 0 ${(T2.glow.size * 0.6).toFixed(1)}px ${hexRgba(T2.glow.color, T2.glow.opacity / 100)}) drop-shadow(0 0 ${(T2.glow.size * 1.6).toFixed(1)}px ${hexRgba(T2.glow.color, (T2.glow.opacity / 100) * 0.6)})`);
@@ -388,7 +386,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K;
   const iconY = cy - iconSize / 2 + cfg.icon.oy * K;
 
-  const T = cfg.transparency;
+  const T = D.transparency;
   const fontStyle = T2.italic ? ` font-style="italic"` : "";
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}" viewBox="0 0 ${vw} ${vh}" font-family="'${T2.font}', Inter, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
@@ -420,9 +418,9 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <stop offset="1" stop-color="${hiC}" stop-opacity="0.95"/>
   </linearGradient>
   <linearGradient id="${id}face" ${axis}>
-    <stop offset="0" stop-color="${darken(face, clamp(0.24 * (cfg.face.contrast / 50) * lowK, 0, 0.6))}"/>
-    <stop offset="${clamp(1 - cfg.face.midpoint / 100, 0.08, 0.92).toFixed(2)}" stop-color="${face}"/>
-    <stop offset="1" stop-color="${lighten(face, clamp(0.3 * (cfg.face.contrast / 50) * hiK, 0, 0.7))}"/>
+    <stop offset="0" stop-color="${darken(face, clamp(0.24 * (D.face.contrast / 50) * lowK, 0, 0.6))}"/>
+    <stop offset="${clamp(1 - D.face.midpoint / 100, 0.08, 0.92).toFixed(2)}" stop-color="${face}"/>
+    <stop offset="1" stop-color="${lighten(face, clamp(0.3 * (D.face.contrast / 50) * hiK, 0, 0.7))}"/>
   </linearGradient>
   <linearGradient id="${id}ie" ${axis}>
     <stop offset="0" stop-color="${hexRgba(lighten(face, 0.55), 0.55)}"/>
@@ -454,22 +452,18 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <stop offset="0" stop-color="${hiC}" stop-opacity="1"/>
     <stop offset="1" stop-color="${hiC}" stop-opacity="0"/>
   </radialGradient>
-  ${pressed ? `<linearGradient id="${id}ps" ${axis}><stop offset=".5" stop-color="${darken(bevelC, 0.5)}" stop-opacity="0"/><stop offset="1" stop-color="${darken(bevelC, 0.55)}" stop-opacity="0.75"/></linearGradient>` : ""}
   ${T2.fillMode === "gradient" ? `<linearGradient id="${id}tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.fill)}"/><stop offset="1" stop-color="${P(T2.fill2)}"/></linearGradient>` : ""}
   ${T2.outline.on && T2.outline.color2 ? `<linearGradient id="${id}og" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.outline.color)}"/><stop offset="1" stop-color="${P(T2.outline.color2)}"/></linearGradient>` : ""}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
   ${aura ? `<filter id="${id}gb" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="11"/></filter>` : ""}
-  ${noise ? `<filter id="${id}nz"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="3" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="2.6" intercept="-0.8"/><feFuncG type="linear" slope="2.6" intercept="-0.8"/><feFuncB type="linear" slope="2.6" intercept="-0.8"/></feComponentTransfer></filter>` : ""}
+  ${noise ? `<filter id="${id}nz" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="2.6" intercept="-0.8"/><feFuncG type="linear" slope="2.6" intercept="-0.8"/><feFuncB type="linear" slope="2.6" intercept="-0.8"/></feComponentTransfer></filter>` : ""}
 </defs>
 <g opacity="${(adj.opacity / 100).toFixed(2)}">
-  <g${skewT}>
   ${castShadow}
   ${contact}
   ${aura}
-  </g>
   <g transform="translate(0 ${lift})">
-    <g${skewT}>
     ${extrusion}
     <g opacity="${(T.frame / 100).toFixed(2)}">
       <path d="${outer}" fill="url(#${id}band)" stroke="${darken(bevelC, disabled ? 0.25 : 0.5)}" stroke-width="1.5"/>
@@ -481,12 +475,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
         ${patternUse}
         ${igOp > 0.01 ? `<path d="${faceP}" fill="url(#${id}ig)"/>` : ""}
         ${bloom}
-        ${pressShade}
         ${C.gloss.layer === "above" ? "" : gloss + specular}
         ${noise}
       </g>
       ${innerEdge}
-    </g>
     </g>
     <g opacity="${(T.content / 100).toFixed(2)}">
       ${showText ? `<text x="${textX.toFixed(1)}" y="${cy + 1}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${label}</text>` : ""}
@@ -497,7 +489,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
         filter: iconFilter,
       }) : ""}
     </g>
-    ${C.gloss.layer === "above" ? `<g${skewT}><g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${gloss}${specular}</g></g>` : ""}
+    ${C.gloss.layer === "above" ? `<g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${gloss}${specular}</g>` : ""}
   </g>
 </g>
 </svg>`;
@@ -526,8 +518,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
       const knobR = (h - cfg.bevel.width * 2) / 2 - 6;
       const kx = 39 + w - cfg.bevel.width - 6 - knobR, ky = 30 + h / 2;
-      const glow = effect(cfg, "Glow"), fill = "#FFFFFF";
-      const knob = `<circle cx="${kx}" cy="${ky}" r="${knobR}" fill="${fill}" stroke="${darken(effect(cfg, "Bevel"), 0.3)}" stroke-width="2"/>
+      const glow = effect(cfg.effects, "Glow"), fill = "#FFFFFF";
+      const knob = `<circle cx="${kx}" cy="${ky}" r="${knobR}" fill="${fill}" stroke="${darken(effect(cfg.effects, "Bevel"), 0.3)}" stroke-width="2"/>
         <circle cx="${kx}" cy="${ky}" r="${Math.max(3, knobR * 0.28)}" fill="${state === "disabled" ? "#A7AAB4" : glow}"/>`;
       return track.replace("</g>\n</svg>", knob + "</g>\n</svg>");
     }
@@ -535,7 +527,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const w = 520 * k, h = 64 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
       const bw = cfg.bevel.width;
-      const bevel = effect(cfg, "Bevel"), glow = effect(cfg, "Glow");
+      const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
       const fw = (w - bw * 2 - 8) * 0.62;
       const bar = `<defs><linearGradient id="pg${UID}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
         <path d="${roundRect(39 + bw + 4, 30 + bw + 4, fw, h - bw * 2 - 8, (h - bw * 2 - 8) / 2)}" fill="url(#pg${UID})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>`;

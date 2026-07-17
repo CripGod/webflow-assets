@@ -13,13 +13,12 @@ export const ROLE_HINT: Record<EffectRole, string> = {
   Bevel: "shell & wall", Glow: "inner glow", Highlight: "gloss & specular", Shadow: "grounding", "Inner Fill": "candy face",
 };
 
-export type Shape = "chamfer" | "pill" | "sharp" | "round" | "shard";
+export type Shape = "chamfer" | "pill" | "sharp" | "round";
 export const SHAPES: { id: Shape; name: string }[] = [
   { id: "round", name: "Round" },
   { id: "pill", name: "Pill" },
   { id: "chamfer", name: "Chamfer" },
   { id: "sharp", name: "Sharp" },
-  { id: "shard", name: "Shard — irregular" },
 ];
 /** Neutral canvas surfaces only — the stage never competes with the component. */
 export const CANVAS_BGS = [
@@ -92,19 +91,20 @@ export interface CandyTokens {
   pattern: { type: PatternType; scale: number; angle: number; opacity: number; color: string | null }; // null = tone-on-tone
 }
 
+/* Universal defaults — Chevon's approved settings (uigeneratorsettings_2). */
 export function defaultCandy(): CandyTokens {
   return {
-    extrusion: { depth: 10, darkness: 55, glow: 0 },
+    extrusion: { depth: 15, darkness: 94, glow: 69 },
     rim: { width: 3, brightness: 80 },
-    innerEdge: { strength: 45, width: 2 },
+    innerEdge: { strength: 45, width: 3 },
     innerGlow: { opacity: 55, size: 55, color: null },
     aura: { color: null },
-    gloss: { on: true, height: 46, curve: 26, opacity: 72, softness: 22, layer: "below", fill: "highlight", tint: "#FFFFFF", tint2: "#DFF7FF" },
-    specular: { on: true, mode: "hard", size: 26, stretch: 45, intensity: 85, softness: 30, angle: 0, gap: 100, ox: 0, oy: 0 },
+    gloss: { on: true, height: 42, curve: 26, opacity: 72, softness: 95, layer: "above", fill: "gradient", tint: "#3391b2", tint2: "#DFF7FF" },
+    specular: { on: true, mode: "anime", size: 32, stretch: 10, intensity: 38, softness: 0, angle: 0, gap: 300, ox: 33, oy: -30 },
     bloom: { opacity: 45, size: 60 },
     contact: { opacity: 32 },
-    texture: { amount: 0, scale: 50 },
-    pattern: { type: "stripes", scale: 55, angle: 45, opacity: 18, color: null },
+    texture: { amount: 25, scale: 50 },
+    pattern: { type: "stripes", scale: 100, angle: 45, opacity: 71, color: "#1d819a" },
   };
 }
 
@@ -124,7 +124,10 @@ export interface TypeCfg {
   fillOpacity: number; // 0..100 — translucent fills read as glass
   outline: { on: boolean; color: string; color2: string | null; width: number };       // color2 set = gradient stroke
   shadow: { on: boolean; color: string; x: number; y: number; blur: number; opacity: number };
-  emboss: { on: boolean; strength: number; softness: number };   // strength -100..100 (neg = deboss/engrave)
+  /** Relief follows the master light: highlight toward it, shade away from it.
+   *  strength -100..100 (negative = deboss/engrave); distance = offset px;
+   *  softness = blur; hiOpacity/shOpacity control each side independently. */
+  emboss: { on: boolean; strength: number; softness: number; distance: number; hiOpacity: number; shOpacity: number };
   glow: { on: boolean; color: string; size: number; opacity: number };
   preset: string;
 }
@@ -150,13 +153,13 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
   t.fillOpacity = 100;
   t.outline = { on: false, color: palette.dark, color2: null, width: 2.5 };
   t.shadow = { on: false, color: palette.dark, x: 0, y: 3, blur: 2, opacity: 50 };
-  t.emboss = { on: false, strength: 55, softness: 30 };
+  t.emboss = { on: false, strength: 55, softness: 30, distance: 2, hiOpacity: 70, shOpacity: 60 };
   t.glow = { on: false, color: palette.glow, size: 8, opacity: 80 };
   if (id === "none") { t.fillMode = "auto"; return; }
   if (id === "outline") { t.outline.on = true; return; }
   if (id === "shadow") { t.shadow.on = true; return; }
   if (id === "emboss") { t.emboss.on = true; return; }
-  if (id === "innerbevel") { t.emboss = { on: true, strength: -60, softness: 30 }; return; }
+  if (id === "innerbevel") { t.emboss = { on: true, strength: -60, softness: 30, distance: 2, hiOpacity: 65, shOpacity: 65 }; return; }
   if (id === "glow") { t.glow.on = true; return; }
   if (id === "outshadow") { t.outline.on = true; t.shadow.on = true; return; }
   if (id === "outemboss") { t.outline.on = true; t.emboss.on = true; return; }
@@ -164,7 +167,7 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
     t.fillMode = "solid"; t.fill = "#FFFFFF";
     t.outline = { on: true, color: palette.dark, color2: null, width: 2.6 };
     t.shadow = { on: true, color: palette.dark, x: 0, y: 3, blur: 1.5, opacity: 45 };
-    t.emboss = { on: true, strength: 30, softness: 25 };
+    t.emboss = { on: true, strength: 30, softness: 25, distance: 2, hiOpacity: 75, shOpacity: 60 };
     return;
   }
   if (id === "arcade") {
@@ -175,14 +178,14 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
   }
   if (id === "chiseled") {
     t.fillMode = "gradient"; t.fill = "#F4F6F8"; t.fill2 = "#B9C0CC";
-    t.emboss = { on: true, strength: -70, softness: 20 };
+    t.emboss = { on: true, strength: -70, softness: 20, distance: 2.5, hiOpacity: 65, shOpacity: 70 };
     t.shadow = { on: true, color: palette.dark, x: 0, y: 2, blur: 1, opacity: 35 };
     return;
   }
   if (id === "glass") {
     // frosted label sealed in the shell: translucent fill, soft engrave
     t.fillMode = "solid"; t.fill = "#FFFFFF"; t.fillOpacity = 34;
-    t.emboss = { on: true, strength: -48, softness: 72 };
+    t.emboss = { on: true, strength: -48, softness: 72, distance: 2, hiOpacity: 60, shOpacity: 60 };
     t.shadow = { on: true, color: "#FFFFFF", x: 0, y: 1, blur: 0.5, opacity: 35 };
     return;
   }
@@ -265,19 +268,35 @@ export function fontByName(name: string) {
 
 export type GridStyle = "dots" | "lines" | "both" | "off";
 
-export interface GenConfig {
-  presetId: string;
+/** The full visual design of one state — everything that shapes the artwork.
+ *  The base config holds Default's design; other states mirror it live until
+ *  the user edits them with that state selected, which forks a copy. */
+export interface StateDesign {
   shape: Shape;
-  skew: number;   // -30..30° horizontal shear — shape only, type stays level
   effects: Partial<Record<EffectRole, string>>;
   face: { mode: "light" | "dark"; contrast: number; midpoint: number };
-  bevel: { width: number; softness: number };       // wall width + corner softness
+  bevel: { width: number; softness: number };
   candy: CandyTokens;
   lighting: { angle: number; highlight: number; lowlight: number };
   shadow: { distance: number; blur: number; opacity: number };
   transparency: { frame: number; interior: number; content: number };
-  content: { label: string };
   type: TypeCfg;
+}
+
+export const DESIGN_KEYS = ["shape", "effects", "face", "bevel", "candy", "lighting", "shadow", "transparency", "type"] as const;
+
+export function pickDesign(src: StateDesign): StateDesign {
+  return JSON.parse(JSON.stringify({
+    shape: src.shape, effects: src.effects, face: src.face, bevel: src.bevel, candy: src.candy,
+    lighting: src.lighting, shadow: src.shadow, transparency: src.transparency, type: src.type,
+  })) as StateDesign;
+}
+
+export interface GenConfig extends StateDesign {
+  presetId: string;
+  /** Forked designs for non-default states. Absent = live mirror of Default. */
+  stateDesigns: Partial<Record<Exclude<GenStateName, "default">, StateDesign>>;
+  content: { label: string };
   icon: IconCfg;
   states: Record<GenStateName, StateAdjust>;
   visible: Record<Exclude<GenStateName, "default">, boolean>;
@@ -315,7 +334,7 @@ export function presetById(id: string): Preset {
 
 export function defaultStates(): Record<GenStateName, StateAdjust> {
   return {
-    default: { brightness: 0, glow: 0, lift: 0, opacity: 100 },
+    default: { brightness: 5, glow: 0, lift: 0, opacity: 100 },
     hover: { brightness: 8, glow: 38, lift: -3, opacity: 100 },
     pressed: { brightness: -6, glow: 12, lift: 3, opacity: 100 },
     disabled: { brightness: 0, glow: 0, lift: 0, opacity: 62 },
@@ -327,11 +346,11 @@ export function defaultStates(): Record<GenStateName, StateAdjust> {
 export function defaultType(): TypeCfg {
   return {
     font: "Russo One", customFonts: [], size: 76, weight: 700, italic: true, spacing: 2, case: "upper",
-    fillMode: "gradient", fill: "#FFFFFF", fill2: "#DCF6FF", fillOpacity: 100,
-    outline: { on: false, color: "#0B6183", color2: null, width: 2.6 },
-    shadow: { on: true, color: "#083D52", x: 0, y: 3, blur: 1.5, opacity: 45 },
-    emboss: { on: true, strength: 30, softness: 25 },
-    glow: { on: false, color: "#8FF0FF", size: 8, opacity: 80 },
+    fillMode: "gradient", fill: "#00b5c2", fill2: "#0f96c2", fillOpacity: 100,
+    outline: { on: false, color: "#0B6183", color2: null, width: 0.5 },
+    shadow: { on: true, color: "#659db3", x: 0, y: 3, blur: 1.5, opacity: 45 },
+    emboss: { on: true, strength: -74, softness: 0, distance: 2, hiOpacity: 70, shOpacity: 60 },
+    glow: { on: true, color: "#8FF0FF", size: 15, opacity: 100 },
     preset: "candy",
   };
 }
@@ -342,14 +361,14 @@ export function defaultConfig(): GenConfig {
   applyPresetCandy(candy, p);
   return {
     presetId: p.id,
+    stateDesigns: {},
     shape: "pill",
-    skew: 0,
     effects: { ...p.effects },
     face: { mode: "light", contrast: 55, midpoint: 50 },
-    bevel: { ...p.bevel },
+    bevel: { width: 19, softness: 78 },
     candy,
     lighting: { angle: 90, highlight: 78, lowlight: 46 },
-    shadow: { distance: 10, blur: 14, opacity: 40 },
+    shadow: { distance: 28, blur: 14, opacity: 40 },
     transparency: { frame: 100, interior: 100, content: 100 },
     content: { label: "PLAY" },
     type: defaultType(),

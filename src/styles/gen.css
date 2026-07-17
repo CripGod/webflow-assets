@@ -397,3 +397,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 [data-theme="dark"] input[type="range"]::-webkit-slider-thumb { background: #2b2d34; border-color: #4a4e58; }
 [data-theme="dark"] ::selection { background: #e9eaef; color: #17181c; }
 [data-theme="dark"] .panel-resize:hover, [data-theme="dark"] .panel-resize:active { background: rgba(236, 237, 241, 0.1); }
+
+/* ── v13: logo inversion in dark mode ────────────────────────── */
+[data-theme="dark"] img.logo { filter: invert(1) hue-rotate(180deg); }
+.valbox .numin { width: 44px; }

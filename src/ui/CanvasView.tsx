@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square } from "lucide-react";
+import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square, SquarePen, Play } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
 import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES } from "@/generator/model";
@@ -9,7 +9,7 @@ import { downloadSvg } from "@/generator/exportUtils";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, kitSizes, setKitSize, selectedState, setSelectedState } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -23,7 +23,10 @@ export function CanvasView() {
   // while edits keep applying to the selected state.
   const [live, setLive] = useState<"hover" | "pressed" | null>(null);
 
-  const displayed: GenStateName = phase === "master" && live && selectedState !== "disabled" ? live : selectedState;
+  // Design mode locks the canvas to the state being edited; Play mode makes
+  // the hero live under the pointer.
+  const playing = canvasMode === "play";
+  const displayed: GenStateName = phase === "master" && playing && live && selectedState !== "disabled" ? live : selectedState;
   const heroSvg = useMemo(() => renderBevel(cfg, displayed), [cfg, displayed]);
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
@@ -69,15 +72,17 @@ export function CanvasView() {
         {phase === "master" ? (
           <div className="stage" style={{ transform: `scale(${zoom})` }}>
             <div className="state-cap" style={{ color: capColor }}>
-              {CAP[displayed]}{live ? " · live" : ""}
+              {CAP[displayed]}{playing && live ? " · live" : ""}
             </div>
             <div
-              className="hero-slot hot"
-              onPointerEnter={(e) => setLive(e.buttons === 1 ? "pressed" : "hover")}
-              onPointerLeave={() => setLive(null)}
-              onPointerDown={(e) => { e.stopPropagation(); setLive("pressed"); }}
-              onPointerUp={() => setLive("hover")}
-              onPointerCancel={() => setLive(null)}
+              className={`hero-slot${playing ? " hot" : ""}`}
+              {...(playing ? {
+                onPointerEnter: (e: React.PointerEvent) => setLive(e.buttons === 1 ? "pressed" : "hover"),
+                onPointerLeave: () => setLive(null),
+                onPointerDown: (e: React.PointerEvent) => { e.stopPropagation(); setLive("pressed"); },
+                onPointerUp: () => setLive("hover"),
+                onPointerCancel: () => setLive(null),
+              } : {})}
               dangerouslySetInnerHTML={{ __html: heroSvg }}
             />
           </div>
@@ -107,6 +112,15 @@ export function CanvasView() {
         )}
 
         <div className="zoolbar" role="toolbar" aria-label="Canvas tools">
+          <button className={!playing ? "on" : ""} title="Design mode — canvas stays on the state you're editing"
+            aria-pressed={!playing} onClick={() => setCanvasMode("design")}>
+            <SquarePen size={17} strokeWidth={1.8} />
+          </button>
+          <button className={playing ? "on" : ""} title="Play mode — hover and press the button live"
+            aria-pressed={playing} onClick={() => { setCanvasMode("play"); }}>
+            <Play size={17} strokeWidth={1.8} />
+          </button>
+          <span className="zdiv" />
           <button className={panMode ? "on" : ""} title="Pan" aria-pressed={panMode} onClick={() => setPanMode(!panMode)}>
             <Hand size={18} strokeWidth={1.8} />
           </button>
