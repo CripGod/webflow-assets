@@ -1,5 +1,5 @@
 import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize } from "./model";
-import { lighten, darken, hexMix, desaturate } from "./model";
+import { lighten, darken, hexMix, desaturate, fontByName } from "./model";
 import { iconGroup } from "./icons";
 
 // Bevel engine v6 — auto-sizing shape, per-state adjustments from the config,
@@ -82,12 +82,14 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const labelC = disabled ? "#A7AAB4" : secondary ? (darkFace ? lighten(bevelC, 0.5) : darken(bevelC, 0.05)) : darkFace ? lighten(bevelC, 0.62) : darken(bevelC, 0.06);
 
   // ── auto-size geometry: the shape grows with the text ─────────
-  const { x, y, h, fs, iconSize } = g0;
+  const { x, y, h, iconSize } = g0;
+  const fontDef = fontByName(cfg.type.font);
+  const fs = g0.fs * (cfg.type.size / 52);
   const label = esc(opts.label ?? cfg.content.label ?? "PLAY");
   const iconName = opts.icon === null ? null : opts.icon ?? (cfg.content.placement !== "none" ? cfg.content.icon : null);
   const showText = opts.icon !== undefined ? !!opts.label : true;
   const gap = fs * 0.38;
-  const textW = showText ? label.length * fs * 0.6 : 0;
+  const textW = showText ? label.length * fs * fontDef.factor : 0;
   const contentW = textW + (iconName ? iconSize + (showText ? gap : 0) : 0);
   const padX = Math.max(64, h * 0.42);
   const w = opts.fixedW ?? Math.max(g0.minW ?? 230, Math.min(g0.maxW ?? 980, contentW + padX * 2));
@@ -146,7 +148,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
 
   const T = cfg.transparency;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}" viewBox="0 0 ${vw} ${vh}" font-family="Inter, 'Inter Variable', -apple-system, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}" viewBox="0 0 ${vw} ${vh}" font-family="'${cfg.type.font}', Inter, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
 <defs>
   <linearGradient id="${id}band" x1="${gpos(-lx)}" y1="${gpos(-ly)}" x2="${gpos(lx)}" y2="${gpos(ly)}">
     <stop offset="0" stop-color="${darken(bevelC, 0.32 * lowK)}"/>

@@ -5,24 +5,12 @@ import { PRESETS, defaultConfig } from "@/generator/model";
 import { renderBevel } from "@/generator/bevel";
 import { downloadSvg, downloadPng, copyText } from "@/generator/exportUtils";
 
-/** PatternBreak logo — loads the real asset from /pb-logo.png (drop the PNG in
- *  the repo's public/ folder). Falls back to a drawn mark until the file exists. */
+// The actual PatternBreak logo file, bundled from the repo's top-level
+// pb-logo.png — never redrawn or interpreted.
+import logoUrl from "../../pb-logo.png";
+
 function Logo() {
-  const [missing, setMissing] = useState(false);
-  if (!missing) {
-    return (
-      <img className="logo" src={`${import.meta.env.BASE_URL}pb-logo.png`} alt="PatternBreak"
-        onError={() => setMissing(true)} />
-    );
-  }
-  return (
-    <svg className="logo" viewBox="0 0 100 100" aria-label="PatternBreak">
-      <circle cx="50" cy="50" r="37" fill="none" stroke="#111318" strokeWidth="3.4" />
-      <line x1="4" y1="96" x2="96" y2="4" stroke="#111318" strokeWidth="3.4" strokeLinecap="round" />
-      <text x="49" y="52" fontFamily="Georgia, serif" fontSize="40" fontWeight="600" fill="#111318"
-        textAnchor="middle" dominantBaseline="central" letterSpacing="-3">PB</text>
-    </svg>
-  );
+  return <img className="logo" src={logoUrl} alt="PatternBreak" />;
 }
 
 export function TopBar() {

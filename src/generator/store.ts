@@ -1,15 +1,15 @@
 import { create } from "zustand";
-import type { GenConfig, GenStateName, KitComponentId, KitSize } from "./model";
+import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle } from "./model";
 import { defaultConfig, randomizeConfig, presetById } from "./model";
 
-const LS_KEY = "ui-generator-v7"; // v7: per-state edits, shadow/transparency/text-fx
+const LS_KEY = "ui-generator-v8"; // v8: typography, section filter, grid styles
 
 function load(): GenConfig {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<GenConfig>;
-      if (parsed.presetId && parsed.states && parsed.shadow && parsed.transparency) {
+      if (parsed.presetId && parsed.states && parsed.shadow && parsed.transparency && parsed.type) {
         return { ...defaultConfig(), ...parsed } as GenConfig;
       }
     }
@@ -24,7 +24,8 @@ interface GenStore {
   kitSizes: Partial<Record<KitComponentId, KitSize>>;
   zoom: number;
   panMode: boolean;
-  gridOn: boolean;
+  gridStyle: GridStyle;
+  sectionFilter: string | null;
   saveStatus: "saved" | "saving";
   open: Record<string, boolean>;
 
@@ -36,7 +37,9 @@ interface GenStore {
   setKitSize: (id: KitComponentId, s: KitSize) => void;
   setZoom: (z: number) => void;
   setPanMode: (v: boolean) => void;
-  setGridOn: (v: boolean) => void;
+  setGridStyle: (v: GridStyle) => void;
+  setSectionFilter: (v: string | null) => void;
+  randomizeColors: () => void;
   toggle: (section: string) => void;
 }
 
@@ -49,7 +52,8 @@ export const useGen = create<GenStore>((set, get) => ({
   kitSizes: {},
   zoom: 1,
   panMode: false,
-  gridOn: true,
+  gridStyle: "dots" as GridStyle,
+  sectionFilter: null,
   saveStatus: "saved",
   open: { state: true, style: true, bevel: true, lighting: true },
 
@@ -76,6 +80,11 @@ export const useGen = create<GenStore>((set, get) => ({
   setKitSize: (id, s) => set((st) => ({ kitSizes: { ...st.kitSizes, [id]: s } })),
   setZoom: (z) => set({ zoom: Math.max(0.4, Math.min(2.4, Math.round(z * 10) / 10)) }),
   setPanMode: (v) => set({ panMode: v }),
-  setGridOn: (v) => set({ gridOn: v }),
+  setGridStyle: (v) => set({ gridStyle: v }),
+  setSectionFilter: (v) => set({ sectionFilter: v }),
+  randomizeColors: () => {
+    const next = randomizeConfig(get().cfg);
+    get().update((c) => { c.effects = next.effects; });
+  },
   toggle: (s) => set((st) => ({ open: { ...st.open, [s]: !st.open[s] } })),
 }));

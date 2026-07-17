@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { Hand, Minus, Plus, LayoutGrid, Download } from "lucide-react";
+import { useMemo, useRef, useState, useEffect } from "react";
+import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
 import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES } from "@/generator/model";
@@ -9,7 +9,14 @@ import { downloadSvg } from "@/generator/exportUtils";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridOn, setGridOn, phase, kitSizes, setKitSize, selectedState, setSelectedState } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, kitSizes, setKitSize, selectedState, setSelectedState } = useGen();
+  const [gridPop, setGridPop] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (gridRef.current && !gridRef.current.contains(e.target as Node)) setGridPop(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
   const scroller = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
   // live interaction: hovering/pressing the hero previews those states ("hot"),
@@ -44,8 +51,11 @@ export function CanvasView() {
         className={`canvas${panMode ? " pan" : ""}`}
         style={{
           backgroundColor: cfg.canvas,
-          backgroundImage: gridOn ? `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px)` : undefined,
-          backgroundSize: gridOn ? "22px 22px" : undefined,
+          backgroundImage:
+            gridStyle === "dots" ? `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px)` :
+            gridStyle === "lines" ? `linear-gradient(${dotColor} 1px, transparent 1px), linear-gradient(90deg, ${dotColor} 1px, transparent 1px)` :
+            undefined,
+          backgroundSize: gridStyle !== "off" ? (gridStyle === "lines" ? "44px 44px" : "22px 22px") : undefined,
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -103,9 +113,25 @@ export function CanvasView() {
           <span className="zpct">{Math.round(zoom * 100)}%</span>
           <button title="Zoom in" onClick={() => setZoom(zoom + 0.1)}><Plus size={18} strokeWidth={1.8} /></button>
           <span className="zdiv" />
-          <button className={gridOn ? "on" : ""} title="Toggle grid" aria-pressed={gridOn} onClick={() => setGridOn(!gridOn)}>
-            <LayoutGrid size={17} strokeWidth={1.8} />
-          </button>
+          <div ref={gridRef} style={{ position: "relative", display: "flex" }}>
+            <button className={gridStyle !== "off" ? "on" : ""} title="Grid style" aria-haspopup="menu" aria-expanded={gridPop}
+              onClick={() => setGridPop(!gridPop)}>
+              <LayoutGrid size={17} strokeWidth={1.8} />
+            </button>
+            {gridPop && (
+              <div className="gridpop" role="menu">
+                <button className={gridStyle === "dots" ? "on" : ""} onClick={() => { setGridStyle("dots"); setGridPop(false); }}>
+                  <Grip size={15} strokeWidth={1.8} /> Dots
+                </button>
+                <button className={gridStyle === "lines" ? "on" : ""} onClick={() => { setGridStyle("lines"); setGridPop(false); }}>
+                  <AlignJustify size={15} strokeWidth={1.8} /> Lines
+                </button>
+                <button className={gridStyle === "off" ? "on" : ""} onClick={() => { setGridStyle("off"); setGridPop(false); }}>
+                  <Square size={15} strokeWidth={1.8} /> Off
+                </button>
+              </div>
+            )}
+          </div>
           <span className="zdiv" />
           {CANVAS_BGS.map((b) => (
             <button key={b.id} className={`bgdot${cfg.canvas === b.id ? " on" : ""}`} title={`Canvas: ${b.name}`}

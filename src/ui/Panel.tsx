@@ -1,22 +1,33 @@
-import { useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Shuffle, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, ExternalLink, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, ExternalLink, RotateCcw } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, defaultStates } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, defaultStates } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { searchIcons, iconInner } from "@/generator/icons";
+import { ensureFont } from "@/generator/fonts";
+
+/* Rail buttons isolate their section group in the panel. Click again to show all. */
+const GROUPS: Record<string, string[]> = {
+  style: ["style", "surface", "bevel", "lighting", "shadow", "transparency", "mapping"],
+  type: ["typography", "content"],
+  states: ["state", "states"],
+  icons: [],
+};
 
 export function Rail() {
-  const { open, toggle } = useGen();
+  const { sectionFilter, setSectionFilter } = useGen();
   const items = [
-    { id: "style", Icon: Layers, label: "Style" },
-    { id: "content", Icon: Type, label: "Content" },
+    { id: "style", Icon: Layers, label: "Style & material" },
+    { id: "type", Icon: Type, label: "Typography & content" },
     { id: "states", Icon: LayoutGrid, label: "States" },
     { id: "icons", Icon: Search, label: "Icon library" },
   ];
   return (
     <nav className="rail" aria-label="Sections">
       {items.map(({ id, Icon, label }) => (
-        <button key={id} className={open[id] ? "on" : ""} title={label} aria-label={label} onClick={() => toggle(id)}>
+        <button key={id} className={sectionFilter === id ? "on" : ""} title={label} aria-label={label}
+          aria-pressed={sectionFilter === id}
+          onClick={() => setSectionFilter(sectionFilter === id ? null : id)}>
           <Icon size={22} strokeWidth={1.7} />
         </button>
       ))}
@@ -30,8 +41,10 @@ export function Rail() {
 function Section({ id, title, summary, right, children }: {
   id: string; title: React.ReactNode; summary?: React.ReactNode; right?: React.ReactNode; children?: React.ReactNode;
 }) {
-  const { open, toggle } = useGen();
-  const isOpen = !!open[id];
+  const { open, toggle, sectionFilter } = useGen();
+  if (sectionFilter && sectionFilter !== "icons" && !GROUPS[sectionFilter]?.includes(id)) return null;
+  if (sectionFilter === "icons") return null;
+  const isOpen = !!open[id] || !!sectionFilter; // isolating a group opens its sections
   return (
     <section className="sec">
       <div className="sec-head" onClick={() => toggle(id)} role="button" aria-expanded={isOpen} tabIndex={0}
@@ -85,20 +98,21 @@ function AngleDial({ value, onChange }: { value: number; onChange: (v: number) =
 const STATE_LABEL: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, selectedState, setSelectedState } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter } = useGen();
   const [iconQuery, setIconQuery] = useState("");
-  const results = useMemo(() => searchIcons(iconQuery, 18), [iconQuery]);
+  const results = useMemo(() => searchIcons(iconQuery, sectionFilter === "icons" ? 48 : 18), [iconQuery, sectionFilter]);
   const presentRoles = EFFECT_ROLES.filter((r) => cfg.effects[r] !== undefined);
   const missingRoles = EFFECT_ROLES.filter((r) => cfg.effects[r] === undefined);
   const mapStops = presentRoles.map((r) => cfg.effects[r]!) as string[];
   const mapBar = mapStops.length > 1 ? `linear-gradient(90deg, ${mapStops.join(", ")})` : mapStops[0] ?? "#ddd";
   const adj = cfg.states[selectedState];
+  const showIconSearch = sectionFilter === null || sectionFilter === "icons";
+  useEffect(() => { ensureFont(cfg.type.font); }, [cfg.type.font]);
 
   return (
     <aside className="panel">
-      {/* ── State (edits apply to the selected state only) ──── */}
-      <Section id="state" title="State"
-        right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
+      {/* ── State ─────────────────────────────────────────── */}
+      <Section id="state" title="State" right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
         <div className="segmini" role="radiogroup" aria-label="State being edited">
           {STATE_NAMES.map((s) => (
             <button key={s} className={selectedState === s ? "on" : ""} role="radio" aria-checked={selectedState === s}
@@ -115,8 +129,9 @@ export function Panel() {
         </button>
       </Section>
 
-      {/* ── Style ─────────────────────────────────────────── */}
-      <Section id="style" title={<>Style <em className="titnote">preset (collection)</em></>}>
+      {/* ── Style (preset only — colors live in Color Mapping) ── */}
+      <Section id="style" title={<>Style <em className="titnote">preset (collection)</em></>}
+        summary={<span className="mapbar" style={{ background: mapBar }} />}>
         <label className="fieldbox" style={{ minWidth: 0 }}>
           <span className="fl">Style preset</span>
           <select value={cfg.presetId} onChange={(e) => setPreset(e.target.value)} aria-label="Style preset">
@@ -124,27 +139,42 @@ export function Panel() {
           </select>
           <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
         </label>
-        <div>
-          <div className="sublabel">Effect colors <em>(component only)</em></div>
-          <div className="chips">
-            {presentRoles.map((role) => (
-              <span className="chip" key={role}>
-                <span className="chipwell" style={{ background: cfg.effects[role] }}>
-                  <input type="color" value={cfg.effects[role]} aria-label={`${role} color`}
-                    onChange={(e) => update((c) => { c.effects[role] = e.target.value; })} />
-                </span>
-                <span className="chiplabel">{role}</span>
+      </Section>
+
+      {/* ── Color Mapping — THE color editor ──────────────── */}
+      <Section id="mapping" title="Color Mapping"
+        right={
+          <span className="inlinectl" onClick={(e) => e.stopPropagation()}>
+            <button className="chipbtn" title="Randomize colors" aria-label="Randomize colors" onClick={randomizeColors}>
+              <Dices size={14} strokeWidth={2} />
+            </button>
+          </span>
+        }
+        summary={<span className="mapbar" style={{ background: mapBar }} />}>
+        <span className="mapbar wide" style={{ background: mapBar }} />
+        <div className="maplist">
+          {presentRoles.map((r) => (
+            <div className="maprow" key={r}>
+              <span className="chipwell sm" style={{ background: cfg.effects[r] }}>
+                <input type="color" value={cfg.effects[r]} aria-label={`${r} color`}
+                  onChange={(e) => update((c) => { c.effects[r] = e.target.value; })} />
               </span>
-            ))}
-            <button className="chipbtn" disabled={missingRoles.length === 0} title={missingRoles.length ? `Add ${missingRoles[0]}` : "All effects present"}
-              onClick={() => update((c) => { c.effects[missingRoles[0]] = PRESETS.find((p) => p.id === c.presetId)?.effects[missingRoles[0]] ?? "#888888"; })}>
-              <Plus size={14} strokeWidth={2} />
-            </button>
-            <button className="chipbtn" disabled={presentRoles.length <= 1} title="Remove last effect color"
-              onClick={() => update((c) => { delete c.effects[presentRoles[presentRoles.length - 1]]; })}>
-              <Minus size={14} strokeWidth={2} />
-            </button>
-          </div>
+              <span className="mr-role">{r}</span>
+              <ChevronRight size={12} strokeWidth={2} style={{ color: "var(--ink3)" }} />
+              <span className="mr-hint">{ROLE_HINT[r]}</span>
+            </div>
+          ))}
+        </div>
+        <div className="chips" style={{ gap: 8 }}>
+          <button className="chipbtn" disabled={missingRoles.length === 0} title={missingRoles.length ? `Add ${missingRoles[0]}` : "All effects present"}
+            onClick={() => update((c) => { c.effects[missingRoles[0]] = PRESETS.find((p) => p.id === c.presetId)?.effects[missingRoles[0]] ?? "#888888"; })}>
+            <Plus size={14} strokeWidth={2} />
+          </button>
+          <button className="chipbtn" disabled={presentRoles.length <= 1} title="Remove last effect color"
+            onClick={() => update((c) => { delete c.effects[presentRoles[presentRoles.length - 1]]; })}>
+            <Minus size={14} strokeWidth={2} />
+          </button>
+          <span className="helper" style={{ alignSelf: "center" }}>component-only · never the shell</span>
         </div>
       </Section>
 
@@ -178,7 +208,7 @@ export function Panel() {
         <Slider label="Edge softness" value={cfg.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
       </Section>
 
-      {/* ── Lighting (one key light) ──────────────────────── */}
+      {/* ── Lighting ──────────────────────────────────────── */}
       <Section id="lighting" title="Lighting">
         <div className="ctl">
           <label>Angle</label>
@@ -199,7 +229,7 @@ export function Panel() {
         <Slider label="Distance" value={cfg.shadow.distance} min={0} max={48} unit="px" onChange={(v) => update((c) => { c.shadow.distance = v; })} />
         <Slider label="Blur" value={cfg.shadow.blur} min={0} max={60} unit="px" onChange={(v) => update((c) => { c.shadow.blur = v; })} />
         <Slider label="Opacity" value={cfg.shadow.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.shadow.opacity = v; })} />
-        <div className="helper">Shadow color comes from the Shadow chip; direction follows the light.</div>
+        <div className="helper">Shadow color comes from the Shadow well; direction follows the light.</div>
       </Section>
 
       {/* ── Transparency ──────────────────────────────────── */}
@@ -209,23 +239,18 @@ export function Panel() {
         <Slider label="Text & icon" value={cfg.transparency.content} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.content = v; })} />
       </Section>
 
-      {/* ── Color Mapping (editable) ──────────────────────── */}
-      <Section id="mapping" title="Color Mapping" right={<span className="mapbar" style={{ background: mapBar }} />}>
-        <span className="mapbar wide" style={{ background: mapBar }} />
-        <div className="maplist">
-          {presentRoles.map((r) => (
-            <div className="maprow" key={r}>
-              <span className="chipwell sm" style={{ background: cfg.effects[r] }}>
-                <input type="color" value={cfg.effects[r]} aria-label={`${r} color`}
-                  onChange={(e) => update((c) => { c.effects[r] = e.target.value; })} />
-              </span>
-              <span className="mr-role">{r}</span>
-              <ChevronRight size={12} strokeWidth={2} style={{ color: "var(--ink3)" }} />
-              <span className="mr-hint">{ROLE_HINT[r]}</span>
-            </div>
-          ))}
-        </div>
-        <div className="helper">Click any well to edit — same colors as the chips above.</div>
+      {/* ── Typography ────────────────────────────────────── */}
+      <Section id="typography" title="Typography" summary={<span>{cfg.type.font}</span>}>
+        <label className="fieldbox" style={{ minWidth: 0 }}>
+          <span className="fl">Font</span>
+          <select value={cfg.type.font} aria-label="Font"
+            onChange={(e) => { const f = e.target.value; ensureFont(f); update((c) => { c.type.font = f; }); }}>
+            {GAME_FONTS.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
+          </select>
+          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+        </label>
+        <Slider label="Size" value={cfg.type.size} min={28} max={76} unit="px" onChange={(v) => update((c) => { c.type.size = v; })} />
+        <div className="helper">Popular game-UI faces, loaded from Google Fonts on demand. The button re-fits itself to the type.</div>
       </Section>
 
       {/* ── Content ───────────────────────────────────────── */}
@@ -254,7 +279,7 @@ export function Panel() {
         </div>
       </Section>
 
-      {/* ── States shown on canvas ────────────────────────── */}
+      {/* ── States shown ──────────────────────────────────── */}
       <Section id="states" title="States shown" summary={<span>{1 + Object.values(cfg.visible).filter(Boolean).length} states</span>}>
         <label className="check"><input type="checkbox" checked disabled /> Default (hero)</label>
         {(["hover", "pressed", "disabled"] as const).map((s) => (
@@ -265,28 +290,32 @@ export function Panel() {
         ))}
       </Section>
 
-      <button className="randbtn" onClick={randomize}>
-        <Shuffle size={18} strokeWidth={1.9} /> Randomize
-      </button>
+      {!sectionFilter && (
+        <button className="randbtn" onClick={randomize}>
+          <Dices size={18} strokeWidth={1.9} /> Randomize
+        </button>
+      )}
 
       {/* ── Icon search ───────────────────────────────────── */}
-      <div className="iconsearch">
-        <div className="searchbox">
-          <Search size={15} strokeWidth={2} />
-          <input value={iconQuery} placeholder="Search icons..." aria-label="Search icons"
-            onChange={(e) => setIconQuery(e.target.value)} />
+      {showIconSearch && (
+        <div className="iconsearch">
+          <div className="searchbox">
+            <Search size={15} strokeWidth={2} />
+            <input value={iconQuery} placeholder="Search icons..." aria-label="Search icons"
+              onChange={(e) => setIconQuery(e.target.value)} />
+          </div>
+          <div className="icongrid">
+            {results.map((name) => (
+              <button key={name} className={cfg.content.icon === name ? "on" : ""} title={name}
+                onClick={() => update((c) => { c.content.icon = name; if (c.content.placement === "none") c.content.placement = "right"; })}
+                dangerouslySetInnerHTML={{ __html: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconInner(name)}</svg>` }} />
+            ))}
+          </div>
+          <a className="iconlink" href="https://lucide.dev/icons" target="_blank" rel="noreferrer">
+            Explore the full icon set <ExternalLink size={13} strokeWidth={2} />
+          </a>
         </div>
-        <div className="icongrid">
-          {results.map((name) => (
-            <button key={name} className={cfg.content.icon === name ? "on" : ""} title={name}
-              onClick={() => update((c) => { c.content.icon = name; if (c.content.placement === "none") c.content.placement = "right"; })}
-              dangerouslySetInnerHTML={{ __html: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconInner(name)}</svg>` }} />
-          ))}
-        </div>
-        <a className="iconlink" href="https://lucide.dev/icons" target="_blank" rel="noreferrer">
-          Explore the full icon set <ExternalLink size={13} strokeWidth={2} />
-        </a>
-      </div>
+      )}
     </aside>
   );
 }

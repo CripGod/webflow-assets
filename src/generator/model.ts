@@ -33,6 +33,27 @@ export interface StateAdjust {
 
 export interface TextFx { emboss: boolean; glow: boolean; outline: boolean; shadow: boolean }
 
+/** Popular game-UI faces from Google Fonts. `factor` ≈ average glyph advance
+ *  (em) used for auto-width; `css` is the families query for fonts.googleapis. */
+export const GAME_FONTS: { name: string; css: string | null; factor: number }[] = [
+  { name: "Inter", css: null, factor: 0.6 },
+  { name: "Bangers", css: "Bangers", factor: 0.5 },
+  { name: "Luckiest Guy", css: "Luckiest+Guy", factor: 0.58 },
+  { name: "Press Start 2P", css: "Press+Start+2P", factor: 1.05 },
+  { name: "Bungee", css: "Bungee", factor: 0.72 },
+  { name: "Righteous", css: "Righteous", factor: 0.58 },
+  { name: "Russo One", css: "Russo+One", factor: 0.64 },
+  { name: "Black Ops One", css: "Black+Ops+One", factor: 0.7 },
+  { name: "Orbitron", css: "Orbitron:wght@700", factor: 0.74 },
+  { name: "Cinzel", css: "Cinzel:wght@700", factor: 0.62 },
+  { name: "Creepster", css: "Creepster", factor: 0.48 },
+];
+export function fontByName(name: string) {
+  return GAME_FONTS.find((f) => f.name === name) ?? GAME_FONTS[0];
+}
+
+export type GridStyle = "dots" | "lines" | "off";
+
 export interface GenConfig {
   presetId: string;
   shape: Shape;
@@ -43,6 +64,7 @@ export interface GenConfig {
   shadow: { distance: number; blur: number; opacity: number };
   transparency: { frame: number; interior: number; content: number };
   content: { label: string; icon: string; placement: "left" | "right" | "none"; fx: TextFx };
+  type: { font: string; size: number };
   states: Record<GenStateName, StateAdjust>;
   visible: Record<Exclude<GenStateName, "default">, boolean>;
   canvas: CanvasBg;
@@ -92,6 +114,7 @@ export function defaultConfig(): GenConfig {
     shadow: { distance: 14, blur: 18, opacity: 45 },
     transparency: { frame: 100, interior: 100, content: 100 },
     content: { label: "PLAY", icon: "Play", placement: "right", fx: { emboss: false, glow: false, outline: false, shadow: false } },
+    type: { font: "Inter", size: 52 },
     states: defaultStates(),
     visible: { hover: true, pressed: true, disabled: true },
     canvas: "#F4F5F7",

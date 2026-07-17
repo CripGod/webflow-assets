@@ -87,9 +87,10 @@ button { font-family: inherit; color: inherit; }
 .rail .gap { flex: 1; }
 
 /* panel */
-.panel { border-right: 1px solid var(--line); overflow-y: auto; padding: 10px 26px 26px; }
-.panel::-webkit-scrollbar { width: 8px; }
+.panel { border-right: 1px solid var(--line); overflow-y: auto; padding: 10px 14px 26px 26px; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.panel::-webkit-scrollbar { width: 6px; }
 .panel::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 8px; }
+.panel::-webkit-scrollbar-track { background: transparent; }
 .sec { border-bottom: 1px solid var(--line); padding: 18px 0; }
 .sec-head { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
 .sec-head h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; flex: none; }
@@ -111,7 +112,7 @@ button { font-family: inherit; color: inherit; }
 .mini-swatch { width: 26px; height: 26px; border-radius: 7px; border: 1px solid rgba(0,0,0,.10); }
 
 .ctl { display: flex; align-items: center; gap: 12px; }
-.ctl label { font-size: 12.5px; font-weight: 500; color: var(--ink2); width: 112px; flex: none; white-space: nowrap; }
+.ctl label { font-size: 12.5px; font-weight: 500; color: var(--ink2); width: 98px; flex: none; white-space: nowrap; }
 .ctl .val { width: 40px; text-align: right; font-size: 12.5px; color: var(--ink2); font-variant-numeric: tabular-nums; flex: none; }
 input[type="range"] { -webkit-appearance: none; appearance: none; flex: 1; height: 3px; background: var(--line2); border-radius: 3px; cursor: pointer; }
 input[type="range"]::-webkit-slider-thumb {
@@ -306,5 +307,11 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .editing-note { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; text-align: center; margin-top: 14px; }
 .stack .scard.clickable { text-align: left; cursor: pointer; font: inherit; transition: border-color .15s, transform .12s; }
 .stack .scard.clickable:hover { border-color: var(--ink3); transform: translateY(-1px); }
+
+/* ── v8: grid popover ── */
+.gridpop { position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; z-index: 40; min-width: 120px; }
+.gridpop button { display: flex; width: 100%; align-items: center; gap: 9px; border: 0; background: none; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 500; cursor: pointer; color: var(--ink); white-space: nowrap; }
+.gridpop button:hover { background: var(--soft); }
+.gridpop button.on { background: var(--soft); font-weight: 700; }
 
 @media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; } }
