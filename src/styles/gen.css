@@ -333,3 +333,23 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .btnrow .randbtn.kit.on { background: #17181c; border-color: #17181c; color: #fff; }
 .sec .inlinectl input[type="checkbox"] { width: 15px; height: 15px; accent-color: #17181c; cursor: pointer; }
 .check input[type="checkbox"] { accent-color: #17181c; }
+
+/* ── v11: resizable inspector, account stub, fx peek, add-font ── */
+.panel-resize {
+  cursor: col-resize; background: transparent; position: relative; z-index: 5;
+  margin-left: -3px; touch-action: none;
+}
+.panel-resize:hover, .panel-resize:active { background: rgba(24, 28, 48, 0.08); }
+.acct {
+  width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line2);
+  background: #fff; display: grid; place-items: center; color: var(--ink2); cursor: pointer;
+}
+.acct:hover { background: var(--soft); color: var(--ink); }
+.menu-note { padding: 8px 12px 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); }
+.menu-pop button:disabled { opacity: 0.5; cursor: default; }
+.fxhead { display: flex; align-items: center; gap: 6px; }
+.fxpeek { border: 0; background: none; color: var(--ink3); cursor: pointer; display: flex; padding: 2px; }
+.fxpeek:hover { color: var(--ink); }
+.fxsub.dim { opacity: 0.55; }
+.addfont { display: flex; gap: 8px; align-items: center; }
+.addfont .tinput { flex: 1; min-width: 0; }

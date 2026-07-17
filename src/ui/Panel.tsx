@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, ICONS_ENABLED, defaultStates, applyTextPreset, darken } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -10,7 +10,7 @@ import { ensureFont } from "@/generator/fonts";
    Order mirrors how the object is understood: style → color → structure →
    surface → light → reflections → depth → advanced. */
 const GROUPS: Record<string, string[]> = {
-  style: ["style", "mapping", "structure", "surface", "lighting", "gloss", "depth", "advanced"],
+  style: ["shape", "mapping", "structure", "surface", "lighting", "gloss", "glow", "depth"],
   type: ["typography"],
   states: ["state", "states"],
   icons: ["icon"],
@@ -89,10 +89,21 @@ function Well({ label, value, onChange }: { label: string; value: string; onChan
 function FxToggle({ label, on, onToggle, children }: {
   label: string; on: boolean; onToggle: (v: boolean) => void; children?: React.ReactNode;
 }) {
+  // Effects that are on show their controls; off effects can still be peeked
+  // open with the caret so nothing feels hidden.
+  const [peek, setPeek] = useState(false);
+  const expanded = on || peek;
   return (
     <div className="fxblock">
-      <button className={`fxchip${on ? " on" : ""}`} aria-pressed={on} onClick={() => onToggle(!on)}>{label}</button>
-      {on && children && <div className="fxsub">{children}</div>}
+      <span className="fxhead">
+        <button className={`fxchip${on ? " on" : ""}`} aria-pressed={on} onClick={() => onToggle(!on)}>{label}</button>
+        {!on && children && (
+          <button className="fxpeek" aria-label={`${peek ? "Hide" : "Show"} ${label} controls`} onClick={() => setPeek(!peek)}>
+            <ChevronDown size={14} strokeWidth={2} style={{ transform: peek ? "rotate(180deg)" : undefined }} />
+          </button>
+        )}
+      </span>
+      {expanded && children && <div className={`fxsub${on ? "" : " dim"}`}>{children}</div>}
     </div>
   );
 }
@@ -155,6 +166,20 @@ export function Panel() {
   const palette = { dark: darken(cfg.effects.Bevel ?? "#0E9CC9", 0.5), glow: cfg.effects.Glow ?? "#8FF0FF" };
   useEffect(() => { ensureFont(cfg.type.font); }, [cfg.type.font]);
 
+  const [fontDraft, setFontDraft] = useState("");
+  const addFont = () => {
+    const name = fontDraft.trim();
+    if (!name) return;
+    registerCustomFont(name);
+    ensureFont(name);
+    update((c) => {
+      if (!c.type.customFonts) c.type.customFonts = [];
+      if (!c.type.customFonts.includes(name)) c.type.customFonts.push(name);
+      c.type.font = name;
+    });
+    setFontDraft("");
+  };
+
   return (
     <aside className="panel">
       {/* ── State (which state the sliders shape) ─────────── */}
@@ -178,20 +203,28 @@ export function Panel() {
         <button className="resetstate" onClick={() => update((c) => { c.states[selectedState] = defaultStates()[selectedState]; })}>
           <RotateCcw size={13} strokeWidth={2} /> Reset {STATE_LABEL[selectedState]}
         </button>
+        <button className="resetstate" title="Copy the Default state's treatment onto Hover, Pressed and Disabled — a clean base after exploring"
+          onClick={() => update((c) => {
+            c.states.hover = { ...c.states.default };
+            c.states.pressed = { ...c.states.default };
+            c.states.disabled = { ...c.states.default };
+          })}>
+          <Copy size={13} strokeWidth={2} /> Apply Default to all states
+        </button>
       </Section>
 
-      {/* ── A · Style ─────────────────────────────────────── */}
-      <Section id="style" title="Style" summary={<span className="mapbar" style={{ background: mapBar }} />}>
+      {/* ── A · Shape (the candy construction) ────────────── */}
+      <Section id="shape" title="Shape" summary={<span className="mapbar" style={{ background: mapBar }} />}>
         <label className="fieldbox" style={{ minWidth: 0 }}>
-          <span className="fl">Style preset</span>
-          <select value={cfg.presetId} onChange={(e) => setPreset(e.target.value)} aria-label="Style preset">
+          <span className="fl">Shape preset</span>
+          <select value={cfg.presetId} onChange={(e) => setPreset(e.target.value)} aria-label="Shape preset">
             {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
         </label>
         <div className="helper">Each preset is a different candy construction — shell, gloss and depth, not just a palette.</div>
         <button className="resetstate" onClick={randomize}>
-          <Dices size={14} strokeWidth={2} /> Randomize style
+          <Dices size={14} strokeWidth={2} /> Randomize
         </button>
       </Section>
 
@@ -234,19 +267,20 @@ export function Panel() {
 
       {/* ── C · Structure — the object's build ────────────── */}
       <Section id="structure" title="Structure">
-        <div className="ctl">
-          <label>Shape</label>
-          <div className="segmini" role="radiogroup">
-            {(["chamfer", "pill", "sharp", "round"] as const).map((s) => (
-              <button key={s} className={cfg.shape === s ? "on" : ""} role="radio" aria-checked={cfg.shape === s}
-                onClick={() => update((c) => { c.shape = s; })}>{s[0].toUpperCase() + s.slice(1)}</button>
-            ))}
-          </div>
-        </div>
+        <label className="fieldbox" style={{ minWidth: 0 }}>
+          <span className="fl">Silhouette</span>
+          <select value={cfg.shape} aria-label="Silhouette"
+            onChange={(e) => update((c) => { c.shape = e.target.value as typeof cfg.shape; })}>
+            {SHAPES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+        </label>
         <Slider label="Corner softness" value={cfg.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
         <Slider label="Wall width" value={cfg.bevel.width} min={4} max={26} unit="px" onChange={(v) => update((c) => { c.bevel.width = v; })} />
         <Slider label="Rim width" value={C.rim.width} min={0} max={10} unit="px" onChange={(v) => update((c) => { c.candy.rim.width = v; })} />
         <Slider label="Rim brightness" value={C.rim.brightness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.rim.brightness = v; })} />
+        <Slider label="Inner edge" value={C.innerEdge.strength} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerEdge.strength = v; })} />
+        <Slider label="Edge width" value={C.innerEdge.width} min={0} max={6} unit="px" onChange={(v) => update((c) => { c.candy.innerEdge.width = v; })} />
         <Slider label="Extrusion depth" value={C.extrusion.depth} min={0} max={24} unit="px" onChange={(v) => update((c) => { c.candy.extrusion.depth = v; })} />
       </Section>
 
@@ -263,6 +297,43 @@ export function Panel() {
         }>
         <Slider label="Face contrast" value={cfg.face.contrast} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.face.contrast = v; })} />
         <Slider label="Gradient mid" value={cfg.face.midpoint} min={10} max={90} unit="%" onChange={(v) => update((c) => { c.face.midpoint = v; })} />
+
+        <div className="sublabel">Pattern</div>
+        <label className="fieldbox" style={{ minWidth: 0 }}>
+          <span className="fl">Pattern</span>
+          <select value={C.pattern.type} aria-label="Pattern type"
+            onChange={(e) => update((c) => { c.candy.pattern.type = e.target.value as typeof C.pattern.type; })}>
+            {PATTERN_TYPES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+        </label>
+        {C.pattern.type !== "none" && (<>
+          <Slider label="Scale" value={C.pattern.scale} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.pattern.scale = v; })} />
+          {C.pattern.type === "stripes" && (
+            <Slider label="Angle" value={C.pattern.angle} min={0} max={180} unit="°" onChange={(v) => update((c) => { c.candy.pattern.angle = v; })} />
+          )}
+          <Slider label="Opacity" value={C.pattern.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.pattern.opacity = v; })} />
+          <label className="check"><input type="checkbox" checked={C.pattern.color === null}
+            onChange={(e) => update((c) => { c.candy.pattern.color = e.target.checked ? null : (c.effects.Bevel ?? "#0E9CC9"); })} /> Tone-on-tone (auto)</label>
+          {C.pattern.color !== null && (
+            <Well label="Pattern color" value={C.pattern.color} onChange={(v) => update((c) => { c.candy.pattern.color = v; })} />
+          )}
+        </>)}
+
+        <div className="sublabel">Inner shade</div>
+        <label className="check"><input type="checkbox" checked={C.blob.on}
+          onChange={(e) => update((c) => { c.candy.blob.on = e.target.checked; })} /> Organic dark blob</label>
+        {C.blob.on && (<>
+          <Slider label="Opacity" value={C.blob.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.blob.opacity = v; })} />
+          <Slider label="Size" value={C.blob.size} min={20} max={120} unit="%" onChange={(v) => update((c) => { c.candy.blob.size = v; })} />
+          <Slider label="Position X" value={C.blob.x} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.blob.x = v; })} />
+          <Slider label="Position Y" value={C.blob.y} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.blob.y = v; })} />
+        </>)}
+
+        <div className="sublabel">Micro grain</div>
+        <Slider label="Amount" value={C.texture.amount} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.amount = v; })} />
+        <Slider label="Grain size" value={C.texture.scale} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.scale = v; })} />
+
         <div className="sublabel">Transparency</div>
         <Slider label="Frame" value={cfg.transparency.frame} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.frame = v; })} />
         <Slider label="Interior" value={cfg.transparency.interior} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.interior = v; })} />
@@ -339,6 +410,9 @@ export function Panel() {
           <Slider label="Shape" value={C.specular.stretch} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.stretch = v; })} />
           <Slider label="Intensity" value={C.specular.intensity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.intensity = v; })} />
           <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
+          {(C.specular.mode === "dual" || C.specular.mode === "anime") && (
+            <Slider label="Spacing" value={C.specular.gap} min={50} max={300} unit="%" onChange={(v) => update((c) => { c.candy.specular.gap = v; })} />
+          )}
           <Slider label="Angle" value={C.specular.angle} min={-80} max={80} unit="°" onChange={(v) => update((c) => { c.candy.specular.angle = v; })} />
           <Slider label="Nudge X" value={C.specular.ox} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.ox = v; })} />
           <Slider label="Nudge Y" value={C.specular.oy} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.oy = v; })} />
@@ -346,6 +420,22 @@ export function Panel() {
         <div className="sublabel">Lower bloom</div>
         <Slider label="Bloom" value={C.bloom.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.bloom.opacity = v; })} />
         <Slider label="Bloom size" value={C.bloom.size} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.bloom.size = v; })} />
+      </Section>
+
+      {/* ── F2 · Glow — light living inside the candy ─────── */}
+      <Section id="glow" title="Glow" summary={<span>{C.innerGlow.opacity}%</span>}>
+        <div className="sublabel">Inner glow</div>
+        <Slider label="Opacity" value={C.innerGlow.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerGlow.opacity = v; })} />
+        <Slider label="Spread" value={C.innerGlow.size} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerGlow.size = v; })} />
+        <label className="check"><input type="checkbox" checked={C.innerGlow.color === null}
+          onChange={(e) => update((c) => { c.candy.innerGlow.color = e.target.checked ? null : (c.effects.Glow ?? "#8FF0FF"); })} /> Color from Color map</label>
+        {C.innerGlow.color !== null && (
+          <Well label="Glow color" value={C.innerGlow.color} onChange={(v) => update((c) => { c.candy.innerGlow.color = v; })} />
+        )}
+        <div className="helper">Colored light inside the candy, rising from the unlit side.</div>
+        <div className="sublabel">Base glow</div>
+        <Slider label="Base glow" value={C.extrusion.glow} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.extrusion.glow = v; })} />
+        <div className="helper">Light caught in the middle of the body, below the lower bloom. Uses the inner-glow color.</div>
       </Section>
 
       {/* ── G · Depth & Shadow ────────────────────────────── */}
@@ -369,9 +459,19 @@ export function Panel() {
           <select value={T2.font} aria-label="Font"
             onChange={(e) => { const f = e.target.value; ensureFont(f); update((c) => { c.type.font = f; }); }}>
             {GAME_FONTS.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
+            {(T2.customFonts ?? []).map((f) => <option key={f} value={f}>{f} ★</option>)}
           </select>
           <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
         </label>
+        <div className="addfont">
+          <input className="tinput" value={fontDraft} placeholder="Add Google Font — exact family name" aria-label="Add Google Font"
+            onChange={(e) => setFontDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") addFont(); }} />
+          <button className="chipbtn" title="Add font" aria-label="Add font" onClick={addFont} disabled={!fontDraft.trim()}>
+            <Plus size={14} strokeWidth={2} />
+          </button>
+        </div>
+        <div className="helper">Paste the family name exactly as it appears on fonts.google.com (e.g. “Titan One”).</div>
         <Slider label="Size" value={T2.size} min={28} max={76} unit="px" onChange={(v) => update((c) => { c.type.size = v; })} />
         <Slider label="Weight" value={T2.weight} min={400} max={900} step={100} unit="" onChange={(v) => update((c) => { c.type.weight = v; })} />
         <Slider label="Spacing" value={T2.spacing} min={-5} max={20} unit="" onChange={(v) => update((c) => { c.type.spacing = v; })} />
@@ -396,6 +496,7 @@ export function Panel() {
         </div>
         {T2.fillMode !== "auto" && <Well label={T2.fillMode === "gradient" ? "Fill top" : "Fill"} value={T2.fill} onChange={(v) => update((c) => { c.type.fill = v; })} />}
         {T2.fillMode === "gradient" && <Well label="Fill bottom" value={T2.fill2} onChange={(v) => update((c) => { c.type.fill2 = v; })} />}
+        <Slider label="Fill opacity" value={T2.fillOpacity ?? 100} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.fillOpacity = v; })} />
 
         <label className="fieldbox" style={{ minWidth: 0 }}>
           <span className="fl">Text style preset</span>
@@ -418,9 +519,10 @@ export function Panel() {
           <Slider label="Blur" value={T2.shadow.blur} min={0} max={12} step={0.5} unit="px" onChange={(v) => update((c) => { c.type.shadow.blur = v; })} />
           <Slider label="Opacity" value={T2.shadow.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.shadow.opacity = v; })} />
         </FxToggle>
-        <FxToggle label="Emboss" on={T2.emboss.on} onToggle={(v) => update((c) => { c.type.emboss.on = v; })}>
+        <FxToggle label="Boss / Deboss" on={T2.emboss.on} onToggle={(v) => update((c) => { c.type.emboss.on = v; })}>
           <Slider label="Depth" value={T2.emboss.strength} min={-100} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.strength = v; })} />
-          <div className="helper">Negative depth engraves (inner bevel).</div>
+          <Slider label="Softness" value={T2.emboss.softness ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.softness = v; })} />
+          <div className="helper">Positive bosses, negative debosses. High softness + low fill opacity reads as frosted glass — try the Glass preset.</div>
         </FxToggle>
         <FxToggle label="Glow" on={T2.glow.on} onToggle={(v) => update((c) => { c.type.glow.on = v; })}>
           <Well label="Color" value={T2.glow.color} onChange={(v) => update((c) => { c.type.glow.color = v; })} />
@@ -429,24 +531,6 @@ export function Panel() {
         </FxToggle>
       </Section>
 
-      {/* ── I · Advanced ──────────────────────────────────── */}
-      <Section id="advanced" title="Advanced" summary={<span>glow · edge · noise</span>}>
-        <div className="sublabel">Inner glow</div>
-        <Slider label="Opacity" value={C.innerGlow.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerGlow.opacity = v; })} />
-        <Slider label="Spread" value={C.innerGlow.size} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerGlow.size = v; })} />
-        <label className="check"><input type="checkbox" checked={C.innerGlow.color === null}
-          onChange={(e) => update((c) => { c.candy.innerGlow.color = e.target.checked ? null : (c.effects.Glow ?? "#8FF0FF"); })} /> Color from Color map</label>
-        {C.innerGlow.color !== null && (
-          <Well label="Glow color" value={C.innerGlow.color} onChange={(v) => update((c) => { c.candy.innerGlow.color = v; })} />
-        )}
-        <div className="helper">Colored light inside the candy, rising from the unlit side.</div>
-        <div className="sublabel">Inner edge</div>
-        <Slider label="Strength" value={C.innerEdge.strength} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerEdge.strength = v; })} />
-        <Slider label="Edge width" value={C.innerEdge.width} min={0} max={6} unit="px" onChange={(v) => update((c) => { c.candy.innerEdge.width = v; })} />
-        <div className="sublabel">Micro texture</div>
-        <Slider label="Amount" value={C.texture.amount} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.amount = v; })} />
-        <Slider label="Scale" value={C.texture.scale} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.scale = v; })} />
-      </Section>
 
       {/* ── Icon (parked behind ICONS_ENABLED for this phase) ── */}
       {ICONS_ENABLED && (

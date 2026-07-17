@@ -83,3 +83,9 @@ ${cards}
 export function downloadHtml(cfg: GenConfig, name: string) {
   download(name, new Blob([buildHtml(cfg)], { type: "text/html" }));
 }
+
+/** Full settings as a portable JSON file — re-importable, and shareable as a
+ *  new default. */
+export function downloadSettings(cfg: GenConfig) {
+  download("ui-generator-settings.json", new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" }));
+}

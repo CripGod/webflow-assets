@@ -40,6 +40,19 @@ function roundRect(x: number, y: number, w: number, h: number, r: number): strin
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
   if (shape === "pill") return roundRect(x, y, w, h, h / 2);
   if (shape === "round") return roundRect(x, y, w, h, 10 + softness * 0.34);
+  if (shape === "shard") {
+    // Irregular angular cut — every corner carries a different chamfer, with
+    // long diagonals top-right and bottom-left for that kinetic card energy.
+    // Deterministic: the same proportions at every size.
+    const cTL = Math.min(20, h * 0.12), cTR = Math.min(52, h * 0.30);
+    const cBR = Math.min(16, h * 0.10), cBL = Math.min(42, h * 0.24);
+    const v: [number, number][] = [
+      [x + cTL, y], [x + w - cTR * 1.6, y], [x + w, y + cTR],
+      [x + w, y + h - cBR], [x + w - cBR, y + h],
+      [x + cBL * 1.5, y + h], [x, y + h - cBL], [x, y + cTL],
+    ];
+    return polyRounded(v, 1.5 + softness * 0.06);
+  }
   const cut = shape === "sharp" ? Math.min(34, h * 0.22) : Math.min(28, h * 0.17);
   const r = shape === "sharp" ? 1.5 : 3 + softness * 0.14;
   const v: [number, number][] = [
@@ -47,6 +60,13 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
     [x + w - cut, y + h], [x + cut, y + h], [x, y + h - cut], [x, y + cut],
   ];
   return polyRounded(v, r);
+}
+
+/** Five-point star sized into a pattern cell. */
+function starPath(cell: number): string {
+  const k = (cell * 0.66) / 24, ox = cell * 0.17, oy = cell * 0.17;
+  const pts = [[12, 2.2], [14.9, 8.6], [21.8, 9.2], [16.6, 13.9], [18.2, 20.8], [12, 17.2], [5.8, 20.8], [7.4, 13.9], [2.2, 9.2], [9.1, 8.6]];
+  return "M " + pts.map(([px, py]) => `${(ox + px * k).toFixed(1)} ${(oy + py * k).toFixed(1)}`).join(" L ") + " Z";
 }
 
 function effect(cfg: GenConfig, role: EffectRole): string {
@@ -126,7 +146,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const depth = C.extrusion.depth * K * (secondary ? 0.55 : 1);
   const visDepth = Math.max(0, depth * (pressed ? 0.4 : 1));
   const lift = adj.lift;
-  const vw = x * 2 + w, vh = y * 2 + h + Math.ceil(depth) + 26;
+  const vw = x * 2 + w, vh = y * 2 + h + Math.ceil(depth) + 40; // generous room so big shadows never clip
 
   const bw = (secondary ? Math.max(4, cfg.bevel.width * 0.7) : cfg.bevel.width) * K;
   const rimW = C.rim.width * K;
@@ -168,11 +188,25 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
      copies keep the silhouette continuous on soft corners. */
   const dk = C.extrusion.darkness / 100;
   const deepC = hexMix(darken(bevelC, clamp(0.24 + 0.34 * dk, 0, 0.8)), bevelC, 0.18);
+  // enough interpolated slices that the side stays a continuous wall even at
+  // maximum depth — no scalloping between the cap and the base
+  const nSlices = Math.max(2, Math.ceil(visDepth / 2.5));
+  const slices = Array.from({ length: nSlices }, (_, i) => {
+    const ty = (visDepth * (i + 1)) / nSlices;
+    const last = i === nSlices - 1;
+    return `<path d="${outer}" transform="translate(0 ${ty.toFixed(1)})" fill="url(#${id}ext)"${last ? ` stroke="${darken(deepC, 0.35)}" stroke-width="1"` : ""}/>`;
+  }).join("");
+  // base glow: light caught inside the body, centered under the face
+  const egC = C.innerGlow.color ? P(C.innerGlow.color) : glowC;
+  const egOp = (C.extrusion.glow / 100) * (disabled ? 0 : 1);
+  const baseGlow = egOp > 0.01 && visDepth > 1
+    ? `<g clip-path="url(#${id}ec)"><ellipse cx="${(x + w / 2).toFixed(1)}" cy="${(y + h + visDepth * 0.45).toFixed(1)}" rx="${(w * 0.32).toFixed(1)}" ry="${Math.max(8, visDepth * 1.1).toFixed(1)}" fill="url(#${id}eg)" opacity="${egOp.toFixed(2)}"/></g>`
+    : "";
   const extrusion = visDepth > 0.3
     ? `<g>
-        <path d="${outer}" transform="translate(0 ${(visDepth * 0.5).toFixed(1)})" fill="url(#${id}ext)"/>
-        <path d="${outer}" transform="translate(0 ${visDepth.toFixed(1)})" fill="url(#${id}ext)" stroke="${darken(deepC, 0.35)}" stroke-width="1"/>
+        ${slices}
         <path d="${outer}" transform="translate(0 ${visDepth.toFixed(1)})" fill="url(#${id}extv)"/>
+        ${baseGlow}
         <path d="${outer}" transform="translate(0 ${(visDepth - 0.8).toFixed(1)})" fill="none" stroke="${lighten(deepC, 0.38)}" stroke-width="1.2" opacity="0.45"/>
       </g>`
     : "";
@@ -192,6 +226,36 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const igC = C.innerGlow.color ? P(C.innerGlow.color) : glowC;
   const igOp = (C.innerGlow.opacity / 100) * (disabled ? 0 : 1);
   const igSize = clamp(C.innerGlow.size / 100, 0.05, 1);
+
+  /* pattern overlay — tone-on-tone by default, like printed candy wrap */
+  const PT = C.pattern;
+  const patC = PT.color ? P(PT.color) : darken(face, 0.2);
+  const patOp = (PT.type !== "none" ? PT.opacity / 100 : 0) * (disabled ? 0.5 : 1);
+  const ps = (8 + PT.scale * 0.9) * K;
+  let patternDef = "", patternUse = "";
+  if (patOp > 0.005) {
+    const rot = ` patternTransform="rotate(${PT.angle})"`;
+    const cell = `id="${id}pt" width="${ps.toFixed(1)}" height="${ps.toFixed(1)}" patternUnits="userSpaceOnUse"`;
+    if (PT.type === "stripes") patternDef = `<pattern ${cell}${rot}><rect width="${(ps / 2).toFixed(1)}" height="${ps.toFixed(1)}" fill="${patC}"/></pattern>`;
+    else if (PT.type === "dots") patternDef = `<pattern ${cell}${rot}><circle cx="${(ps / 2).toFixed(1)}" cy="${(ps / 2).toFixed(1)}" r="${(ps * 0.22).toFixed(1)}" fill="${patC}"/></pattern>`;
+    else if (PT.type === "stars") patternDef = `<pattern ${cell}${rot}><path d="${starPath(ps)}" fill="${patC}"/></pattern>`;
+    else if (PT.type === "checker") patternDef = `<pattern ${cell}${rot}><rect width="${(ps / 2).toFixed(1)}" height="${(ps / 2).toFixed(1)}" fill="${patC}"/><rect x="${(ps / 2).toFixed(1)}" y="${(ps / 2).toFixed(1)}" width="${(ps / 2).toFixed(1)}" height="${(ps / 2).toFixed(1)}" fill="${patC}"/></pattern>`;
+    if (patternDef) patternUse = `<rect x="${fx0 - 20}" y="${fy0 - 20}" width="${fw + 40}" height="${fh + 40}" fill="url(#${id}pt)" opacity="${patOp.toFixed(2)}"/>`;
+  }
+
+  /* organic inner shade — a bulbous dark blob deep in the candy */
+  const BL = C.blob;
+  const blobOp = BL.on ? (BL.opacity / 100) * (disabled ? 0.4 : 1) : 0;
+  const blobC = darken(face, 0.52);
+  const bbx = faceCx + (BL.x / 100) * fw * 0.4, bby = faceCy + (BL.y / 100) * fh * 0.5;
+  const bbs = BL.size / 100;
+  const blob = blobOp > 0.005
+    ? `<g opacity="${blobOp.toFixed(2)}" style="mix-blend-mode:multiply">
+        <ellipse cx="${bbx.toFixed(1)}" cy="${bby.toFixed(1)}" rx="${(fw * 0.36 * bbs).toFixed(1)}" ry="${(fh * 0.34 * bbs).toFixed(1)}" fill="url(#${id}bb)" transform="rotate(9 ${bbx.toFixed(1)} ${bby.toFixed(1)})"/>
+        <ellipse cx="${(bbx + fw * 0.09 * bbs).toFixed(1)}" cy="${(bby - fh * 0.07 * bbs).toFixed(1)}" rx="${(fw * 0.27 * bbs).toFixed(1)}" ry="${(fh * 0.24 * bbs).toFixed(1)}" fill="url(#${id}bb)" transform="rotate(-16 ${bbx.toFixed(1)} ${bby.toFixed(1)})" opacity="0.75"/>
+        <ellipse cx="${(bbx - fw * 0.11 * bbs).toFixed(1)}" cy="${(bby + fh * 0.05 * bbs).toFixed(1)}" rx="${(fw * 0.22 * bbs).toFixed(1)}" ry="${(fh * 0.26 * bbs).toFixed(1)}" fill="url(#${id}bb)" transform="rotate(24 ${bbx.toFixed(1)} ${bby.toFixed(1)})" opacity="0.6"/>
+      </g>`
+    : "";
 
   /* 8 ── broad curved gloss (screen space, flips if lit from below) */
   const flip = ly > 0.25; // light from below
@@ -233,9 +297,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       // stylized crisp double-bar highlight: one long swoosh + one short block
       const bh = Math.max(3, spSize * 0.9 * Math.max(spAspect, 0.28));
       const b1w = spSize * 2.2, b2w = Math.max(bh, spSize * 0.66);
+      const gapPx = b2w * 0.5 * (SP.gap / 100);
       specular = `<g transform="rotate(${spRot.toFixed(1)} ${spX.toFixed(1)} ${spY.toFixed(1)})" opacity="${spOp.toFixed(2)}">
         <rect x="${(spX - b1w / 2 - b2w * 0.75).toFixed(1)}" y="${(spY - bh / 2).toFixed(1)}" width="${b1w.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${hiC}"/>
-        <rect x="${(spX + b1w / 2 - b2w * 0.25).toFixed(1)}" y="${(spY - bh / 2).toFixed(1)}" width="${b2w.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${hiC}"/>
+        <rect x="${(spX + b1w / 2 - b2w * 0.75 + gapPx).toFixed(1)}" y="${(spY - bh / 2).toFixed(1)}" width="${b2w.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${hiC}"/>
       </g>`;
     } else if (SP.mode === "sweep") {
       // reflective event hugging the shell's edge curve on the lit side
@@ -244,8 +309,9 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       specular = `<path d="${sweepP}" fill="none" stroke="url(#${id}sw)" stroke-width="${swW.toFixed(1)}" opacity="${spOp.toFixed(2)}"/>`;
     } else {
       const main = `<ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spRx.toFixed(1)}" ry="${spRy.toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>`;
+      const dualGap = SP.gap / 100;
       const sat = SP.mode === "dual"
-        ? `<ellipse cx="${(spX - spRx * 1.8).toFixed(1)}" cy="${(spY + spRy * 2.2).toFixed(1)}" rx="${(spRx * 0.42).toFixed(1)}" ry="${(spRy * 0.5).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.8).toFixed(2)}"/>`
+        ? `<ellipse cx="${(spX - spRx * 1.8 * dualGap).toFixed(1)}" cy="${(spY + spRy * 2.2 * dualGap).toFixed(1)}" rx="${(spRx * 0.42).toFixed(1)}" ry="${(spRy * 0.5).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.8).toFixed(2)}"/>`
         : SP.mode === "hard"
           ? `<ellipse cx="${(spX - spRx * 1.6).toFixed(1)}" cy="${(spY + spRy * 1.9).toFixed(1)}" rx="${(spRx * 0.3).toFixed(1)}" ry="${(spRy * 0.4).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.6).toFixed(2)}"/>`
           : "";
@@ -262,11 +328,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     ? `<ellipse cx="${blX.toFixed(1)}" cy="${blY.toFixed(1)}" rx="${(fw * 0.46 * blS).toFixed(1)}" ry="${(fh * 0.26 * blS).toFixed(1)}" fill="url(#${id}bl)" opacity="${blOp.toFixed(2)}"/>`
     : "";
 
-  /* 11 ── micro texture */
-  const nzOp = (C.texture.amount / 100) * 0.5 * (disabled ? 0.4 : 1);
-  const nzFreq = (0.45 + (C.texture.scale / 100) * 1.1).toFixed(2);
+  /* 11 ── micro texture — contrast-boosted grain that actually reads */
+  const nzOp = (C.texture.amount / 100) * 0.6 * (disabled ? 0.4 : 1);
+  const nzFreq = (0.25 + (C.texture.scale / 100) * 1.6).toFixed(2);
   const noise = nzOp > 0.005
-    ? `<rect x="${fx0}" y="${fy0}" width="${fw}" height="${fh}" filter="url(#${id}nz)" opacity="${nzOp.toFixed(2)}" style="mix-blend-mode:soft-light"/>`
+    ? `<rect x="${fx0}" y="${fy0}" width="${fw}" height="${fh}" filter="url(#${id}nz)" opacity="${nzOp.toFixed(2)}" style="mix-blend-mode:overlay"/>`
     : "";
 
   /* 6 ── inner edge shading */
@@ -285,9 +351,12 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     : T2.fillMode === "gradient" ? `url(#${id}tg)` : P(T2.fill);
   const tFilters: string[] = [];
   if (T2.emboss.on && !disabled) {
+    // boss (raised) or deboss (engraved); softness turns the crisp chisel
+    // into a frosted, glassy relief
     const s = clamp(T2.emboss.strength / 100, -1, 1);
-    if (s > 0) tFilters.push(`drop-shadow(0 ${-1.2 * s}px 0.4px rgba(255,255,255,${(0.7 * s).toFixed(2)})) drop-shadow(0 ${1.8 * s}px 1px rgba(4,8,14,${(0.55 * s).toFixed(2)}))`);
-    else if (s < 0) { const a = -s; tFilters.push(`drop-shadow(0 ${1.2 * a}px 0.4px rgba(255,255,255,${(0.6 * a).toFixed(2)})) drop-shadow(0 ${-1.6 * a}px 0.9px rgba(4,8,14,${(0.6 * a).toFixed(2)}))`); }
+    const ebl = (0.35 + ((T2.emboss.softness ?? 30) / 100) * 2.6).toFixed(1);
+    if (s > 0) tFilters.push(`drop-shadow(0 ${-1.2 * s}px ${ebl}px rgba(255,255,255,${(0.7 * s).toFixed(2)})) drop-shadow(0 ${1.8 * s}px ${ebl}px rgba(4,8,14,${(0.55 * s).toFixed(2)}))`);
+    else if (s < 0) { const a = -s; tFilters.push(`drop-shadow(0 ${1.2 * a}px ${ebl}px rgba(255,255,255,${(0.6 * a).toFixed(2)})) drop-shadow(0 ${-1.6 * a}px ${ebl}px rgba(4,8,14,${(0.6 * a).toFixed(2)}))`); }
   }
   if (T2.shadow.on) tFilters.push(`drop-shadow(${T2.shadow.x}px ${T2.shadow.y}px ${T2.shadow.blur}px ${hexRgba(T2.shadow.color, T2.shadow.opacity / 100)})`);
   if (T2.glow.on && !disabled) tFilters.push(`drop-shadow(0 0 ${(T2.glow.size * 0.6).toFixed(1)}px ${hexRgba(T2.glow.color, T2.glow.opacity / 100)}) drop-shadow(0 0 ${(T2.glow.size * 1.6).toFixed(1)}px ${hexRgba(T2.glow.color, (T2.glow.opacity / 100) * 0.6)})`);
@@ -335,6 +404,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <stop offset="0" stop-color="${shC}" stop-opacity="1"/>
     <stop offset="1" stop-color="${shC}" stop-opacity="0"/>
   </radialGradient>
+  ${baseGlow ? `<clipPath id="${id}ec"><path d="${outer}" transform="translate(0 ${visDepth.toFixed(1)})"/></clipPath>
+  <radialGradient id="${id}eg"><stop offset="0" stop-color="${egC}" stop-opacity="1"/><stop offset="1" stop-color="${egC}" stop-opacity="0"/></radialGradient>` : ""}
+  ${patternDef}
+  ${blob ? `<radialGradient id="${id}bb"><stop offset="0" stop-color="${blobC}" stop-opacity="1"/><stop offset="0.55" stop-color="${blobC}" stop-opacity="0.8"/><stop offset="1" stop-color="${blobC}" stop-opacity="0"/></radialGradient>` : ""}
   <linearGradient id="${id}rim" ${axis}>
     <stop offset="0" stop-color="${hiC}" stop-opacity="0.45"/>
     <stop offset=".4" stop-color="${hiC}" stop-opacity="0.08"/>
@@ -380,7 +453,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
   ${aura ? `<filter id="${id}gb" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="11"/></filter>` : ""}
-  ${noise ? `<filter id="${id}nz"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>` : ""}
+  ${noise ? `<filter id="${id}nz"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="3" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="2.6" intercept="-0.8"/><feFuncG type="linear" slope="2.6" intercept="-0.8"/><feFuncB type="linear" slope="2.6" intercept="-0.8"/></feComponentTransfer></filter>` : ""}
 </defs>
 <g opacity="${(adj.opacity / 100).toFixed(2)}">
   ${castShadow}
@@ -394,8 +467,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     </g>
     <g opacity="${(T.interior / 100).toFixed(2)}">
       <path d="${faceP}" fill="url(#${id}face)"/>
-      ${igOp > 0.01 ? `<path d="${faceP}" fill="url(#${id}ig)"/>` : ""}
       <g clip-path="url(#${id}fc)">
+        ${patternUse}
+        ${blob}
+        ${igOp > 0.01 ? `<path d="${faceP}" fill="url(#${id}ig)"/>` : ""}
         ${bloom}
         ${pressShade}
         ${C.gloss.layer === "above" ? "" : gloss + specular}
@@ -404,7 +479,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${innerEdge}
     </g>
     <g opacity="${(T.content / 100).toFixed(2)}">
-      ${showText ? `<text x="${textX.toFixed(1)}" y="${cy + 1}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${label}</text>` : ""}
+      ${showText ? `<text x="${textX.toFixed(1)}" y="${cy + 1}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${label}</text>` : ""}
       ${iconDef ? iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
         strokeWidth: cfg.icon.strokeWidth / 10,
         opacity: (cfg.icon.opacity / 100),
@@ -418,9 +493,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
 </svg>`;
 }
 
-/** Master component — width follows the label. */
+/** Master component — width follows the label. Margins are 1.5× so large
+ *  shadow distances never clip against the invisible canvas bounds. */
 export function renderBevel(cfg: GenConfig, state: GenStateName): string {
-  return build(cfg, state, { x: 34, y: 24, h: 168, fs: 52, iconSize: 46 });
+  return build(cfg, state, { x: 52, y: 36, h: 168, fs: 52, iconSize: 46 });
 }
 
 /* ── kit components ────────────────────────────────────────────── */
@@ -430,16 +506,16 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   const k = SIZE_K[size];
   switch (id) {
     case "primary":
-      return build(cfg, state, { x: 26, y: 20, h: 136 * k, fs: 42 * k, iconSize: 38 * k });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k });
     case "secondary":
-      return build(cfg, state, { x: 26, y: 20, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: "Secondary" });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: "Secondary" });
     case "iconbtn":
-      return build(cfg, state, { x: 22, y: 18, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k });
+      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k });
     case "toggle": {
       const w = 210 * k, h = 108 * k;
-      const track = build(cfg, state, { x: 26, y: 20, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
       const knobR = (h - cfg.bevel.width * 2) / 2 - 6;
-      const kx = 26 + w - cfg.bevel.width - 6 - knobR, ky = 20 + h / 2;
+      const kx = 39 + w - cfg.bevel.width - 6 - knobR, ky = 30 + h / 2;
       const glow = effect(cfg, "Glow"), fill = "#FFFFFF";
       const knob = `<circle cx="${kx}" cy="${ky}" r="${knobR}" fill="${fill}" stroke="${darken(effect(cfg, "Bevel"), 0.3)}" stroke-width="2"/>
         <circle cx="${kx}" cy="${ky}" r="${Math.max(3, knobR * 0.28)}" fill="${state === "disabled" ? "#A7AAB4" : glow}"/>`;
@@ -447,12 +523,12 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     }
     case "progress": {
       const w = 520 * k, h = 64 * k;
-      const track = build(cfg, state, { x: 26, y: 20, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
       const bw = cfg.bevel.width;
       const bevel = effect(cfg, "Bevel"), glow = effect(cfg, "Glow");
       const fw = (w - bw * 2 - 8) * 0.62;
       const bar = `<defs><linearGradient id="pg${UID}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
-        <path d="${roundRect(26 + bw + 4, 20 + bw + 4, fw, h - bw * 2 - 8, (h - bw * 2 - 8) / 2)}" fill="url(#pg${UID})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>`;
+        <path d="${roundRect(39 + bw + 4, 30 + bw + 4, fw, h - bw * 2 - 8, (h - bw * 2 - 8) / 2)}" fill="url(#pg${UID})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>`;
       return track.replace("</g>\n</svg>", bar + "</g>\n</svg>");
     }
   }

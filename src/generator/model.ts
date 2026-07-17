@@ -13,7 +13,14 @@ export const ROLE_HINT: Record<EffectRole, string> = {
   Bevel: "shell & wall", Glow: "inner glow", Highlight: "gloss & specular", Shadow: "grounding", "Inner Fill": "candy face",
 };
 
-export type Shape = "chamfer" | "pill" | "sharp" | "round";
+export type Shape = "chamfer" | "pill" | "sharp" | "round" | "shard";
+export const SHAPES: { id: Shape; name: string }[] = [
+  { id: "round", name: "Round" },
+  { id: "pill", name: "Pill" },
+  { id: "chamfer", name: "Chamfer" },
+  { id: "sharp", name: "Sharp" },
+  { id: "shard", name: "Shard — irregular" },
+];
 /** Neutral canvas surfaces only — the stage never competes with the component. */
 export const CANVAS_BGS = [
   { id: "#FFFFFF", name: "White" },
@@ -47,8 +54,17 @@ export const SPECULAR_MODES: { id: SpecularMode; name: string }[] = [
   { id: "sweep", name: "Edge sweep" },
 ];
 
+export type PatternType = "none" | "stripes" | "dots" | "stars" | "checker";
+export const PATTERN_TYPES: { id: PatternType; name: string }[] = [
+  { id: "none", name: "None" },
+  { id: "stripes", name: "Stripes" },
+  { id: "dots", name: "Polka dots" },
+  { id: "stars", name: "Stars" },
+  { id: "checker", name: "Checker" },
+];
+
 export interface CandyTokens {
-  extrusion: { depth: number; darkness: number };                 // px, 0..100
+  extrusion: { depth: number; darkness: number; glow: number };   // px, 0..100, 0..100 (base glow)
   rim: { width: number; brightness: number };                     // px, 0..100
   innerEdge: { strength: number; width: number };                 // 0..100, px
   innerGlow: { opacity: number; size: number; color: string | null };   // null = Glow well
@@ -66,25 +82,30 @@ export interface CandyTokens {
     intensity: number;  // 0..100
     softness: number;   // 0..100 — falloff
     angle: number;      // -80..80° on top of the light-driven tilt
+    gap: number;        // 50..300 — spacing between the two events (dual / anime)
     ox: number; oy: number; // -50..50 position nudges
   };
   bloom: { opacity: number; size: number };                       // 0..100 ×2 (bounce light, unlit side)
   contact: { opacity: number };                                   // tight shadow where body meets ground
-  texture: { amount: number; scale: number };                     // 0..100 ×2
+  texture: { amount: number; scale: number };                     // 0..100 ×2 (micro grain)
+  pattern: { type: PatternType; scale: number; angle: number; opacity: number; color: string | null }; // null = tone-on-tone
+  blob: { on: boolean; opacity: number; size: number; x: number; y: number };  // organic inner shade
 }
 
 export function defaultCandy(): CandyTokens {
   return {
-    extrusion: { depth: 10, darkness: 55 },
+    extrusion: { depth: 10, darkness: 55, glow: 0 },
     rim: { width: 3, brightness: 80 },
     innerEdge: { strength: 45, width: 2 },
     innerGlow: { opacity: 55, size: 55, color: null },
     aura: { color: null },
     gloss: { on: true, height: 46, curve: 26, opacity: 72, softness: 22, layer: "below", fill: "highlight", tint: "#FFFFFF", tint2: "#DFF7FF" },
-    specular: { on: true, mode: "hard", size: 26, stretch: 45, intensity: 85, softness: 30, angle: 0, ox: 0, oy: 0 },
+    specular: { on: true, mode: "hard", size: 26, stretch: 45, intensity: 85, softness: 30, angle: 0, gap: 100, ox: 0, oy: 0 },
     bloom: { opacity: 45, size: 60 },
     contact: { opacity: 32 },
     texture: { amount: 0, scale: 50 },
+    pattern: { type: "none", scale: 40, angle: 45, opacity: 25, color: null },
+    blob: { on: false, opacity: 35, size: 60, x: 0, y: 10 },
   };
 }
 
@@ -92,6 +113,7 @@ export function defaultCandy(): CandyTokens {
 export type TextCase = "none" | "upper" | "lower" | "title";
 export interface TypeCfg {
   font: string;
+  customFonts: string[];  // user-added Google Font family names
   size: number;        // px at master scale
   weight: number;      // 400..900
   italic: boolean;
@@ -100,9 +122,10 @@ export interface TypeCfg {
   fillMode: "auto" | "solid" | "gradient";
   fill: string;
   fill2: string;       // gradient bottom
+  fillOpacity: number; // 0..100 — translucent fills read as glass
   outline: { on: boolean; color: string; width: number };                              // px at 52px type
   shadow: { on: boolean; color: string; x: number; y: number; blur: number; opacity: number };
-  emboss: { on: boolean; strength: number };                                           // -100..100 (neg = engraved)
+  emboss: { on: boolean; strength: number; softness: number };   // strength -100..100 (neg = deboss/engrave)
   glow: { on: boolean; color: string; size: number; opacity: number };
   preset: string;
 }
@@ -119,20 +142,22 @@ export const TEXT_PRESETS: { id: string; name: string }[] = [
   { id: "candy", name: "Candy" },
   { id: "arcade", name: "Arcade" },
   { id: "chiseled", name: "Chiseled" },
+  { id: "glass", name: "Glass" },
 ];
 
 /** Presets populate the typography controls — nothing locks; keep tweaking after. */
 export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string; glow: string }) {
   t.preset = id;
+  t.fillOpacity = 100;
   t.outline = { on: false, color: palette.dark, width: 2.5 };
   t.shadow = { on: false, color: palette.dark, x: 0, y: 3, blur: 2, opacity: 50 };
-  t.emboss = { on: false, strength: 55 };
+  t.emboss = { on: false, strength: 55, softness: 30 };
   t.glow = { on: false, color: palette.glow, size: 8, opacity: 80 };
   if (id === "none") { t.fillMode = "auto"; return; }
   if (id === "outline") { t.outline.on = true; return; }
   if (id === "shadow") { t.shadow.on = true; return; }
   if (id === "emboss") { t.emboss.on = true; return; }
-  if (id === "innerbevel") { t.emboss = { on: true, strength: -60 }; return; }
+  if (id === "innerbevel") { t.emboss = { on: true, strength: -60, softness: 30 }; return; }
   if (id === "glow") { t.glow.on = true; return; }
   if (id === "outshadow") { t.outline.on = true; t.shadow.on = true; return; }
   if (id === "outemboss") { t.outline.on = true; t.emboss.on = true; return; }
@@ -140,7 +165,7 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
     t.fillMode = "solid"; t.fill = "#FFFFFF";
     t.outline = { on: true, color: palette.dark, width: 2.6 };
     t.shadow = { on: true, color: palette.dark, x: 0, y: 3, blur: 1.5, opacity: 45 };
-    t.emboss = { on: true, strength: 30 };
+    t.emboss = { on: true, strength: 30, softness: 25 };
     return;
   }
   if (id === "arcade") {
@@ -151,8 +176,15 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
   }
   if (id === "chiseled") {
     t.fillMode = "gradient"; t.fill = "#F4F6F8"; t.fill2 = "#B9C0CC";
-    t.emboss = { on: true, strength: -70 };
+    t.emboss = { on: true, strength: -70, softness: 20 };
     t.shadow = { on: true, color: palette.dark, x: 0, y: 2, blur: 1, opacity: 35 };
+    return;
+  }
+  if (id === "glass") {
+    // frosted label sealed in the shell: translucent fill, soft engrave
+    t.fillMode = "solid"; t.fill = "#FFFFFF"; t.fillOpacity = 34;
+    t.emboss = { on: true, strength: -48, softness: 72 };
+    t.shadow = { on: true, color: "#FFFFFF", x: 0, y: 1, blur: 0.5, opacity: 35 };
     return;
   }
 }
@@ -204,11 +236,24 @@ export const GAME_FONTS: { name: string; css: string | null; factor: number }[] 
   { name: "Cinzel", css: "Cinzel:wght@700", factor: 0.62 },
   { name: "Creepster", css: "Creepster", factor: 0.48 },
 ];
+/* User-added Google Fonts — registered at runtime, names persisted in the
+   config. Any family from fonts.google.com works; we request the full weight
+   range and estimate width with a neutral factor. */
+const customFontRegistry = new Map<string, { css: string; factor: number }>();
+export function registerCustomFont(name: string) {
+  const clean = name.trim();
+  if (!clean || GAME_FONTS.some((f) => f.name === clean)) return;
+  customFontRegistry.set(clean, { css: clean.replace(/ /g, "+") + ":wght@400;500;600;700;800;900", factor: 0.62 });
+}
+export function customFontNames(): string[] { return [...customFontRegistry.keys()]; }
+
 export function fontByName(name: string) {
+  const custom = customFontRegistry.get(name);
+  if (custom) return { name, ...custom };
   return GAME_FONTS.find((f) => f.name === name) ?? GAME_FONTS[0];
 }
 
-export type GridStyle = "dots" | "lines" | "off";
+export type GridStyle = "dots" | "lines" | "both" | "off";
 
 export interface GenConfig {
   presetId: string;
@@ -268,11 +313,11 @@ export function defaultStates(): Record<GenStateName, StateAdjust> {
 
 export function defaultType(): TypeCfg {
   return {
-    font: "Inter", size: 52, weight: 800, italic: false, spacing: 2, case: "upper",
-    fillMode: "solid", fill: "#FFFFFF", fill2: "#DCF6FF",
+    font: "Inter", customFonts: [], size: 52, weight: 800, italic: false, spacing: 2, case: "upper",
+    fillMode: "solid", fill: "#FFFFFF", fill2: "#DCF6FF", fillOpacity: 100,
     outline: { on: true, color: "#0B6183", width: 2.6 },
     shadow: { on: true, color: "#083D52", x: 0, y: 3, blur: 1.5, opacity: 45 },
-    emboss: { on: true, strength: 30 },
+    emboss: { on: true, strength: 30, softness: 25 },
     glow: { on: false, color: "#8FF0FF", size: 8, opacity: 80 },
     preset: "candy",
   };
@@ -339,19 +384,35 @@ export function hslHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
+/* Color harmony engine — random rolls follow game-UI color theory instead of
+   free-for-all hues. Every scheme keeps the guardrails that make candy read:
+   a saturated mid-light face, a same-family darker shell, a luminous accent
+   glow, a deep grounded shadow, and a near-white highlight with a hint of the
+   accent temperature. */
+type Harmony = "analogous" | "complementary" | "split" | "triadic" | "monochrome";
+const HARMONIES: Harmony[] = ["analogous", "complementary", "split", "triadic", "monochrome"];
+
 export function randomizeConfig(c: GenConfig): GenConfig {
-  const h = Math.round(Math.random() * 360);
   const r = (min: number, max: number) => Math.round(min + Math.random() * (max - min));
+  const h = r(0, 359);
+  const scheme = HARMONIES[r(0, HARMONIES.length - 1)];
+  const accentHue =
+    scheme === "analogous" ? (h + r(25, 45)) % 360 :
+    scheme === "complementary" ? (h + 180 + r(-12, 12) + 360) % 360 :
+    scheme === "split" ? (h + (Math.random() < 0.5 ? 150 : 210) + 360) % 360 :
+    scheme === "triadic" ? (h + 120) % 360 :
+    h; // monochrome
+  const shellHue = (h + r(-8, 8) + 360) % 360;
   return {
     ...c,
     effects: {
-      Bevel: hslHex(h, r(68, 88), r(40, 52)),
-      Glow: hslHex((h + r(8, 35)) % 360, r(80, 95), r(70, 82)),
-      Highlight: hslHex(h, r(5, 20), 99),
-      Shadow: hslHex(h, r(50, 70), r(18, 30)),
-      "Inner Fill": hslHex(h, r(70, 92), r(52, 62)),
+      "Inner Fill": hslHex(h, r(76, 94), r(52, 60)),          // the candy face: vivid, mid-light
+      Bevel: hslHex(shellHue, r(66, 84), r(38, 46)),          // shell: same family, one step deeper
+      Glow: hslHex(accentHue, r(82, 96), r(72, 84)),          // accent light per the harmony
+      Shadow: hslHex(shellHue, r(52, 68), r(16, 24)),         // deep grounded shade, never gray mud
+      Highlight: hslHex(accentHue, r(8, 16), 98),             // near-white, tinted by the accent
     },
-    lighting: { ...c.lighting, angle: [70, 90, 110][r(0, 2)], highlight: r(60, 92), lowlight: r(30, 65) },
+    lighting: { ...c.lighting, angle: [70, 90, 110][r(0, 2)], highlight: r(64, 90), lowlight: r(34, 60) },
   };
 }
 

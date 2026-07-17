@@ -54,8 +54,12 @@ export function CanvasView() {
           backgroundImage:
             gridStyle === "dots" ? `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px)` :
             gridStyle === "lines" ? `linear-gradient(${dotColor} 1px, transparent 1px), linear-gradient(90deg, ${dotColor} 1px, transparent 1px)` :
+            gridStyle === "both" ? `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px), linear-gradient(${dotColor} 1px, transparent 1px), linear-gradient(90deg, ${dotColor} 1px, transparent 1px)` :
             undefined,
-          backgroundSize: gridStyle !== "off" ? (gridStyle === "lines" ? "44px 44px" : "22px 22px") : undefined,
+          backgroundSize:
+            gridStyle === "lines" ? "44px 44px" :
+            gridStyle === "both" ? "22px 22px, 44px 44px, 44px 44px" :
+            gridStyle === "dots" ? "22px 22px" : undefined,
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -125,6 +129,9 @@ export function CanvasView() {
                 </button>
                 <button className={gridStyle === "lines" ? "on" : ""} onClick={() => { setGridStyle("lines"); setGridPop(false); }}>
                   <AlignJustify size={15} strokeWidth={1.8} /> Lines
+                </button>
+                <button className={gridStyle === "both" ? "on" : ""} onClick={() => { setGridStyle("both"); setGridPop(false); }}>
+                  <LayoutGrid size={15} strokeWidth={1.8} /> Dots + Lines
                 </button>
                 <button className={gridStyle === "off" ? "on" : ""} onClick={() => { setGridStyle("off"); setGridPop(false); }}>
                   <Square size={15} strokeWidth={1.8} /> Off

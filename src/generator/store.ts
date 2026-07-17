@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, registerCustomFont } from "./model";
 import { getDef } from "./icons";
 
 /* Keep the text treatment's accent colors in step with the shell palette so a
@@ -33,15 +33,17 @@ function mergeCandy(base: CandyTokens, saved?: Record<string, any>): CandyTokens
   return out as CandyTokens;
 }
 
-function hydrate(parsed: Record<string, any>): GenConfig {
+export function hydrate(parsed: Record<string, any>): GenConfig {
   const d = defaultConfig();
-  return {
+  const cfg = {
     ...d, ...parsed,
     candy: mergeCandy(d.candy, parsed.candy),
     type: { ...d.type, ...parsed.type },
     icon: { ...d.icon, ...parsed.icon },
     face: { ...d.face, ...parsed.face },
   } as GenConfig;
+  (cfg.type.customFonts ?? []).forEach(registerCustomFont);
+  return cfg;
 }
 
 /* Carry what translates from a v8 save into the candy model. */
@@ -101,7 +103,12 @@ interface GenStore {
   saveStatus: "saved" | "saving";
   open: Record<string, boolean>;
 
+  panelW: number;
+
   update: (fn: (c: GenConfig) => void) => void;
+  undo: () => void;
+  redo: () => void;
+  setPanelW: (w: number) => void;
   setPreset: (id: string) => void;
   randomize: () => void;
   setSelectedState: (s: GenStateName) => void;
@@ -117,6 +124,17 @@ interface GenStore {
 
 let saveTimer: number | undefined;
 
+/* Undo history — module-level so pushing snapshots never re-renders. Rapid
+   slider drags coalesce into one step (350ms window). */
+const past: GenConfig[] = [];
+const future: GenConfig[] = [];
+let lastPush = 0;
+
+function loadPanelW(): number {
+  const v = Number(localStorage.getItem("ui-generator-panelw"));
+  return v >= 300 && v <= 560 ? v : 340;
+}
+
 export const useGen = create<GenStore>((set, get) => ({
   cfg: load(),
   selectedState: "default",
@@ -127,17 +145,47 @@ export const useGen = create<GenStore>((set, get) => ({
   gridStyle: "dots" as GridStyle,
   sectionFilter: null,
   saveStatus: "saved",
-  open: { state: true, style: true, mapping: true, gloss: true },
+  open: { state: true, shape: true, mapping: true, gloss: true },
+  panelW: loadPanelW(),
 
   update: (fn) => {
-    const cfg = JSON.parse(JSON.stringify(get().cfg)) as GenConfig;
+    const prev = get().cfg;
+    const cfg = JSON.parse(JSON.stringify(prev)) as GenConfig;
     fn(cfg);
+    const now = Date.now();
+    if (now - lastPush > 350) {
+      past.push(prev);
+      if (past.length > 60) past.shift();
+      lastPush = now;
+    }
+    future.length = 0;
     set({ cfg, saveStatus: "saving" });
     if (saveTimer) window.clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
       try { localStorage.setItem(LS_KEY, JSON.stringify(get().cfg)); } catch { /* ignore */ }
       set({ saveStatus: "saved" });
     }, 600);
+  },
+  undo: () => {
+    const p = past.pop();
+    if (!p) return;
+    future.push(get().cfg);
+    lastPush = 0;
+    set({ cfg: p });
+    try { localStorage.setItem(LS_KEY, JSON.stringify(p)); } catch { /* ignore */ }
+  },
+  redo: () => {
+    const f = future.pop();
+    if (!f) return;
+    past.push(get().cfg);
+    lastPush = 0;
+    set({ cfg: f });
+    try { localStorage.setItem(LS_KEY, JSON.stringify(f)); } catch { /* ignore */ }
+  },
+  setPanelW: (w) => {
+    const v = Math.max(300, Math.min(560, Math.round(w)));
+    try { localStorage.setItem("ui-generator-panelw", String(v)); } catch { /* ignore */ }
+    set({ panelW: v });
   },
   setPreset: (id) => {
     const p = presetById(id);
@@ -156,7 +204,7 @@ export const useGen = create<GenStore>((set, get) => ({
   setSelectedState: (s) => set({ selectedState: s }),
   setPhase: (p) => set({ phase: p }),
   setKitSize: (id, s) => set((st) => ({ kitSizes: { ...st.kitSizes, [id]: s } })),
-  setZoom: (z) => set({ zoom: Math.max(0.4, Math.min(2.4, Math.round(z * 10) / 10)) }),
+  setZoom: (z) => set({ zoom: Math.max(0.4, Math.min(4, Math.round(z * 10) / 10)) }),
   setPanMode: (v) => set({ panMode: v }),
   setGridStyle: (v) => set({ gridStyle: v }),
   setSectionFilter: (v) => set({ sectionFilter: v }),
