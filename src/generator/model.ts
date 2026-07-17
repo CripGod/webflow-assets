@@ -1,7 +1,8 @@
-// The UI Generator — canonical model (v6).
-// Per-state adjustments, one key light + hard highlight, explicit shadow,
-// per-part transparency, text effects, auto-sizing label. One config drives
-// canvas, code copy, and exports.
+// The UI Generator — canonical model (v9, "hard candy").
+// A layered candy-shell surface model: every visual layer of the button
+// (shadow, extrusion, rim, bevel wall, face gradient, inner edge, inner glow,
+// gloss, specular, bloom, texture, content) is driven by explicit tokens.
+// One config drives canvas, code copy, HTML download, and exports.
 
 export type GenStateName = "default" | "hover" | "pressed" | "disabled";
 export const STATE_NAMES: GenStateName[] = ["default", "hover", "pressed", "disabled"];
@@ -9,7 +10,7 @@ export const STATE_NAMES: GenStateName[] = ["default", "hover", "pressed", "disa
 export type EffectRole = "Bevel" | "Glow" | "Highlight" | "Shadow" | "Inner Fill";
 export const EFFECT_ROLES: EffectRole[] = ["Bevel", "Glow", "Highlight", "Shadow", "Inner Fill"];
 export const ROLE_HINT: Record<EffectRole, string> = {
-  Bevel: "edge frame", Glow: "outer aura", Highlight: "face sheen", Shadow: "grounding", "Inner Fill": "body",
+  Bevel: "shell & wall", Glow: "inner glow", Highlight: "gloss & specular", Shadow: "grounding", "Inner Fill": "candy face",
 };
 
 export type Shape = "chamfer" | "pill" | "sharp" | "round";
@@ -26,12 +27,136 @@ export type CanvasBg = (typeof CANVAS_BGS)[number]["id"];
 /** Editable per-state treatment — edits apply to the selected state only. */
 export interface StateAdjust {
   brightness: number; // -30..30
-  glow: number;       // 0..100
-  lift: number;       // -10..10 px (negative = raised)
+  glow: number;       // 0..100 (outer aura)
+  lift: number;       // -10..10 px (negative = raised, positive = depressed)
   opacity: number;    // 0..100
 }
 
-export interface TextFx { emboss: boolean; glow: boolean; outline: boolean; shadow: boolean }
+/* ── candy surface tokens — the layered shell ─────────────────── */
+export interface CandyTokens {
+  extrusion: { depth: number; darkness: number };                 // px, 0..100
+  rim: { width: number; brightness: number };                     // px, 0..100
+  innerEdge: { strength: number; width: number };                 // 0..100, px
+  innerGlow: { opacity: number; size: number };                   // 0..100 ×2 (color = Glow well)
+  gloss: { on: boolean; height: number; curve: number; opacity: number; softness: number }; // % face, px bow, %, %
+  specular: { on: boolean; size: number; opacity: number; ox: number; oy: number };         // px, %, % offsets
+  bloom: { opacity: number; size: number };                       // 0..100 ×2 (bounce light, unlit side)
+  texture: { amount: number; scale: number };                     // 0..100 ×2
+}
+
+export function defaultCandy(): CandyTokens {
+  return {
+    extrusion: { depth: 10, darkness: 55 },
+    rim: { width: 3, brightness: 80 },
+    innerEdge: { strength: 45, width: 2 },
+    innerGlow: { opacity: 55, size: 55 },
+    gloss: { on: true, height: 46, curve: 26, opacity: 72, softness: 22 },
+    specular: { on: true, size: 26, opacity: 85, ox: 0, oy: 0 },
+    bloom: { opacity: 45, size: 60 },
+    texture: { amount: 0, scale: 50 },
+  };
+}
+
+/* ── typography tokens ────────────────────────────────────────── */
+export type TextCase = "none" | "upper" | "lower" | "title";
+export interface TypeCfg {
+  font: string;
+  size: number;        // px at master scale
+  weight: number;      // 400..900
+  italic: boolean;
+  spacing: number;     // letter-spacing, em/100 (-5..20)
+  case: TextCase;
+  fillMode: "auto" | "solid" | "gradient";
+  fill: string;
+  fill2: string;       // gradient bottom
+  outline: { on: boolean; color: string; width: number };                              // px at 52px type
+  shadow: { on: boolean; color: string; x: number; y: number; blur: number; opacity: number };
+  emboss: { on: boolean; strength: number };                                           // -100..100 (neg = engraved)
+  glow: { on: boolean; color: string; size: number; opacity: number };
+  preset: string;
+}
+
+export const TEXT_PRESETS: { id: string; name: string }[] = [
+  { id: "none", name: "None" },
+  { id: "outline", name: "Outline" },
+  { id: "shadow", name: "Shadow" },
+  { id: "emboss", name: "Emboss" },
+  { id: "innerbevel", name: "Inner Bevel" },
+  { id: "glow", name: "Glow" },
+  { id: "outshadow", name: "Outline + Shadow" },
+  { id: "outemboss", name: "Outline + Emboss" },
+  { id: "candy", name: "Candy" },
+  { id: "arcade", name: "Arcade" },
+  { id: "chiseled", name: "Chiseled" },
+];
+
+/** Presets populate the typography controls — nothing locks; keep tweaking after. */
+export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string; glow: string }) {
+  t.preset = id;
+  t.outline = { on: false, color: palette.dark, width: 2.5 };
+  t.shadow = { on: false, color: palette.dark, x: 0, y: 3, blur: 2, opacity: 50 };
+  t.emboss = { on: false, strength: 55 };
+  t.glow = { on: false, color: palette.glow, size: 8, opacity: 80 };
+  if (id === "none") { t.fillMode = "auto"; return; }
+  if (id === "outline") { t.outline.on = true; return; }
+  if (id === "shadow") { t.shadow.on = true; return; }
+  if (id === "emboss") { t.emboss.on = true; return; }
+  if (id === "innerbevel") { t.emboss = { on: true, strength: -60 }; return; }
+  if (id === "glow") { t.glow.on = true; return; }
+  if (id === "outshadow") { t.outline.on = true; t.shadow.on = true; return; }
+  if (id === "outemboss") { t.outline.on = true; t.emboss.on = true; return; }
+  if (id === "candy") {
+    t.fillMode = "solid"; t.fill = "#FFFFFF";
+    t.outline = { on: true, color: palette.dark, width: 2.6 };
+    t.shadow = { on: true, color: palette.dark, x: 0, y: 3, blur: 1.5, opacity: 45 };
+    t.emboss = { on: true, strength: 30 };
+    return;
+  }
+  if (id === "arcade") {
+    t.fillMode = "gradient"; t.fill = "#FFE45C"; t.fill2 = "#FF9A3D";
+    t.outline = { on: true, color: "#5A2B00", width: 3.4 };
+    t.shadow = { on: true, color: "#000000", x: 0, y: 4, blur: 0, opacity: 65 };
+    return;
+  }
+  if (id === "chiseled") {
+    t.fillMode = "gradient"; t.fill = "#F4F6F8"; t.fill2 = "#B9C0CC";
+    t.emboss = { on: true, strength: -70 };
+    t.shadow = { on: true, color: palette.dark, x: 0, y: 2, blur: 1, opacity: 35 };
+    return;
+  }
+}
+
+/* ── icon tokens ──────────────────────────────────────────────── */
+/** Normalized icon: enough raw SVG to render deterministically anywhere. */
+export interface IconDef { lib: string; name: string; viewBox: string; inner: string; mode: "stroke" | "fill" }
+
+export interface IconCfg {
+  show: boolean;
+  def: IconDef | null;
+  placement: "left" | "right";
+  only: boolean;              // icon-only (hides the label)
+  size: number;               // 40..170 % of base
+  strokeWidth: number;        // ×10 (5..40 → 0.5..4) for stroke libraries
+  color: string | null;       // null = match text
+  opacity: number;            // 0..100
+  rotation: number;           // 0..360
+  gap: number;                // px between text and icon
+  ox: number; oy: number;     // nudge, px
+  fx: { shadow: boolean; glow: boolean; emboss: boolean };
+}
+
+export const DEFAULT_ICON: IconDef = {
+  lib: "lucide", name: "Play", viewBox: "0 0 24 24",
+  inner: '<polygon points="6 3 20 12 6 21 6 3"/>', mode: "stroke",
+};
+
+export function defaultIconCfg(): IconCfg {
+  return {
+    show: true, def: { ...DEFAULT_ICON }, placement: "right", only: false,
+    size: 100, strokeWidth: 24, color: null, opacity: 100, rotation: 0,
+    gap: 18, ox: 0, oy: 0, fx: { shadow: false, glow: false, emboss: false },
+  };
+}
 
 /** Popular game-UI faces from Google Fonts. `factor` ≈ average glyph advance
  *  (em) used for auto-width; `css` is the families query for fonts.googleapis. */
@@ -58,13 +183,15 @@ export interface GenConfig {
   presetId: string;
   shape: Shape;
   effects: Partial<Record<EffectRole, string>>;
-  face: { mode: "light" | "dark"; finish: number; noise: number };
-  bevel: { width: number; softness: number };
-  lighting: { angle: number; highlight: number; lowlight: number; hardHighlight: number };
+  face: { mode: "light" | "dark"; contrast: number; midpoint: number };
+  bevel: { width: number; softness: number };       // wall width + corner softness
+  candy: CandyTokens;
+  lighting: { angle: number; highlight: number; lowlight: number };
   shadow: { distance: number; blur: number; opacity: number };
   transparency: { frame: number; interior: number; content: number };
-  content: { label: string; icon: string; placement: "left" | "right" | "none"; fx: TextFx };
-  type: { font: string; size: number };
+  content: { label: string };
+  type: TypeCfg;
+  icon: IconCfg;
   states: Record<GenStateName, StateAdjust>;
   visible: Record<Exclude<GenStateName, "default">, boolean>;
   canvas: CanvasBg;
@@ -76,17 +203,23 @@ export interface Preset {
   shape: Shape;
   bevel: { width: number; softness: number };
   effects: Record<EffectRole, string>;
+  candy?: Partial<{ [K in keyof CandyTokens]: Partial<CandyTokens[K]> }>;
 }
 
+/** Each preset is a different candy *construction*, not just a palette. */
 export const PRESETS: Preset[] = [
-  { id: "arcane-bevel", name: "Arcane Bevel", shape: "chamfer", bevel: { width: 14, softness: 36 },
-    effects: { Bevel: "#7C3AED", Glow: "#C026D3", Highlight: "#FFFFFF", Shadow: "#5B21B6", "Inner Fill": "#F6F3FC" } },
-  { id: "power-pill", name: "Power Pill", shape: "pill", bevel: { width: 12, softness: 100 },
-    effects: { Bevel: "#DB2777", Glow: "#F472B6", Highlight: "#FFF1F8", Shadow: "#9D174D", "Inner Fill": "#FDF4F9" } },
-  { id: "hard-chisel", name: "Hard Chisel", shape: "sharp", bevel: { width: 16, softness: 4 },
-    effects: { Bevel: "#EA580C", Glow: "#F59E0B", Highlight: "#FFF7ED", Shadow: "#9A3412", "Inner Fill": "#FFF8F2" } },
-  { id: "soft-round", name: "Soft Round", shape: "round", bevel: { width: 12, softness: 70 },
-    effects: { Bevel: "#0891B2", Glow: "#22D3EE", Highlight: "#F0FDFF", Shadow: "#155E75", "Inner Fill": "#F2FBFD" } },
+  { id: "hard-candy", name: "Hard Candy", shape: "round", bevel: { width: 10, softness: 78 },
+    effects: { Bevel: "#0E9CC9", Glow: "#8FF0FF", Highlight: "#FFFFFF", Shadow: "#0A4A62", "Inner Fill": "#2CC5F0" },
+    candy: { gloss: { height: 46, curve: 26, opacity: 72 }, specular: { on: true }, extrusion: { depth: 10 } } },
+  { id: "grape-jelly", name: "Grape Jelly", shape: "pill", bevel: { width: 9, softness: 100 },
+    effects: { Bevel: "#8B34D8", Glow: "#E29CFF", Highlight: "#FFFFFF", Shadow: "#4A1178", "Inner Fill": "#A855F7" },
+    candy: { gloss: { height: 54, curve: 40, opacity: 62, softness: 46 }, innerGlow: { opacity: 72, size: 66 }, bloom: { opacity: 60, size: 72 }, extrusion: { depth: 12 } } },
+  { id: "hero-chisel", name: "Hero Chisel", shape: "chamfer", bevel: { width: 14, softness: 24 },
+    effects: { Bevel: "#D97706", Glow: "#FDE68A", Highlight: "#FFF7E6", Shadow: "#7C2D12", "Inner Fill": "#F59E0B" },
+    candy: { gloss: { height: 38, curve: 10, opacity: 44, softness: 10 }, specular: { size: 18, opacity: 60 }, extrusion: { depth: 14, darkness: 62 }, innerEdge: { strength: 62, width: 3 }, texture: { amount: 10, scale: 50 } } },
+  { id: "bubble-pop", name: "Bubble Pop", shape: "round", bevel: { width: 8, softness: 100 },
+    effects: { Bevel: "#E1408F", Glow: "#FFC1DE", Highlight: "#FFFFFF", Shadow: "#8C1D53", "Inner Fill": "#F868B1" },
+    candy: { gloss: { height: 50, curve: 34, opacity: 78, softness: 30 }, specular: { size: 32, opacity: 92 }, bloom: { opacity: 62, size: 68 }, extrusion: { depth: 9 } } },
 ];
 
 export function presetById(id: string): Preset {
@@ -95,30 +228,53 @@ export function presetById(id: string): Preset {
 
 export function defaultStates(): Record<GenStateName, StateAdjust> {
   return {
-    default: { brightness: 0, glow: 42, lift: 0, opacity: 100 },
-    hover: { brightness: 10, glow: 62, lift: -4, opacity: 100 },
-    pressed: { brightness: -8, glow: 30, lift: 2, opacity: 100 },
-    disabled: { brightness: 0, glow: 0, lift: 0, opacity: 58 },
+    default: { brightness: 0, glow: 0, lift: 0, opacity: 100 },
+    hover: { brightness: 8, glow: 38, lift: -3, opacity: 100 },
+    pressed: { brightness: -6, glow: 12, lift: 3, opacity: 100 },
+    disabled: { brightness: 0, glow: 0, lift: 0, opacity: 62 },
+  };
+}
+
+export function defaultType(): TypeCfg {
+  return {
+    font: "Inter", size: 52, weight: 800, italic: false, spacing: 2, case: "upper",
+    fillMode: "solid", fill: "#FFFFFF", fill2: "#DCF6FF",
+    outline: { on: true, color: "#0B6183", width: 2.6 },
+    shadow: { on: true, color: "#083D52", x: 0, y: 3, blur: 1.5, opacity: 45 },
+    emboss: { on: true, strength: 30 },
+    glow: { on: false, color: "#8FF0FF", size: 8, opacity: 80 },
+    preset: "candy",
   };
 }
 
 export function defaultConfig(): GenConfig {
   const p = PRESETS[0];
+  const candy = defaultCandy();
+  applyPresetCandy(candy, p);
   return {
     presetId: p.id,
     shape: p.shape,
     effects: { ...p.effects },
-    face: { mode: "light", finish: 62, noise: 12 },
+    face: { mode: "light", contrast: 55, midpoint: 50 },
     bevel: { ...p.bevel },
-    lighting: { angle: 135, highlight: 78, lowlight: 46, hardHighlight: 0 },
-    shadow: { distance: 14, blur: 18, opacity: 45 },
+    candy,
+    lighting: { angle: 90, highlight: 78, lowlight: 46 },
+    shadow: { distance: 10, blur: 14, opacity: 40 },
     transparency: { frame: 100, interior: 100, content: 100 },
-    content: { label: "PLAY", icon: "Play", placement: "right", fx: { emboss: false, glow: false, outline: false, shadow: false } },
-    type: { font: "Inter", size: 52 },
+    content: { label: "PLAY" },
+    type: defaultType(),
+    icon: defaultIconCfg(),
     states: defaultStates(),
     visible: { hover: true, pressed: true, disabled: true },
     canvas: "#F4F5F7",
   };
+}
+
+export function applyPresetCandy(candy: CandyTokens, p: Preset) {
+  if (!p.candy) return;
+  for (const k of Object.keys(p.candy) as (keyof CandyTokens)[]) {
+    Object.assign(candy[k] as object, p.candy[k]);
+  }
 }
 
 /* ── color utils ───────────────────────────────────────────────── */
@@ -137,6 +293,10 @@ export function desaturate(c: string, t: number): string {
   const gray = `#${((1 << 24) | (gr << 16) | (gr << 8) | gr).toString(16).slice(1)}`;
   return hexMix(c, gray, t);
 }
+export function hexRgba(c: string, alpha: number): string {
+  const p = parseInt(c.slice(1), 16);
+  return `rgba(${(p >> 16) & 255},${(p >> 8) & 255},${p & 255},${alpha.toFixed(2)})`;
+}
 export function hslHex(h: number, s: number, l: number): string {
   s /= 100; l /= 100;
   const a = s * Math.min(l, 1 - l);
@@ -154,13 +314,13 @@ export function randomizeConfig(c: GenConfig): GenConfig {
   return {
     ...c,
     effects: {
-      Bevel: hslHex(h, r(70, 90), r(45, 58)),
-      Glow: hslHex((h + r(10, 40)) % 360, r(80, 95), r(55, 65)),
-      Highlight: hslHex(h, r(15, 35), 97),
-      Shadow: hslHex(h, r(45, 65), r(24, 38)),
-      "Inner Fill": hslHex(h, r(15, 30), 96),
+      Bevel: hslHex(h, r(68, 88), r(40, 52)),
+      Glow: hslHex((h + r(8, 35)) % 360, r(80, 95), r(70, 82)),
+      Highlight: hslHex(h, r(5, 20), 99),
+      Shadow: hslHex(h, r(50, 70), r(18, 30)),
+      "Inner Fill": hslHex(h, r(70, 92), r(52, 62)),
     },
-    lighting: { ...c.lighting, angle: [45, 90, 135][r(0, 2)], highlight: r(60, 92), lowlight: r(30, 65), hardHighlight: r(0, 2) ? 0 : r(40, 80) },
+    lighting: { ...c.lighting, angle: [70, 90, 110][r(0, 2)], highlight: r(60, 92), lowlight: r(30, 65) },
   };
 }
 

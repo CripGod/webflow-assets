@@ -11,5 +11,7 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   server: { port: 5175, host: true },
-  build: { outDir: "dist", sourcemap: true },
+  // Sourcemaps off: the lazy icon-library chunks are large and maps triple
+  // the deploy payload.
+  build: { outDir: "dist", sourcemap: false, chunkSizeWarningLimit: 7000 },
 });

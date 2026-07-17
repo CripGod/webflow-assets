@@ -1,13 +1,19 @@
-import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize } from "./model";
-import { lighten, darken, hexMix, desaturate, fontByName } from "./model";
+import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef } from "./model";
+import { lighten, darken, hexMix, desaturate, hexRgba, fontByName, DEFAULT_ICON } from "./model";
 import { iconGroup } from "./icons";
 
-// Bevel engine v6 — auto-sizing shape, per-state adjustments from the config,
-// one key light + hard specular, explicit shadow controls, per-part opacity,
-// text effects. Pure (config, state) → SVG string for canvas + copy + exports.
+// Candy engine v9 — a hard-candy shell built from ordered, independently
+// tokenized layers:
+//   1 cast shadow   2 extrusion   3 outer rim   4 bevel wall   5 face gradient
+//   6 inner edge    7 inner glow  8 curved gloss 9 sharp specular
+//   10 lower bloom  11 micro texture  12 text & icon treatment
+// Pure (config, state) → SVG string for canvas + copy + exports. The lighting
+// angle is the single source of truth: every gradient, the shadow direction,
+// the gloss side and the specular position derive from it.
 
 let UID = 0;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 /* ── shape paths ─────────────────────────────────────────────── */
 function norm(dx: number, dy: number): [number, number] {
@@ -46,13 +52,13 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
 function effect(cfg: GenConfig, role: EffectRole): string {
   const e = cfg.effects[role];
   if (e) return e;
-  const bevel = cfg.effects.Bevel ?? "#7C3AED";
+  const bevel = cfg.effects.Bevel ?? "#0E9CC9";
   switch (role) {
     case "Bevel": return bevel;
-    case "Glow": return bevel;
+    case "Glow": return lighten(bevel, 0.55);
     case "Highlight": return "#FFFFFF";
-    case "Shadow": return darken(bevel, 0.45);
-    case "Inner Fill": return lighten(bevel, 0.92);
+    case "Shadow": return darken(bevel, 0.5);
+    case "Inner Fill": return lighten(bevel, 0.15);
   }
 }
 
@@ -60,136 +66,283 @@ const bright = (c: string, b: number) => (b >= 0 ? lighten(c, b / 100) : darken(
 
 interface Geom { x: number; y: number; h: number; fs: number; iconSize: number; minW?: number; maxW?: number }
 
-/** Core builder — width grows with the content. */
+/** Core builder — the candy stack. Width grows with the content. */
 function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
-  label?: string; icon?: string | null; secondary?: boolean; shapeOverride?: Shape; fixedW?: number;
+  label?: string; iconDef?: IconDef | null; secondary?: boolean; shapeOverride?: Shape; fixedW?: number;
 } = {}): string {
   const id = "b" + UID++;
   const disabled = state === "disabled";
+  const pressed = state === "pressed";
   const adj = cfg.states[state];
-  const P = (c: string) => (disabled ? lighten(desaturate(c, 0.85), 0.08) : bright(c, adj.brightness));
+  const P = (c: string) => (disabled ? lighten(desaturate(c, 0.82), 0.1) : bright(c, adj.brightness));
   const secondary = !!opts.secondary;
   const shape = opts.shapeOverride ?? cfg.shape;
+  const C = cfg.candy;
+  const K = g0.h / 168; // token px scale for kit sizes
 
   const bevelC = P(effect(cfg, "Bevel"));
-  const glowC = disabled ? "#B9BEC6" : effect(cfg, "Glow");
+  const glowC = disabled ? "#B9BEC6" : P(effect(cfg, "Glow"));
   const hiC = P(effect(cfg, "Highlight"));
   const shC = effect(cfg, "Shadow");
   const fillC = P(effect(cfg, "Inner Fill"));
 
   const darkFace = cfg.face.mode === "dark";
-  const face = darkFace ? hexMix(bevelC, "#0B0714", 0.78) : fillC;
-  const labelC = disabled ? "#A7AAB4" : secondary ? (darkFace ? lighten(bevelC, 0.5) : darken(bevelC, 0.05)) : darkFace ? lighten(bevelC, 0.62) : darken(bevelC, 0.06);
+  let face = darkFace ? hexMix(bevelC, "#0B0714", 0.72) : fillC;
+  if (secondary) face = hexMix(face, darkFace ? "#100A1C" : "#FFFFFF", 0.78);
+  const autoLabel = disabled ? "#A7AAB4"
+    : secondary ? (darkFace ? lighten(bevelC, 0.55) : darken(bevelC, 0.12))
+    : darkFace ? lighten(bevelC, 0.66) : "#FFFFFF";
 
-  // ── auto-size geometry: the shape grows with the text ─────────
-  const { x, y, h, iconSize } = g0;
-  const fontDef = fontByName(cfg.type.font);
-  const fs = g0.fs * (cfg.type.size / 52);
-  const label = esc(opts.label ?? cfg.content.label ?? "PLAY");
-  const iconName = opts.icon === null ? null : opts.icon ?? (cfg.content.placement !== "none" ? cfg.content.icon : null);
-  const showText = opts.icon !== undefined ? !!opts.label : true;
-  const gap = fs * 0.38;
-  const textW = showText ? label.length * fs * fontDef.factor : 0;
-  const contentW = textW + (iconName ? iconSize + (showText ? gap : 0) : 0);
-  const padX = Math.max(64, h * 0.42);
-  const w = opts.fixedW ?? Math.max(g0.minW ?? 230, Math.min(g0.maxW ?? 980, contentW + padX * 2));
-  const vw = x * 2 + w, vh = y * 2 + h + 26; // extra bottom room for shadow
+  /* ── auto-size geometry: the shape grows with the content ────── */
+  const { x, y, h, iconSize: baseIcon } = g0;
+  const T2 = cfg.type;
+  const fontDef = fontByName(T2.font);
+  const fs = g0.fs * (T2.size / 52);
+  const rawLabel = opts.label ?? cfg.content.label ?? "PLAY";
+  const cased = T2.case === "upper" ? rawLabel.toUpperCase()
+    : T2.case === "lower" ? rawLabel.toLowerCase()
+    : T2.case === "title" ? rawLabel.replace(/\b\w/g, (m) => m.toUpperCase())
+    : rawLabel;
+  const label = esc(cased);
 
-  const bw = secondary ? Math.max(4, cfg.bevel.width * 0.6) : cfg.bevel.width;
+  const iconDef = opts.iconDef === null ? null
+    : opts.iconDef ?? (cfg.icon.show ? (cfg.icon.def ?? DEFAULT_ICON) : null);
+  const iconOnly = opts.iconDef !== undefined ? !opts.label : (cfg.icon.only && !!iconDef);
+  const showText = !iconOnly && label.length > 0;
+  const iconSize = baseIcon * (cfg.icon.size / 100);
+  const gap = showText && iconDef ? cfg.icon.gap * K : 0;
+  const spacingEm = T2.spacing / 100;
+  const weightK = 1 + Math.max(0, T2.weight - 700) * 0.0004;
+  const textW = showText ? label.length * fs * fontDef.factor * (1 + spacingEm) * weightK * 1.06 : 0;
+  const contentW = textW + (iconDef ? iconSize : 0) + gap;
+  const endRoom = shape === "pill" ? h * 0.16 : 0; // rounded ends eat width
+  const padX = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + endRoom;
+  const minW = opts.fixedW ?? (iconOnly ? Math.max(h, contentW + padX * 2) : Math.max(g0.minW ?? 230 * K, contentW + padX * 2));
+  const w = opts.fixedW ?? Math.min(g0.maxW ?? 980, minW);
+
+  /* ── extrusion & lift (pressed physically sinks + squashes) ──── */
+  const depth = C.extrusion.depth * K * (secondary ? 0.55 : 1);
+  const visDepth = Math.max(0, depth * (pressed ? 0.4 : 1));
+  const lift = adj.lift;
+  const vw = x * 2 + w, vh = y * 2 + h + Math.ceil(depth) + 26;
+
+  const bw = (secondary ? Math.max(4, cfg.bevel.width * 0.7) : cfg.bevel.width) * K;
+  const rimW = C.rim.width * K;
   const outer = shapePath(shape, x, y, w, h, cfg.bevel.softness);
-  const inner = shapePath(shape, x + bw, y + bw, w - bw * 2, h - bw * 2, Math.max(0, cfg.bevel.softness - 8));
+  const faceP = shapePath(shape, x + bw, y + bw, w - bw * 2, h - bw * 2, Math.max(0, cfg.bevel.softness - 8));
+  const rimP = shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, cfg.bevel.softness);
 
-  // ── key light ─────────────────────────────────────────────────
+  /* ── key light — global source of truth ──────────────────────── */
   const A = ((cfg.lighting.angle % 360) + 360) % 360;
   const rad = (A * Math.PI) / 180;
-  const lx = Math.cos(rad), ly = -Math.sin(rad);
-  const gpos = (k: number) => (0.5 + k * 0.5).toFixed(3);
+  const lx = Math.cos(rad), ly = -Math.sin(rad); // +l points toward the light
+  const gpos = (k: number) => (0.5 + clamp(k, -1, 1) * 0.5).toFixed(3);
+  const axis = `x1="${gpos(-lx)}" y1="${gpos(-ly)}" x2="${gpos(lx)}" y2="${gpos(ly)}"`;
   const hiK = (disabled ? 0.35 : 1) * (cfg.lighting.highlight / 78);
   const lowK = Math.max(0.1, cfg.lighting.lowlight / 46);
 
-  // ── shadow (explicit controls; direction opposite the light) ──
-  const sd = cfg.shadow.distance * (state === "pressed" ? 0.45 : state === "hover" ? 1.25 : 1);
-  const sdx = (-lx * sd * 0.6).toFixed(1);
-  const sdy = (Math.max(2, -ly * sd * 0.6 + sd * 0.55)).toFixed(1);
-  const shOp = (cfg.shadow.opacity / 100) * (disabled ? 0.4 : 1);
-
-  const glowOp = (adj.glow / 100) * (secondary ? 0.4 : 1);
-  const glowDev = 12;
-
-  // noise
-  const noiseOp = (cfg.face.noise / 100) * 0.5 * (disabled ? 0.4 : 1);
-  const noise = noiseOp > 0.005
-    ? `<clipPath id="${id}nc"><path d="${inner}"/></clipPath>
-       <g clip-path="url(#${id}nc)"><rect x="${x}" y="${y}" width="${w}" height="${h}" filter="url(#${id}nz)" opacity="${noiseOp.toFixed(2)}" style="mix-blend-mode:soft-light"/></g>`
+  /* 1 ── cast shadow (grounded — does not travel with the lift) ── */
+  const distK = pressed ? 0.45 : state === "hover" ? 1.35 : 1;
+  const sd = cfg.shadow.distance * K * distK;
+  const sdx = -lx * sd * 0.55;
+  const sdy = visDepth + Math.max(1.5, sd * 0.7 - ly * sd * 0.3) + Math.max(0, lift);
+  const sBlur = Math.max(0.5, cfg.shadow.blur * 0.5 * (pressed ? 0.7 : state === "hover" ? 1.25 : 1));
+  const shOp = (cfg.shadow.opacity / 100) * (disabled ? 0.35 : state === "hover" ? 0.85 : 1);
+  const castShadow = shOp > 0.005
+    ? `<path d="${outer}" transform="translate(${sdx.toFixed(1)} ${sdy.toFixed(1)})" fill="${shC}" opacity="${shOp.toFixed(2)}" filter="url(#${id}sb)"/>`
     : "";
 
-  // hard highlight — crisp specular edge on the light side (no blur)
-  const hardOp = (cfg.lighting.hardHighlight / 100) * (disabled ? 0.25 : 1);
-  const hard = hardOp > 0.005
-    ? `<path d="${shapePath(shape, x + bw + 3, y + bw + 3, w - bw * 2 - 6, h - bw * 2 - 6, Math.max(0, cfg.bevel.softness - 10))}" fill="none" stroke="url(#${id}hard)" stroke-width="3" opacity="${hardOp.toFixed(2)}"/>`
+  /* state aura (hover glow etc.) */
+  const glowOp = (adj.glow / 100) * (secondary ? 0.4 : 1) * (disabled ? 0 : 1);
+  const aura = glowOp > 0.01
+    ? `<path d="${outer}" transform="translate(0 ${(lift + visDepth * 0.4).toFixed(1)})" fill="${glowC}" opacity="${glowOp.toFixed(2)}" filter="url(#${id}gb)"/>`
     : "";
 
-  // ── text effects ──────────────────────────────────────────────
-  const fx = cfg.content.fx;
-  const fxFilters: string[] = [];
-  if (fx.emboss && !disabled) fxFilters.push(`drop-shadow(-1px -1px 0.5px ${lighten(hiC, 0.2)}) drop-shadow(1px 2px 1px rgba(3,5,9,0.55))`);
-  if (fx.shadow) fxFilters.push(`drop-shadow(0 3px 2px rgba(0,0,0,0.4))`);
-  if (fx.glow && !disabled) fxFilters.push(`drop-shadow(0 0 5px ${glowC}) drop-shadow(0 0 14px ${hexMix(glowC, "#ffffff", 0.15)})`);
-  const contentFilter = fxFilters.length ? ` style="filter:${fxFilters.join(" ")}"` : "";
-  const outlineAttrs = fx.outline ? ` stroke="${darken(bevelC, 0.45)}" stroke-width="${(fs * 0.045).toFixed(1)}" paint-order="stroke"` : "";
+  /* 2 ── extrusion body */
+  const extrusion = visDepth > 0.3
+    ? `<path d="${outer}" transform="translate(0 ${visDepth.toFixed(1)})" fill="url(#${id}ext)" stroke="${darken(bevelC, 0.55)}" stroke-width="1"/>`
+    : "";
 
-  // content layout
+  /* face box (for screen-space layers) */
+  const fx0 = x + bw, fy0 = y + bw, fw = w - bw * 2, fh = h - bw * 2;
+  const faceCx = fx0 + fw / 2, faceCy = fy0 + fh / 2;
+
+  /* 7 ── inner glow (color from the Glow well, unlit side) */
+  const igOp = (C.innerGlow.opacity / 100) * (disabled ? 0 : 1);
+  const igSize = clamp(C.innerGlow.size / 100, 0.05, 1);
+
+  /* 8 ── broad curved gloss (screen space, flips if lit from below) */
+  const flip = ly > 0.25; // light from below
+  const gH = fh * clamp(C.gloss.height / 100, 0.08, 0.92);
+  const bow = C.gloss.curve * K * (flip ? -1 : 1);
+  const apexX = faceCx + lx * fw * 0.12;
+  const gy = flip ? fy0 + fh - gH : fy0 + gH;
+  const glossPath = flip
+    ? `M ${fx0 - 2} ${fy0 + fh + 2} H ${fx0 + fw + 2} V ${gy.toFixed(1)} Q ${apexX.toFixed(1)} ${(gy + bow * 1.8).toFixed(1)} ${fx0 - 2} ${gy.toFixed(1)} Z`
+    : `M ${fx0 - 2} ${fy0 - 2} H ${fx0 + fw + 2} V ${gy.toFixed(1)} Q ${apexX.toFixed(1)} ${(gy + bow * 1.8).toFixed(1)} ${fx0 - 2} ${gy.toFixed(1)} Z`;
+  const gOpTop = (C.gloss.opacity / 100) * (disabled ? 0.35 : 1) * (pressed ? 0.82 : 1);
+  const soft = clamp(C.gloss.softness / 100, 0, 1);
+  const gloss = C.gloss.on && gOpTop > 0.01
+    ? `<path d="${glossPath}" fill="url(#${id}gl)"/>`
+    : "";
+
+  /* 9 ── sharp specular (lit corner; token offsets nudge it) */
+  const spSize = C.specular.size * K;
+  const spOp = (C.specular.opacity / 100) * (disabled ? 0.25 : 1) * (pressed ? 0.85 : 1);
+  const spX = faceCx + lx * fw * 0.34 + (C.specular.ox / 100) * fw * 0.4;
+  const spY = faceCy + ly * fh * 0.3 + (C.specular.oy / 100) * fh * 0.4;
+  const spRot = clamp((90 - A) * 0.35, -40, 40);
+  const specular = C.specular.on && spOp > 0.01 && spSize > 0.5
+    ? `<g transform="rotate(${spRot.toFixed(1)} ${spX.toFixed(1)} ${spY.toFixed(1)})">
+         <ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spSize.toFixed(1)}" ry="${(spSize * 0.42).toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>
+         <ellipse cx="${(spX - spSize * 1.6).toFixed(1)}" cy="${(spY + spSize * 0.9).toFixed(1)}" rx="${(spSize * 0.34).toFixed(1)}" ry="${(spSize * 0.22).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.7).toFixed(2)}"/>
+       </g>`
+    : "";
+
+  /* 10 ── lower reflective bloom (bounce light, unlit side) */
+  const blOp = (C.bloom.opacity / 100) * (disabled ? 0.3 : 1);
+  const blS = clamp(C.bloom.size / 100, 0.05, 1.2);
+  const blX = faceCx - lx * fw * 0.16;
+  const blY = faceCy - ly * fh * 0.3;
+  const bloom = blOp > 0.01
+    ? `<ellipse cx="${blX.toFixed(1)}" cy="${blY.toFixed(1)}" rx="${(fw * 0.46 * blS).toFixed(1)}" ry="${(fh * 0.26 * blS).toFixed(1)}" fill="url(#${id}bl)" opacity="${blOp.toFixed(2)}"/>`
+    : "";
+
+  /* 11 ── micro texture */
+  const nzOp = (C.texture.amount / 100) * 0.5 * (disabled ? 0.4 : 1);
+  const nzFreq = (0.45 + (C.texture.scale / 100) * 1.1).toFixed(2);
+  const noise = nzOp > 0.005
+    ? `<rect x="${fx0}" y="${fy0}" width="${fw}" height="${fh}" filter="url(#${id}nz)" opacity="${nzOp.toFixed(2)}" style="mix-blend-mode:soft-light"/>`
+    : "";
+
+  /* 6 ── inner edge shading */
+  const edgeOp = (C.innerEdge.strength / 100) * (pressed ? 1.35 : 1);
+  const innerEdge = edgeOp > 0.01 && C.innerEdge.width > 0.1
+    ? `<path d="${faceP}" fill="none" stroke="url(#${id}ie)" stroke-width="${(C.innerEdge.width * K).toFixed(1)}" opacity="${clamp(edgeOp, 0, 1).toFixed(2)}"/>`
+    : "";
+
+  /* pressed: extra occlusion from the lit side (the cap sank into the rim) */
+  const pressShade = pressed && !disabled
+    ? `<path d="${faceP}" fill="url(#${id}ps)" opacity="0.3"/>`
+    : "";
+
+  /* ── 12 · content: expanded text & icon treatment ────────────── */
+  const tFill = T2.fillMode === "auto" ? autoLabel
+    : T2.fillMode === "gradient" ? `url(#${id}tg)` : P(T2.fill);
+  const tFilters: string[] = [];
+  if (T2.emboss.on && !disabled) {
+    const s = clamp(T2.emboss.strength / 100, -1, 1);
+    if (s > 0) tFilters.push(`drop-shadow(0 ${-1.2 * s}px 0.4px rgba(255,255,255,${(0.7 * s).toFixed(2)})) drop-shadow(0 ${1.8 * s}px 1px rgba(4,8,14,${(0.55 * s).toFixed(2)}))`);
+    else if (s < 0) { const a = -s; tFilters.push(`drop-shadow(0 ${1.2 * a}px 0.4px rgba(255,255,255,${(0.6 * a).toFixed(2)})) drop-shadow(0 ${-1.6 * a}px 0.9px rgba(4,8,14,${(0.6 * a).toFixed(2)}))`); }
+  }
+  if (T2.shadow.on) tFilters.push(`drop-shadow(${T2.shadow.x}px ${T2.shadow.y}px ${T2.shadow.blur}px ${hexRgba(T2.shadow.color, T2.shadow.opacity / 100)})`);
+  if (T2.glow.on && !disabled) tFilters.push(`drop-shadow(0 0 ${(T2.glow.size * 0.6).toFixed(1)}px ${hexRgba(T2.glow.color, T2.glow.opacity / 100)}) drop-shadow(0 0 ${(T2.glow.size * 1.6).toFixed(1)}px ${hexRgba(T2.glow.color, (T2.glow.opacity / 100) * 0.6)})`);
+  const textFilter = tFilters.length ? ` style="filter:${tFilters.join(" ")}"` : "";
+  const outlineAttrs = T2.outline.on
+    ? ` stroke="${P(T2.outline.color)}" stroke-width="${(T2.outline.width * (fs / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
+    : "";
+
+  const iFx = cfg.icon.fx;
+  const iFilters: string[] = [];
+  if (iFx.emboss && !disabled) iFilters.push(`drop-shadow(0 -1px 0.4px rgba(255,255,255,0.6)) drop-shadow(0 1.6px 1px rgba(4,8,14,0.5))`);
+  if (iFx.shadow) iFilters.push(`drop-shadow(0 2px 1.5px rgba(0,0,0,0.4))`);
+  if (iFx.glow && !disabled) iFilters.push(`drop-shadow(0 0 5px ${glowC}) drop-shadow(0 0 12px ${hexRgba(glowC, 0.6)})`);
+  const iconFilter = iFilters.length ? iFilters.join(" ") : undefined;
+  const iconColor = disabled ? "#A7AAB4" : cfg.icon.color ? P(cfg.icon.color) : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
+
+  /* layout */
   const cx = x + w / 2, cy = y + h / 2;
-  const total = contentW;
-  const startX = cx - total / 2;
-  const placeLeft = cfg.content.placement === "left" && opts.icon === undefined;
-  const textX = placeLeft ? startX + iconSize + gap + textW / 2 : startX + textW / 2;
-  const iconX = placeLeft ? startX : startX + textW + (showText ? gap : 0);
+  const startX = cx - contentW / 2;
+  const placeLeft = opts.iconDef === undefined && cfg.icon.placement === "left" && !iconOnly;
+  const textX = placeLeft ? startX + (iconDef ? iconSize + gap : 0) + textW / 2 : startX + textW / 2;
+  const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K;
+  const iconY = cy - iconSize / 2 + cfg.icon.oy * K;
 
   const T = cfg.transparency;
+  const fontStyle = T2.italic ? ` font-style="italic"` : "";
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}" viewBox="0 0 ${vw} ${vh}" font-family="'${cfg.type.font}', Inter, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}" viewBox="0 0 ${vw} ${vh}" font-family="'${T2.font}', Inter, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
 <defs>
-  <linearGradient id="${id}band" x1="${gpos(-lx)}" y1="${gpos(-ly)}" x2="${gpos(lx)}" y2="${gpos(ly)}">
-    <stop offset="0" stop-color="${darken(bevelC, 0.32 * lowK)}"/>
-    <stop offset=".45" stop-color="${bevelC}"/>
-    <stop offset="1" stop-color="${lighten(bevelC, Math.min(0.85, 0.42 * hiK))}"/>
+  <linearGradient id="${id}band" ${axis}>
+    <stop offset="0" stop-color="${darken(bevelC, clamp(0.3 * lowK, 0, 0.7))}"/>
+    <stop offset=".5" stop-color="${bevelC}"/>
+    <stop offset="1" stop-color="${lighten(bevelC, clamp(0.45 * hiK, 0, 0.75))}"/>
   </linearGradient>
-  <linearGradient id="${id}face" x1="${gpos(-lx)}" y1="${gpos(-ly)}" x2="${gpos(lx)}" y2="${gpos(ly)}">
-    <stop offset="0" stop-color="${darkFace ? darken(face, 0.3 * lowK) : darken(face, 0.08 * lowK)}"/>
-    <stop offset="1" stop-color="${darkFace ? lighten(face, 0.08) : lighten(face, Math.min(0.8, 0.5 * hiK))}"/>
+  <linearGradient id="${id}ext" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="${darken(bevelC, clamp(0.25 + 0.4 * (C.extrusion.darkness / 100), 0, 0.85))}"/>
+    <stop offset="1" stop-color="${darken(bevelC, clamp(0.45 + 0.45 * (C.extrusion.darkness / 100), 0, 0.92))}"/>
   </linearGradient>
-  <linearGradient id="${id}sheen" x1="${gpos(-lx)}" y1="${gpos(-ly)}" x2="${gpos(lx)}" y2="${gpos(ly)}">
-    <stop offset=".45" stop-color="${hiC}" stop-opacity="0"/>
-    <stop offset="1" stop-color="${hiC}" stop-opacity="${(disabled ? 0 : (cfg.face.finish / 100) * 0.85 * Math.min(1.4, hiK)).toFixed(2)}"/>
+  <linearGradient id="${id}rim" ${axis}>
+    <stop offset="0" stop-color="${hiC}" stop-opacity="0.45"/>
+    <stop offset=".4" stop-color="${hiC}" stop-opacity="0.08"/>
+    <stop offset="1" stop-color="${hiC}" stop-opacity="0.95"/>
   </linearGradient>
-  <linearGradient id="${id}hard" x1="${gpos(-lx)}" y1="${gpos(-ly)}" x2="${gpos(lx)}" y2="${gpos(ly)}">
-    <stop offset=".55" stop-color="${hiC}" stop-opacity="0"/>
-    <stop offset=".72" stop-color="${hiC}" stop-opacity="0"/>
-    <stop offset=".78" stop-color="${hiC}" stop-opacity="1"/>
-    <stop offset="1" stop-color="${hiC}" stop-opacity="1"/>
+  <linearGradient id="${id}face" ${axis}>
+    <stop offset="0" stop-color="${darken(face, clamp(0.24 * (cfg.face.contrast / 50) * lowK, 0, 0.6))}"/>
+    <stop offset="${clamp(1 - cfg.face.midpoint / 100, 0.08, 0.92).toFixed(2)}" stop-color="${face}"/>
+    <stop offset="1" stop-color="${lighten(face, clamp(0.3 * (cfg.face.contrast / 50) * hiK, 0, 0.7))}"/>
   </linearGradient>
-  <filter id="${id}nz"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
-  <filter id="${id}drop" x="-30%" y="-45%" width="160%" height="200%">
-    <feDropShadow dx="${sdx}" dy="${sdy}" stdDeviation="${(cfg.shadow.blur * 0.5).toFixed(1)}" flood-color="${shC}" flood-opacity="${shOp.toFixed(2)}"/>
-    ${!disabled && glowOp > 0.01 ? `<feDropShadow dx="0" dy="0" stdDeviation="${glowDev}" flood-color="${glowC}" flood-opacity="${glowOp.toFixed(2)}"/>` : ""}
-  </filter>
+  <linearGradient id="${id}ie" ${axis}>
+    <stop offset="0" stop-color="${hexRgba(lighten(face, 0.55), 0.55)}"/>
+    <stop offset=".55" stop-color="${hexRgba(darken(bevelC, 0.35), 0.35)}"/>
+    <stop offset="1" stop-color="${hexRgba(darken(bevelC, 0.58), 0.9)}"/>
+  </linearGradient>
+  <linearGradient id="${id}ig" ${axis}>
+    <stop offset="0" stop-color="${glowC}" stop-opacity="${igOp.toFixed(2)}"/>
+    <stop offset="${igSize.toFixed(2)}" stop-color="${glowC}" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="${id}gl" x1="0" y1="${flip ? 1 : 0}" x2="0" y2="${flip ? 0 : 1}">
+    <stop offset="0" stop-color="${hiC}" stop-opacity="${gOpTop.toFixed(2)}"/>
+    <stop offset="${(1 - soft * 0.55).toFixed(2)}" stop-color="${hiC}" stop-opacity="${(gOpTop * (1 - 0.3 * soft)).toFixed(2)}"/>
+    <stop offset="1" stop-color="${hiC}" stop-opacity="${(gOpTop * (1 - soft)).toFixed(2)}"/>
+  </linearGradient>
+  <radialGradient id="${id}sp">
+    <stop offset="0" stop-color="${hiC}" stop-opacity="1"/>
+    <stop offset=".68" stop-color="${hiC}" stop-opacity="0.98"/>
+    <stop offset=".85" stop-color="${hiC}" stop-opacity="0.4"/>
+    <stop offset="1" stop-color="${hiC}" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="${id}bl">
+    <stop offset="0" stop-color="${hiC}" stop-opacity="1"/>
+    <stop offset="1" stop-color="${hiC}" stop-opacity="0"/>
+  </radialGradient>
+  ${pressed ? `<linearGradient id="${id}ps" ${axis}><stop offset=".5" stop-color="${darken(bevelC, 0.5)}" stop-opacity="0"/><stop offset="1" stop-color="${darken(bevelC, 0.55)}" stop-opacity="0.75"/></linearGradient>` : ""}
+  ${T2.fillMode === "gradient" ? `<linearGradient id="${id}tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.fill)}"/><stop offset="1" stop-color="${P(T2.fill2)}"/></linearGradient>` : ""}
+  <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
+  ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
+  ${aura ? `<filter id="${id}gb" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="11"/></filter>` : ""}
+  ${noise ? `<filter id="${id}nz"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>` : ""}
 </defs>
-<g transform="translate(0 ${adj.lift})" opacity="${(adj.opacity / 100).toFixed(2)}" filter="url(#${id}drop)">
-  <g opacity="${(T.frame / 100).toFixed(2)}">
-    <path d="${outer}" fill="${secondary ? (darkFace ? "#17121F" : "#FFFFFF") : `url(#${id}band)`}" stroke="${darken(bevelC, disabled ? 0.2 : 0.45)}" stroke-width="2"/>
-    ${secondary ? `<path d="${outer}" fill="none" stroke="url(#${id}band)" stroke-width="${Math.max(3, bw * 0.7)}"/>` : ""}
-  </g>
-  <g opacity="${(T.interior / 100).toFixed(2)}">
-    <path d="${inner}" fill="url(#${id}face)" stroke="${state === "pressed" ? darken(bevelC, 0.3) : hexMix(bevelC, face, 0.35)}" stroke-width="${state === "pressed" ? 2.4 : 1.6}"/>
-    <path d="${inner}" fill="url(#${id}sheen)"/>
-    ${noise}
-    ${hard}
-    ${state === "pressed" && !disabled ? `<path d="${inner}" fill="none" stroke="${glowC}" stroke-width="2.4" opacity="0.55"/>` : ""}
-  </g>
-  <g opacity="${(T.content / 100).toFixed(2)}"${contentFilter}>
-    ${showText ? `<text x="${textX.toFixed(1)}" y="${cy + 1}" font-size="${fs}" font-weight="700" letter-spacing="-0.01em" fill="${labelC}"${outlineAttrs} text-anchor="middle" dominant-baseline="central">${label}</text>` : ""}
-    ${iconName ? iconGroup(iconName, iconX, cy - iconSize / 2, iconSize, labelC, 2.4) : ""}
+<g opacity="${(adj.opacity / 100).toFixed(2)}">
+  ${castShadow}
+  ${aura}
+  <g transform="translate(0 ${lift})">
+    ${extrusion}
+    <g opacity="${(T.frame / 100).toFixed(2)}">
+      <path d="${outer}" fill="url(#${id}band)" stroke="${darken(bevelC, disabled ? 0.25 : 0.5)}" stroke-width="1.5"/>
+      ${rimW > 0.2 ? `<path d="${rimP}" fill="none" stroke="url(#${id}rim)" stroke-width="${rimW.toFixed(1)}" opacity="${((C.rim.brightness / 100) * (disabled ? 0.5 : 1)).toFixed(2)}"/>` : ""}
+    </g>
+    <g opacity="${(T.interior / 100).toFixed(2)}">
+      <path d="${faceP}" fill="url(#${id}face)"/>
+      ${igOp > 0.01 ? `<path d="${faceP}" fill="url(#${id}ig)"/>` : ""}
+      <g clip-path="url(#${id}fc)">
+        ${bloom}
+        ${pressShade}
+        ${gloss}
+        ${specular}
+        ${noise}
+      </g>
+      ${innerEdge}
+    </g>
+    <g opacity="${(T.content / 100).toFixed(2)}">
+      ${showText ? `<text x="${textX.toFixed(1)}" y="${cy + 1}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${label}</text>` : ""}
+      ${iconDef ? iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
+        strokeWidth: cfg.icon.strokeWidth / 10,
+        opacity: (cfg.icon.opacity / 100),
+        rotation: cfg.icon.rotation,
+        filter: iconFilter,
+      }) : ""}
+    </g>
   </g>
 </g>
 </svg>`;
@@ -211,20 +364,20 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     case "secondary":
       return build(cfg, state, { x: 26, y: 20, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: "Secondary" });
     case "iconbtn":
-      return build(cfg, state, { x: 22, y: 18, h: 132 * k, fs: 0, iconSize: 56 * k }, { icon: cfg.content.icon, label: "", fixedW: 132 * k });
+      return build(cfg, state, { x: 22, y: 18, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k });
     case "toggle": {
       const w = 210 * k, h = 108 * k;
-      const track = build(cfg, state, { x: 26, y: 20, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", icon: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 26, y: 20, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
       const knobR = (h - cfg.bevel.width * 2) / 2 - 6;
       const kx = 26 + w - cfg.bevel.width - 6 - knobR, ky = 20 + h / 2;
-      const glow = effect(cfg, "Glow"), fill = effect(cfg, "Inner Fill");
+      const glow = effect(cfg, "Glow"), fill = "#FFFFFF";
       const knob = `<circle cx="${kx}" cy="${ky}" r="${knobR}" fill="${fill}" stroke="${darken(effect(cfg, "Bevel"), 0.3)}" stroke-width="2"/>
         <circle cx="${kx}" cy="${ky}" r="${Math.max(3, knobR * 0.28)}" fill="${state === "disabled" ? "#A7AAB4" : glow}"/>`;
       return track.replace("</g>\n</svg>", knob + "</g>\n</svg>");
     }
     case "progress": {
       const w = 520 * k, h = 64 * k;
-      const track = build(cfg, state, { x: 26, y: 20, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", icon: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 26, y: 20, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
       const bw = cfg.bevel.width;
       const bevel = effect(cfg, "Bevel"), glow = effect(cfg, "Glow");
       const fw = (w - bw * 2 - 8) * 0.62;

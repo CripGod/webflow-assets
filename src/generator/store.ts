@@ -1,18 +1,68 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle } from "./model";
-import { defaultConfig, randomizeConfig, presetById } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken } from "./model";
+import { getDef } from "./icons";
 
-const LS_KEY = "ui-generator-v8"; // v8: typography, section filter, grid styles
+/* Keep the text treatment's accent colors in step with the shell palette so a
+   preset or color roll never leaves a stale outline color behind. */
+function retintText(c: GenConfig) {
+  const bevel = c.effects.Bevel ?? "#0E9CC9";
+  c.type.outline.color = darken(bevel, 0.5);
+  c.type.shadow.color = darken(bevel, 0.62);
+  c.type.glow.color = c.effects.Glow ?? darken(bevel, -0.4);
+}
+
+const LS_KEY = "ui-generator-v9"; // v9: candy surface, typography+icon systems
+const LS_KEY_V8 = "ui-generator-v8";
+
+/* Carry what translates from a v8 save into the candy model. */
+function migrateV8(old: Record<string, any>): GenConfig {
+  const c = defaultConfig();
+  try {
+    if (old.effects) c.effects = { ...c.effects, ...old.effects };
+    if (old.shape) c.shape = old.shape;
+    if (old.presetId) c.presetId = old.presetId;
+    if (old.canvas) c.canvas = old.canvas;
+    if (old.bevel) c.bevel = { width: old.bevel.width ?? c.bevel.width, softness: old.bevel.softness ?? c.bevel.softness };
+    if (old.lighting) c.lighting = {
+      angle: old.lighting.angle ?? c.lighting.angle,
+      highlight: old.lighting.highlight ?? c.lighting.highlight,
+      lowlight: old.lighting.lowlight ?? c.lighting.lowlight,
+    };
+    if (old.shadow) c.shadow = { ...c.shadow, ...old.shadow };
+    if (old.visible) c.visible = { ...c.visible, ...old.visible };
+    if (old.states) c.states = { ...c.states, ...old.states };
+    if (old.content?.label !== undefined) c.content.label = old.content.label;
+    if (old.type) { c.type.font = old.type.font ?? c.type.font; c.type.size = old.type.size ?? c.type.size; }
+    if (old.face?.mode) c.face.mode = old.face.mode;
+    if (old.content?.placement === "none") c.icon.show = false;
+    else if (old.content?.placement) c.icon.placement = old.content.placement;
+    if (typeof old.content?.icon === "string") {
+      const def = getDef("lucide", old.content.icon);
+      if (def) c.icon.def = def;
+    }
+  } catch { /* fall back to whatever migrated */ }
+  return c;
+}
 
 function load(): GenConfig {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<GenConfig>;
-      if (parsed.presetId && parsed.states && parsed.shadow && parsed.transparency && parsed.type) {
-        return { ...defaultConfig(), ...parsed } as GenConfig;
+      if (parsed.presetId && parsed.candy && parsed.type && parsed.icon) {
+        const d = defaultConfig();
+        return {
+          ...d, ...parsed,
+          candy: { ...d.candy, ...parsed.candy },
+          type: { ...d.type, ...parsed.type },
+          icon: { ...d.icon, ...parsed.icon },
+          face: { ...d.face, ...parsed.face },
+        } as GenConfig;
       }
     }
+    const v8 = localStorage.getItem(LS_KEY_V8);
+    if (v8) return migrateV8(JSON.parse(v8));
   } catch { /* ignore */ }
   return defaultConfig();
 }
@@ -55,7 +105,7 @@ export const useGen = create<GenStore>((set, get) => ({
   gridStyle: "dots" as GridStyle,
   sectionFilter: null,
   saveStatus: "saved",
-  open: { state: true, style: true, bevel: true, lighting: true },
+  open: { state: true, style: true, mapping: true, gloss: true },
 
   update: (fn) => {
     const cfg = JSON.parse(JSON.stringify(get().cfg)) as GenConfig;
@@ -69,11 +119,17 @@ export const useGen = create<GenStore>((set, get) => ({
   },
   setPreset: (id) => {
     const p = presetById(id);
-    get().update((c) => { c.presetId = id; c.shape = p.shape; c.bevel = { ...p.bevel }; c.effects = { ...p.effects }; });
+    get().update((c) => {
+      c.presetId = id; c.shape = p.shape; c.bevel = { ...p.bevel }; c.effects = { ...p.effects };
+      const candy = defaultCandy();
+      applyPresetCandy(candy, p);
+      c.candy = candy;
+      retintText(c);
+    });
   },
   randomize: () => {
     const next = randomizeConfig(get().cfg);
-    get().update((c) => { c.effects = next.effects; c.lighting = next.lighting; });
+    get().update((c) => { c.effects = next.effects; c.lighting = next.lighting; retintText(c); });
   },
   setSelectedState: (s) => set({ selectedState: s }),
   setPhase: (p) => set({ phase: p }),
@@ -84,7 +140,7 @@ export const useGen = create<GenStore>((set, get) => ({
   setSectionFilter: (v) => set({ sectionFilter: v }),
   randomizeColors: () => {
     const next = randomizeConfig(get().cfg);
-    get().update((c) => { c.effects = next.effects; });
+    get().update((c) => { c.effects = next.effects; retintText(c); });
   },
   toggle: (s) => set((st) => ({ open: { ...st.open, [s]: !st.open[s] } })),
 }));

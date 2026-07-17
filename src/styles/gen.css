@@ -315,3 +315,15 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .gridpop button.on { background: var(--soft); font-weight: 700; }
 
 @media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; } }
+
+/* ── v9: candy build — fx blocks, panel button row ───────────── */
+.fxblock { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.fxsub {
+  width: 100%; display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 0 4px 12px; border-left: 2px solid var(--line);
+}
+.btnrow { display: flex; gap: 10px; }
+.btnrow .randbtn { margin-top: 18px; flex: 1; }
+.btnrow .randbtn.kit.on { background: #17181c; border-color: #17181c; color: #fff; }
+.sec .inlinectl input[type="checkbox"] { width: 15px; height: 15px; accent-color: #17181c; cursor: pointer; }
+.check input[type="checkbox"] { accent-color: #17181c; }

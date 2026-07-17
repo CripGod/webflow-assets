@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { ChevronDown, Code2, Check, CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, Hammer, PenTool } from "lucide-react";
+import { Code2, Check, CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, defaultConfig } from "@/generator/model";
+import { defaultConfig } from "@/generator/model";
 import { renderBevel } from "@/generator/bevel";
-import { downloadSvg, downloadPng, copyText } from "@/generator/exportUtils";
+import { downloadSvg, downloadPng, downloadHtml, copyText } from "@/generator/exportUtils";
 
 // The actual PatternBreak logo file, bundled from the repo's top-level
 // pb-logo.png — never redrawn or interpreted.
@@ -13,8 +13,11 @@ function Logo() {
   return <img className="logo" src={logoUrl} alt="PatternBreak" />;
 }
 
+// v9: the bar stays out of the way — presets, states, and the kit live in the
+// left panel. Up here: copy the code, download a working HTML page, save
+// status, and the overflow exports.
 export function TopBar() {
-  const { cfg, setPreset, saveStatus, update, phase, setPhase, selectedState } = useGen();
+  const { cfg, saveStatus, update, selectedState } = useGen();
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -26,16 +29,12 @@ export function TopBar() {
   }, []);
 
   const svg = () => renderBevel(cfg, selectedState);
-  const stateValue =
-    cfg.visible.hover && cfg.visible.pressed && cfg.visible.disabled ? "4" :
-    cfg.visible.hover && cfg.visible.pressed ? "3" :
-    cfg.visible.hover ? "2" : "1";
-
   const copyCode = () => {
     void copyText(svg()).then((ok) => {
       if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1400); }
     });
   };
+  const dlHtml = () => downloadHtml(cfg, `ui-${cfg.presetId}.html`);
 
   return (
     <header className="top">
@@ -45,39 +44,14 @@ export function TopBar() {
       </div>
       <div className="top-spacer" />
 
-      <label className="fieldbox">
-        <span className="fl">Style preset</span>
-        <select value={cfg.presetId} onChange={(e) => setPreset(e.target.value)} aria-label="Style preset">
-          {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-      </label>
-
-      <label className="fieldbox" style={{ minWidth: 148 }}>
-        <span className="fl">States</span>
-        <select value={stateValue} aria-label="States shown"
-          onChange={(e) => {
-            const n = +e.target.value;
-            update((c) => { c.visible.hover = n >= 2; c.visible.pressed = n >= 3; c.visible.disabled = n >= 4; });
-          }}>
-          <option value="4">4 states</option>
-          <option value="3">3 states</option>
-          <option value="2">2 states</option>
-          <option value="1">1 state</option>
-        </select>
-        <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-      </label>
-
       <button className="copycode" onClick={copyCode} title="Copy component code (SVG)">
         {copied ? <Check size={17} strokeWidth={2.2} color="#16a34a" /> : <Code2 size={17} strokeWidth={1.9} />}
         {copied ? "Copied" : "Copy code"}
       </button>
 
-      <button className={`buildkit${phase === "kit" ? " on" : ""}`}
-        onClick={() => setPhase(phase === "kit" ? "master" : "kit")}
-        title={phase === "kit" ? "Back to the master component" : "Save style and apply it to the kit"}>
-        {phase === "kit" ? <PenTool size={16} strokeWidth={1.9} /> : <Hammer size={16} strokeWidth={1.9} />}
-        {phase === "kit" ? "Edit master" : "Build kit"}
+      <button className="copycode" onClick={dlHtml} title="Download a self-contained HTML page with every state">
+        <FileDown size={17} strokeWidth={1.9} />
+        Download HTML
       </button>
 
       <div className="top-spacer" />
@@ -98,6 +72,9 @@ export function TopBar() {
             </button>
             <button onClick={() => { void downloadPng(svg(), `ui-${cfg.presetId}-${selectedState}@2x.png`, 2); setMenuOpen(false); }}>
               <Image size={15} strokeWidth={1.8} /> Export PNG 2×
+            </button>
+            <button onClick={() => { dlHtml(); setMenuOpen(false); }}>
+              <FileDown size={15} strokeWidth={1.8} /> Download HTML
             </button>
             <button onClick={() => { copyCode(); setMenuOpen(false); }}>
               <Copy size={15} strokeWidth={1.8} /> Copy SVG code
