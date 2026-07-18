@@ -1,6 +1,6 @@
 import type { GenConfig, GenStateName } from "./model";
 import { fontByName, STATE_NAMES } from "./model";
-import { renderBevel } from "./bevel";
+import { renderBevel, glowPadOf } from "./bevel";
 
 // Export utilities — every artifact derives from the same renderer string.
 
@@ -136,8 +136,9 @@ export async function downloadGameKit(cfg: GenConfig): Promise<void> {
     rects.push({ name: l.s, x: Math.round((w - sw) / 2), y: yy, width: sw, height: sh });
     yy += sh;
   });
-  // conservative 9-slice caps: wall + rim + corner sweep, at sheet scale
-  const cap = Math.round((cfg.bevel.width + cfg.candy.rim.width + 34) * scale);
+  // conservative 9-slice caps: wall + rim + corner sweep + the glow viewport
+  // pad the sprites now carry, at sheet scale
+  const cap = Math.round((cfg.bevel.width + cfg.candy.rim.width + 34 + glowPadOf(cfg)) * scale);
   const manifest = {
     generator: "The UI Generator (PatternBreak)",
     sheet: `ui-${cfg.presetId}-sheet@${scale}x.png`,

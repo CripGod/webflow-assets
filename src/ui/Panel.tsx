@@ -5,8 +5,9 @@ import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS
 import type { GenStateName, BlendMode } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
-import { renderBevel, shapePath } from "@/generator/bevel";
+import { renderBevel, renderKit, shapePath } from "@/generator/bevel";
 import { hydrate, retintText } from "@/generator/store";
+import type { LibItem } from "@/generator/store";
 import { defaultConfig, defaultCandy, applyPresetCandy } from "@/generator/model";
 import type { GenConfig } from "@/generator/model";
 import { PRESET_DEFAULTS } from "@/generator/store";
@@ -28,9 +29,19 @@ function presetArt() {
     }
     pc.content.label = "PLAY";
     pc.icon.show = false;
+    // thumbnails skip the glow viewport pad — the art stays tight in its card
+    for (const s of Object.values(pc.states)) s.glow = 0;
     return { id: p.id, name: p.name, svg: renderBevel(pc, "default") };
   });
   return presetArtCache;
+}
+
+/* A saved component's thumbnail renders as the piece it actually is — a saved
+   slider previews as a slider, not the master button. */
+function libThumb(item: LibItem): string {
+  return item.kit
+    ? renderKit(item.cfg, item.kit.id, item.kit.size, "default", undefined, item.kit.shape)
+    : renderBevel(item.cfg, "default");
 }
 
 /* Rail buttons jump to their section group — the panel always shows the full
@@ -286,13 +297,14 @@ export function Panel() {
   };
 
   if (phase === "kit") {
-    // The Kit is a place you go to pick what to work on — not a control surface.
+    // The Kit is a place you go to read and pick — not a control surface.
     return (
       <aside className="panel">
         <div className="sec">
           <div className="sec-head"><h3>The Kit</h3></div>
           <div className="sec-body">
-            <div className="helper">Your whole UI kit, dressed in the current style. Click any component to open it in the editor — its silhouette is its own; the style stays global. Hit Play (canvas toolbar) to feel everything live.</div>
+            <div className="helper">Your whole kit as a living guideline sheet — style tokens, the type spec, every component in true relative scale, and five little screens built from nothing but those pieces. Scroll through it like a brand book.</div>
+            <div className="helper">Click any piece to open it in the editor — its silhouette is its own; the style stays global. Hit Play (canvas toolbar) and the entire page comes alive: buttons press, toggles flip, sliders drag, the dropdown opens.</div>
           </div>
         </div>
         <div className="btnrow">
@@ -330,7 +342,7 @@ export function Panel() {
               {library.map((item) => (
                 <div className="libcard" key={item.id}>
                   <button className="libthumb" title={`Load ${item.name} into the editor`} onClick={() => loadFromLibrary(item.id)}
-                    dangerouslySetInnerHTML={{ __html: renderBevel(item.cfg, "default") }} />
+                    dangerouslySetInnerHTML={{ __html: libThumb(item) }} />
                   <div className="librow">
                     <span className="libname">{item.name}</span>
                     <button className="chipbtn" title="Add to stage" onClick={() => addToBoard(item.id)}><Plus size={14} strokeWidth={2.2} /></button>
@@ -899,7 +911,7 @@ export function Panel() {
           {library.map((item) => (
             <div className="libcard" key={item.id}>
               <button className="libthumb" title={`Load ${item.name}`} onClick={() => loadFromLibrary(item.id)}
-                dangerouslySetInnerHTML={{ __html: renderBevel(item.cfg, "default") }} />
+                dangerouslySetInnerHTML={{ __html: libThumb(item) }} />
               <div className="librow">
                 <span className="libname">{item.name}</span>
                 <button className="chipbtn" title="Add to stage" aria-label={`Add ${item.name} to the stage`} onClick={() => addToBoard(item.id)}>
@@ -929,7 +941,8 @@ export function Panel() {
       <div className="btnrow">
         <button className={`randbtn${justAdded ? " okflash" : ""}`} title="Approve this component and save it to the library"
           onClick={() => {
-            addToLibrary(cfg.content.label || "Component");
+            // a focused kit piece saves under its own name — it stays that piece
+            addToLibrary(focus ? (KIT_COMPONENTS.find((c) => c.id === focus)?.name ?? "Component") : (cfg.content.label || "Component"));
             setJustAdded(true);
             useGen.setState((st) => ({ open: { ...st.open, library: true } }));
             window.setTimeout(() => setJustAdded(false), 1800);
