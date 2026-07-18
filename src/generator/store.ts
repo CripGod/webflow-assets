@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS } from "./model";
 import { getDef } from "./icons";
 import siteDefaultJson from "./site-default.json";
 import bubblePopJson from "./preset-bubble-pop.json";
@@ -59,7 +59,13 @@ export function hydrate(parsed: Record<string, any>): GenConfig {
   for (const sd of Object.values(cfg.stateDesigns)) {
     if (sd?.candy) sd.candy = mergeCandy(d.candy, sd.candy);
   }
-  if ((cfg.shape as string) === "shard") cfg.shape = "chamfer";
+  if ((cfg.shape as string) === "shard") cfg.shape = "sharp";
+  // retired silhouettes map to their closest living relatives
+  const RETIRED: Record<string, GenConfig["shape"]> = { chamfer: "sharp", kart: "polybar", deepchamfer: "cutline", doboMarquee: "crest", doboRibbon: "banner" };
+  if (RETIRED[cfg.shape as string]) cfg.shape = RETIRED[cfg.shape as string];
+  for (const sd of Object.values(cfg.stateDesigns)) {
+    if (sd && RETIRED[sd.shape as string]) sd.shape = RETIRED[sd.shape as string];
+  }
   (cfg.type.customFonts ?? []).forEach(registerCustomFont);
   return cfg;
 }
@@ -175,6 +181,10 @@ interface GenStore {
   setFocus: (f: KitComponentId | null) => void;
   kitShapes: Partial<Record<KitComponentId, Shape>>;
   setKitShape: (id: KitComponentId, shape: Shape) => void;
+  styleLib: StyleItem[];
+  saveStyle: (name: string) => void;
+  applyStyle: (id: string) => void;
+  removeStyle: (id: string) => void;
   bgImage: string | null;
   setBgImage: (url: string | null) => void;
 
@@ -196,6 +206,10 @@ interface GenStore {
 }
 
 export interface LibItem { id: string; name: string; cfg: GenConfig }
+export interface StyleItem {
+  id: string; name: string;
+  style: Pick<GenConfig, "effects" | "face" | "bevel" | "candy" | "lighting" | "shadow" | "transparency" | "type" | "states" | "stateDesigns">;
+}
 export interface BoardItem { id: string; libId: string; x: number; y: number; scale?: number }
 const LIB_KEY = "ui-generator-library";
 const BOARD_KEY = "ui-generator-board";
@@ -286,6 +300,30 @@ export const useGen = create<GenStore>((set, get) => ({
   },
   focus: null,
   setFocus: (f) => set({ focus: f, phase: "master" }),
+  styleLib: loadJson<StyleItem[]>("ui-generator-styles", []),
+  saveStyle: (name) => {
+    markTouched();
+    const c = get().cfg;
+    const style = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)))({
+      effects: c.effects, face: c.face, bevel: c.bevel, candy: c.candy, lighting: c.lighting,
+      shadow: c.shadow, transparency: c.transparency, type: c.type, states: c.states, stateDesigns: c.stateDesigns,
+    }) as StyleItem["style"];
+    const styleLib = [...get().styleLib, { id: String(Date.now()), name, style }];
+    saveJson("ui-generator-styles", styleLib);
+    set({ styleLib });
+  },
+  applyStyle: (id) => {
+    const item = get().styleLib.find((x) => x.id === id);
+    if (!item) return;
+    const next = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)))(get().cfg) as GenConfig;
+    Object.assign(next, (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)))(item.style));
+    get().replaceConfig(next);
+  },
+  removeStyle: (id) => {
+    const styleLib = get().styleLib.filter((x) => x.id !== id);
+    saveJson("ui-generator-styles", styleLib);
+    set({ styleLib });
+  },
   kitShapes: loadJson<Partial<Record<KitComponentId, Shape>>>("ui-generator-kitshapes", {}),
   setKitShape: (id, shape) => {
     markTouched();
@@ -393,7 +431,25 @@ export const useGen = create<GenStore>((set, get) => ({
   },
   randomize: () => {
     const next = randomizeConfig(get().cfg);
-    get().update((c) => { c.effects = next.effects; c.lighting = next.lighting; retintText(c); });
+    const roll = (n: number) => Math.floor(Math.random() * n);
+    get().update((c) => {
+      c.effects = next.effects; c.lighting = next.lighting;
+      // typography joins the roll
+      c.type.font = GAME_FONTS[roll(GAME_FONTS.length)].name;
+      // pattern rolls tone-on-tone so it stays harmonious
+      const pats: GenConfig["candy"]["pattern"]["type"][] = ["none", "stripes", "dots", "checker", "halftone", "stars"];
+      c.candy.pattern.type = pats[roll(pats.length)];
+      c.candy.pattern.color = null;
+      c.candy.pattern.opacity = 18 + roll(40);
+      c.candy.pattern.scale = 20 + roll(70);
+      // gloss gradient re-tints from the new palette
+      const bevel = c.effects.Bevel ?? "#0E9CC9";
+      c.candy.gloss.tint = darken(bevel, 0.15);
+      c.candy.gloss.tint2 = hexMix(c.effects.Glow ?? "#8FF0FF", "#FFFFFF", 0.5);
+      // stage flips light/dark occasionally
+      c.canvas = (["#FFFFFF", "#F4F5F7", "#1C1D22", "#000000"] as const)[roll(4)];
+      retintText(c);
+    });
   },
   setSelectedState: (s) => set({ selectedState: s }),
   setPhase: (p) => set({ phase: p }),

@@ -27,7 +27,6 @@ export type Shape =
 export const SHAPES: { id: Shape; name: string }[] = [
   { id: "round", name: "Round" },
   { id: "pill", name: "Pill" },
-  { id: "chamfer", name: "Chamfer" },
   { id: "sharp", name: "Sharp" },
   { id: "hex", name: "Hex — pointed ends" },
   { id: "trapezoid", name: "Trapezoid" },
@@ -36,21 +35,17 @@ export const SHAPES: { id: Shape; name: string }[] = [
   { id: "cutline", name: "Sport Cutline" },
   { id: "polybar", name: "Racing Polybar" },
   { id: "explorer", name: "Cosmic Explorer" },
-  { id: "kart", name: "Turbo Kart" },
   { id: "mazepill", name: "Retro Maze Pill" },
   { id: "fighthud", name: "Fighting HUD" },
   { id: "crest", name: "Blade Crest" },
   { id: "blade", name: "Persian Blade" },
   { id: "tavern", name: "Arcane Tavern" },
   { id: "handdrawn", name: "Hand-Drawn" },
-  { id: "deepchamfer", name: "Deep Chamfer" },
   { id: "banner", name: "Pointed Banner" },
   { id: "shield", name: "Shield Plaque" },
   { id: "pixelstep", name: "Pixel Step" },
   { id: "kenneyRect", name: "Crisp Panel" },
   { id: "kenneyTag", name: "Pointer Tag" },
-  { id: "doboMarquee", name: "Marquee Plaque" },
-  { id: "doboRibbon", name: "Bow Ribbon" },
   { id: "doboBracket", name: "Bracket Label" },
 ];
 /** Neutral canvas surfaces only — the stage never competes with the component. */
@@ -87,6 +82,11 @@ export const SPECULAR_MODES: { id: SpecularMode; name: string }[] = [
   { id: "sweep", name: "Edge sweep" },
 ];
 
+/* SVG-native blend modes — mix-blend-mode is honored by every major browser's
+   SVG renderer and survives copy/export because it ships as a style attr. */
+export type BlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light" | "hard-light";
+export const BLEND_MODES: BlendMode[] = ["normal", "multiply", "screen", "overlay", "soft-light", "hard-light"];
+
 export type PatternType = "none" | "stripes" | "dots" | "stars" | "checker" | "halftone";
 export const PATTERN_TYPES: { id: PatternType; name: string }[] = [
   { id: "none", name: "None" },
@@ -108,6 +108,7 @@ export interface CandyTokens {
     layer: "below" | "above";
     fill: "highlight" | "custom" | "gradient";  // highlight = Highlight well
     tint: string; tint2: string;                // custom color / gradient top & bottom
+    blend?: BlendMode;
   };
   specular: {
     on: boolean; mode: SpecularMode;
@@ -118,6 +119,7 @@ export interface CandyTokens {
     angle: number;      // -80..80° on top of the light-driven tilt
     gap: number;        // 50..300 — spacing between the two events (dual / anime)
     ox: number; oy: number; // -50..50 position nudges
+    blend?: BlendMode;
   };
   bloom: { opacity: number; size: number };                       // 0..100 ×2 (bounce light, unlit side)
   contact: { opacity: number };                                   // tight shadow where body meets ground
@@ -161,7 +163,7 @@ export interface TypeCfg {
   /** Relief follows the master light: highlight toward it, shade away from it.
    *  strength -100..100 (negative = deboss/engrave); distance = offset px;
    *  softness = blur; hiOpacity/shOpacity control each side independently. */
-  emboss: { on: boolean; strength: number; softness: number; distance: number; hiOpacity: number; shOpacity: number; hiColor: string; shColor: string };
+  emboss: { on: boolean; strength: number; softness: number; shSoftness?: number; distance: number; hiOpacity: number; shOpacity: number; hiColor: string; shColor: string };
   glow: { on: boolean; color: string; size: number; opacity: number };
   preset: string;
 }
@@ -311,7 +313,7 @@ export interface StateDesign {
   face: { mode: "light" | "dark"; contrast: number; midpoint: number };
   bevel: { width: number; softness: number };
   candy: CandyTokens;
-  lighting: { angle: number; highlight: number; lowlight: number };
+  lighting: { angle: number; highlight: number; lowlight: number; tint?: string | null };
   shadow: { distance: number; blur: number; opacity: number };
   transparency: { frame: number; interior: number; content: number };
   type: TypeCfg;
@@ -357,6 +359,12 @@ export const PRESETS: Preset[] = [
   { id: "hero-chisel", name: "Hero Chisel", shape: "chamfer", bevel: { width: 14, softness: 24 },
     effects: { Bevel: "#D97706", Glow: "#FDE68A", Highlight: "#FFF7E6", Shadow: "#7C2D12", "Inner Fill": "#F59E0B" },
     candy: { gloss: { height: 38, curve: 10, opacity: 44, softness: 10 }, specular: { mode: "sweep", size: 18, intensity: 62 }, extrusion: { depth: 14, darkness: 62 }, innerEdge: { strength: 62, width: 3 }, texture: { amount: 10, scale: 50 } } },
+  { id: "neon-versus", name: "Neon Versus", shape: "fighthud", bevel: { width: 10, softness: 20 },
+    effects: { Bevel: "#B4126B", Glow: "#FF3EC8", Highlight: "#FFE9F7", Shadow: "#3D0430", "Inner Fill": "#1C0F2E" },
+    candy: { gloss: { height: 34, curve: 12, opacity: 40, softness: 20 }, specular: { on: true, mode: "line", size: 60, intensity: 60 }, extrusion: { depth: 12, darkness: 80 }, innerGlow: { opacity: 78, size: 48 }, bloom: { opacity: 55, size: 70 }, pattern: { type: "stripes", scale: 34, angle: 65, opacity: 26, color: null } } },
+  { id: "toy-box", name: "Toy Box", shape: "chunky", bevel: { width: 12, softness: 96 },
+    effects: { Bevel: "#D98200", Glow: "#FFE066", Highlight: "#FFFDF2", Shadow: "#7A3D00", "Inner Fill": "#FFB020" },
+    candy: { gloss: { height: 52, curve: 38, opacity: 80, softness: 42 }, specular: { on: true, mode: "dual", size: 26, intensity: 70, softness: 40 }, extrusion: { depth: 16, darkness: 70 }, pattern: { type: "dots", scale: 46, angle: 0, opacity: 30, color: null }, bloom: { opacity: 50, size: 64 } } },
   { id: "bubble-pop", name: "Bubble Pop", shape: "round", bevel: { width: 8, softness: 100 },
     effects: { Bevel: "#E1408F", Glow: "#FFC1DE", Highlight: "#FFFFFF", Shadow: "#8C1D53", "Inner Fill": "#F868B1" },
     candy: { gloss: { height: 50, curve: 34, opacity: 78, softness: 30 }, specular: { mode: "anime", size: 30, intensity: 92 }, bloom: { opacity: 62, size: 68 }, extrusion: { depth: 9 } } },
@@ -543,7 +551,7 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
    defaults — the master's silhouette everywhere else, and each component
    can be overridden individually while focused. */
 export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
-  header: "doboMarquee",
+  header: "banner",
   chip: "doboBracket",
   tab: "kenneyTag",
   badge: "shield",

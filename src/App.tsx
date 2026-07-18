@@ -1,8 +1,22 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TopBar } from "./ui/TopBar";
 import { Rail, Panel } from "./ui/Panel";
 import { CanvasView } from "./ui/CanvasView";
 import { useGen } from "./generator/store";
+
+/* When something inside a handler throws, React can leave the UI looking fine
+   while every click silently dies — the "app craps out" report. Surface it. */
+function useCrashBanner() {
+  const [crash, setCrash] = useState<string | null>(null);
+  useEffect(() => {
+    const onErr = (e: ErrorEvent) => setCrash(e.message || "Unknown error");
+    const onRej = (e: PromiseRejectionEvent) => setCrash(String(e.reason).slice(0, 200));
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+    return () => { window.removeEventListener("error", onErr); window.removeEventListener("unhandledrejection", onRej); };
+  }, []);
+  return crash;
+}
 
 export function App() {
   const { panelW, setPanelW, undo, redo, theme } = useGen();
@@ -34,8 +48,15 @@ export function App() {
   };
   const onHandleUp = () => { dragFrom.current = null; };
 
+  const crash = useCrashBanner();
   return (
     <div className="app">
+      {crash && (
+        <div className="crashbar" role="alert">
+          Something glitched under the hood — your work is saved. <button onClick={() => window.location.reload()}>Reload</button>
+          <span className="crashdetail">{crash}</span>
+        </div>
+      )}
       <TopBar />
       <div className="body" style={{ gridTemplateColumns: `84px ${panelW}px 6px 1fr` }}>
         <Rail />

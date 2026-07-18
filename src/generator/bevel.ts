@@ -79,7 +79,7 @@ function inkRun(x1: number, y1: number, x2: number, y2: number, wob: number, sal
 
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
   if (shape === "pill") return roundRect(x, y, w, h, h / 2);
-  if (shape === "round") return roundRect(x, y, w, h, 10 + softness * 0.34);
+  if (shape === "round") return roundRect(x, y, w, h, 4 + softness * 0.52);
   /* ── v19 silhouette library — every layer insets this same geometry ── */
   if (shape === "cutline") {
     // broadcast-clean rectangle: small vertical cuts, wider clipped end caps
@@ -380,7 +380,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
 
   const bevelC = P(effect(D.effects, "Bevel"));
   const glowC = disabled ? "#B9BEC6" : P(effect(D.effects, "Glow"));
-  const hiC = P(effect(D.effects, "Highlight"));
+  const hiC = P(D.lighting.tint ?? effect(D.effects, "Highlight"));
   const shC = effect(D.effects, "Shadow");
   const fillC = P(effect(D.effects, "Inner Fill"));
 
@@ -637,13 +637,14 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       const a = Math.abs(s);
       const dist = (T2.emboss.distance ?? 2) * fsc * (0.6 + a * 0.8);
       const ebl = ((0.3 + ((T2.emboss.softness ?? 30) / 100) * 2.6) * fsc).toFixed(1);
+      const ebl2 = ((0.3 + ((T2.emboss.shSoftness ?? T2.emboss.softness ?? 30) / 100) * 2.6) * fsc).toFixed(1);
       const sign = s > 0 ? 1 : -1;
       const hx = (lx * dist * sign).toFixed(1), hy = (ly * dist * sign).toFixed(1);
       const sxo = (-lx * dist * sign).toFixed(1), syo = (-ly * dist * sign).toFixed(1);
       const hiO = (a * ((T2.emboss.hiOpacity ?? 70) / 100)).toFixed(2);
       const shO = (a * ((T2.emboss.shOpacity ?? 60) / 100)).toFixed(2);
       prims.push(fds(hx, hy, Number(ebl) * 0.5, T2.emboss.hiColor ?? "#FFFFFF", hiO));
-      prims.push(fds(sxo, syo, Number(ebl) * 0.5, T2.emboss.shColor ?? "#04080E", shO));
+      prims.push(fds(sxo, syo, Number(ebl2) * 0.5, T2.emboss.shColor ?? "#04080E", shO));
     }
   }
   if (T2.shadow.on) prims.push(fds((T2.shadow.x * fsc).toFixed(1), (T2.shadow.y * fsc).toFixed(1), T2.shadow.blur * fsc * 0.5, T2.shadow.color, (T2.shadow.opacity / 100).toFixed(2)));
@@ -774,7 +775,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
         ${patternUse}
         ${igOp > 0.01 ? `<path d="${faceP}" fill="url(#${id}ig)"/>` : ""}
         ${bloom}
-        ${C.gloss.layer === "above" ? "" : gloss}
+        ${C.gloss.layer === "above" ? "" : (C.gloss.blend && C.gloss.blend !== "normal" ? `<g style="mix-blend-mode:${C.gloss.blend}">${gloss}</g>` : gloss)}
         ${noise}
       </g>
       ${innerEdge}
@@ -790,8 +791,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
             filter: iconFilter,
           })) : ""}
     </g>
-    ${C.gloss.layer === "above" ? `<g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${gloss}</g>` : ""}
-    <g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${specular}</g>
+    ${C.gloss.layer === "above" ? `<g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${C.gloss.blend && C.gloss.blend !== "normal" ? ` style="mix-blend-mode:${C.gloss.blend}"` : ""}>${gloss}</g>` : ""}
+    <g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${SP.blend && SP.blend !== "normal" ? ` style="mix-blend-mode:${SP.blend}"` : ""}>${specular}</g>
   </g>
 </g>
 </svg>`;
@@ -850,7 +851,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     case "chip":
       return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: "NEW", iconDef: STOCK_ICONS.star, shapeOverride: sov });
     case "badge":
-      return build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov });
+      // presented (count) → awarded (star) → disabled
+      return state === "pressed"
+        ? build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 0, iconSize: 52 * k }, { label: "", iconDef: STOCK_ICONS.star, fixedW: 118 * k, shapeOverride: sov })
+        : build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov });
     case "tab":
       return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: "TAB", iconDef: null, shapeOverride: sov });
     case "segment": {

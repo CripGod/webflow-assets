@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Sparkles, Box } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
-import type { GenStateName } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
+import type { GenStateName, BlendMode } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
 import { renderBevel, shapePath } from "@/generator/bevel";
@@ -221,7 +221,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, styleLib, saveStyle, applyStyle, removeStyle } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -277,6 +277,25 @@ export function Panel() {
     });
     setFontDraft("");
   };
+
+  if (phase === "kit") {
+    // The Kit is a place you go to pick what to work on — not a control surface.
+    return (
+      <aside className="panel">
+        <div className="sec">
+          <div className="sec-head"><h3>The Kit</h3></div>
+          <div className="sec-body">
+            <div className="helper">Your whole UI kit, dressed in the current style. Click any component to open it in the editor — its silhouette is its own; the style stays global. Hit Play (canvas toolbar) to feel everything live.</div>
+          </div>
+        </div>
+        <div className="btnrow">
+          <button className="randbtn kit on" onClick={() => setPhase("master")}>
+            <PenTool size={16} strokeWidth={1.9} /> Back to editor
+          </button>
+        </div>
+      </aside>
+    );
+  }
 
   if (phase === "board") {
     // Assemble mode: the design controls step aside; only the Library matters.
@@ -356,7 +375,7 @@ export function Panel() {
       </Section>
 
       {/* ── A · Style (the candy construction) ────────────── */}
-      <Section id="shape" title="Style" summary={<span className="mapbar" style={{ background: mapBar }} />}>
+      <Section id="shape" title="Presets" summary={<span className="mapbar" style={{ background: mapBar }} />}>
         <div className="presetgrid">
           {presetArt().map((p) => (
             <button key={p.id} className={`presetcard${cfg.presetId === p.id ? " on" : ""}`} title={p.name}
@@ -368,8 +387,23 @@ export function Panel() {
         </div>
         <div className="helper">Each style is a different candy construction — shell, gloss and depth, not just a palette.</div>
         <button className="resetstate" onClick={randomize}>
-          <Dices size={14} strokeWidth={2} /> Randomize
+          <Dices size={14} strokeWidth={2} /> Randomize everything
         </button>
+        <div className="sublabel">My styles</div>
+        {styleLib.length > 0 && (
+          <div className="stylerow">
+            {styleLib.map((st) => (
+              <span key={st.id} className="stylechip">
+                <button onClick={() => applyStyle(st.id)} title={`Apply ${st.name} to the whole kit`}>{st.name}</button>
+                <button className="x" title="Delete style" onClick={() => removeStyle(st.id)}><Trash2 size={11} strokeWidth={2} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        <button className="resetstate" onClick={() => saveStyle(window.prompt("Name this style:", cfg.content.label || "My style") || "My style")}>
+          <Copy size={13} strokeWidth={2} /> Save current look as a style
+        </button>
+        <div className="helper">A style is the whole material recipe — colors, surface, lighting, type, state designs. Applying one restyles every component; silhouettes stay put.</div>
       </Section>
 
       {/* ── A2 · Silhouette — pure geometry, material stays ── */}
@@ -531,6 +565,11 @@ export function Panel() {
 
       {/* ── E · Lighting ──────────────────────────────────── */}
       <Section id="lighting" title="Lighting" summary={<span>{D.lighting.angle}°</span>}>
+        <label className="check"><input type="checkbox" checked={D.lighting.tint != null}
+          onChange={(e) => update((c) => { c.lighting.tint = e.target.checked ? (c.effects.Highlight ?? "#FFFFFF") : null; })} /> Tint the key light</label>
+        {D.lighting.tint != null && (
+          <Well label="Light color" value={D.lighting.tint} onChange={(v) => update((c) => { c.lighting.tint = v; })} />
+        )}
         <Slider label="Light angle" value={D.lighting.angle} min={0} max={360} unit="°" onChange={(v) => update((c) => { c.lighting.angle = ((v % 360) + 360) % 360; })} />
         <div className="ctl">
           <label>Direction</label>
@@ -555,6 +594,13 @@ export function Panel() {
         <Slider label="Curvature" value={C.gloss.curve} min={-40} max={60} unit="px" onChange={(v) => update((c) => { c.candy.gloss.curve = v; })} />
         <Slider label="Gloss opacity" value={C.gloss.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.gloss.opacity = v; })} />
         <Slider label="Softness" value={C.gloss.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.gloss.softness = v; })} />
+        <label className="fieldbox" style={{ minWidth: 0 }}>
+          <span className="fl">Gloss blend mode</span>
+          <select value={C.gloss.blend ?? "normal"} aria-label="Gloss blend mode" onChange={(e) => update((c) => { c.candy.gloss.blend = e.target.value as BlendMode; })}>
+            {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+        </label>
         <div className="ctl">
           <label>Gloss fill</label>
           <div className="segmini" role="radiogroup" aria-label="Gloss fill">
@@ -598,6 +644,13 @@ export function Panel() {
           <Slider label="Shape" value={C.specular.stretch} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.stretch = v; })} />
           <Slider label="Intensity" value={C.specular.intensity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.intensity = v; })} />
           <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
+          <label className="fieldbox" style={{ minWidth: 0 }}>
+            <span className="fl">Specular blend mode</span>
+            <select value={C.specular.blend ?? "normal"} aria-label="Specular blend mode" onChange={(e) => update((c) => { c.candy.specular.blend = e.target.value as BlendMode; })}>
+              {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+          </label>
           {(C.specular.mode === "dual" || C.specular.mode === "anime") && (
             <Slider label="Spacing" value={C.specular.gap} min={50} max={300} unit="%" onChange={(v) => update((c) => { c.candy.specular.gap = v; })} />
           )}
@@ -716,7 +769,8 @@ export function Panel() {
         <FxToggle label="Emboss / Deboss" on={T2.emboss.on} onToggle={(v) => update((c) => { c.type.emboss.on = v; })}>
           <Slider label="Depth" value={T2.emboss.strength} min={-100} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.strength = v; })} />
           <Slider label="Distance" value={T2.emboss.distance ?? 2} min={0} max={8} step={0.5} unit="px" onChange={(v) => update((c) => { c.type.emboss.distance = v; })} />
-          <Slider label="Softness" value={T2.emboss.softness ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.softness = v; })} />
+          <Slider label="Hi softness" value={T2.emboss.softness ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.softness = v; })} />
+          <Slider label="Sh softness" value={T2.emboss.shSoftness ?? T2.emboss.softness ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.shSoftness = v; })} />
           <div className="sublabel">Highlight side</div>
           <Well label="Color" value={T2.emboss.hiColor ?? "#FFFFFF"} onChange={(v) => update((c) => { c.type.emboss.hiColor = v; })} />
           <Slider label="Opacity" value={T2.emboss.hiOpacity ?? 70} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.hiOpacity = v; })} />
@@ -853,11 +907,9 @@ export function Panel() {
       </div>
       {(
         <div className="btnrow">
-          <button className={`randbtn kit${phase === "kit" ? " on" : ""}`}
-            onClick={() => setPhase(phase === "kit" ? "master" : "kit")}
-            title={phase === "kit" ? "Back to the master component" : "Save style and apply it to the kit"}>
-            {phase === "kit" ? <PenTool size={16} strokeWidth={1.9} /> : <Hammer size={16} strokeWidth={1.9} />}
-            {phase === "kit" ? "Edit master" : "Build kit"}
+          <button className="randbtn kit" onClick={() => setPhase("kit")}
+            title="Open the Kit — pick which component to work on">
+            <Hammer size={16} strokeWidth={1.9} /> The Kit
           </button>
           <button className="randbtn kit" onClick={() => setPhase("board")}
             title="Free sketch area — drag saved components around">

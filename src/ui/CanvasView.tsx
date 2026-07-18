@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import type { GenConfig, KitComponentId, Shape } from "@/generator/model";
-import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, Hammer, PenTool } from "lucide-react";
+import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, PenTool } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
 import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES } from "@/generator/model";
@@ -31,7 +31,7 @@ export function CanvasView() {
   const playing = canvasMode === "play";
   const displayed: GenStateName = phase === "master" && playing && live && selectedState !== "disabled" ? live : selectedState;
   const heroSvg = useMemo(
-    () => (focus ? renderKit(cfg, focus, "m", displayed, undefined, kitShapes[focus]) : renderBevel(cfg, displayed)),
+    () => (focus ? renderKit(cfg, focus, "m", displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus]) : renderBevel(cfg, displayed)),
     [cfg, displayed, focus, kitShapes]
   );
   // Fixed order, selected included — the stack never reshuffles.
@@ -103,7 +103,8 @@ export function CanvasView() {
             />
           </div>
         ) : phase === "board" ? (
-          <div className="board" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+          <div className="board stage169" style={{ transform: `scale(${zoom})`, transformOrigin: "top left",
+            backgroundImage: bgImage ? `url(${bgImage})` : undefined }}>
             {board.map((b) => {
               const item = library.find((l) => l.id === b.libId);
               if (!item) return null;
@@ -127,9 +128,6 @@ export function CanvasView() {
                 The sketch board is empty — open the Library and send components here.
               </div>
             )}
-            <button className="makekit" onClick={() => setPhase("kit")} title="Arrange everything as an organized kit">
-              <Hammer size={14} strokeWidth={2} /> Make kit
-            </button>
             <button className="makekit second" onClick={() => setPhase("master")} title="Back to the component editor">
               <PenTool size={14} strokeWidth={2} /> Edit master
             </button>
@@ -217,11 +215,14 @@ export function CanvasView() {
 
       {phase === "master" && sideStates.length > 0 && (
         <div className="stack" aria-label="State previews">
-          {sideStates.map((s) => (
+          {(focus === "toggle" || focus === "badge"
+            ? ([["default", focus === "toggle" ? "On" : "Presented", 1], ["pressed", focus === "toggle" ? "Off" : "Awarded", 0], ["disabled", "Disabled", 1]] as [GenStateName, string, number][])
+            : sideStates.map((s) => [s, CAP[s], undefined] as [GenStateName, string, number | undefined])
+          ).map(([s, cap, v]) => (
             <button className={`scard clickable${s === selectedState ? " sel" : ""}`} key={s}
-              onClick={() => setSelectedState(s)} title={`Edit ${CAP[s]}`} aria-pressed={s === selectedState}>
-              <div className="scard-title">{CAP[s]}{s === selectedState ? " · editing" : ""}</div>
-              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(cfg, focus, "m", s, undefined, kitShapes[focus]) : renderBevel(cfg, s) }} />
+              onClick={() => setSelectedState(s)} title={`Edit ${cap}`} aria-pressed={s === selectedState}>
+              <div className="scard-title">{cap}{s === selectedState ? " · editing" : ""}</div>
+              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(cfg, focus, "m", s, v, kitShapes[focus]) : renderBevel(cfg, s) }} />
             </button>
           ))}
         </div>
