@@ -31,8 +31,8 @@ export function CanvasView() {
   const playing = canvasMode === "play";
   const displayed: GenStateName = phase === "master" && playing && live && selectedState !== "disabled" ? live : selectedState;
   const heroSvg = useMemo(
-    () => (focus ? renderKit(cfg, focus, "m", displayed) : renderBevel(cfg, displayed)),
-    [cfg, displayed, focus]
+    () => (focus ? renderKit(cfg, focus, "m", displayed, playing) : renderBevel(cfg, displayed, playing)),
+    [cfg, displayed, focus, playing]
   );
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
@@ -99,8 +99,7 @@ export function CanvasView() {
                 onPointerUp: () => setLive("hover"),
                 onPointerCancel: () => setLive(null),
               } : {})}
-              dangerouslySetInnerHTML={{ __html: heroSvg }}
-            />
+            ><LiveSwap html={heroSvg} tween={playing} /></div>
           </div>
         ) : phase === "board" ? (
           <div className="board" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
@@ -244,7 +243,7 @@ function KitPiece({ id, name, cfg, size, dark, capColor, playing, onSize, onExpo
 }) {
   const [live, setLive] = useState<GenStateName>("default");
   const state: GenStateName = playing ? live : "default";
-  const svg = useMemo(() => renderKit(cfg, id, size, state), [cfg, id, size, state]);
+  const svg = useMemo(() => renderKit(cfg, id, size, state, playing), [cfg, id, size, state, playing]);
   return (
     <div className={`kitcard quiet${dark ? " dark" : ""}`}>
       <div className="kitcard-head" style={{ color: capColor }}>
@@ -267,8 +266,10 @@ function KitPiece({ id, name, cfg, size, dark, capColor, playing, onSize, onExpo
           onPointerLeave: () => setLive("default"),
           onPointerDown: () => setLive("pressed"),
           onPointerUp: () => setLive("hover"),
-        } : {})}
-        dangerouslySetInnerHTML={{ __html: svg }} />
+        } : {})}><LiveSwap html={svg} tween={playing} /></div>
+      {!playing && (
+        <span className="editcue"><SquarePen size={12} strokeWidth={2} /> Edit</span>
+      )}
     </div>
   );
 }
@@ -282,7 +283,7 @@ function BoardPiece({ b, cfg, playing, onDragStart, onDragMove, onDragEnd, onSca
 }) {
   const [live, setLive] = useState<GenStateName>("default");
   const state: GenStateName = playing ? live : "default";
-  const svg = useMemo(() => renderBevel(cfg, state), [cfg, state]);
+  const svg = useMemo(() => renderBevel(cfg, state, playing), [cfg, state, playing]);
   const sc = b.scale ?? 1;
   return (
     <div className={`board-item${playing ? " playing" : ""}`} style={{ left: b.x, top: b.y }}
@@ -307,7 +308,31 @@ function BoardPiece({ b, cfg, playing, onDragStart, onDragMove, onDragEnd, onSca
           <button title="Remove from stage" onClick={onRemove}><X size={12} strokeWidth={2.4} /></button>
         </div>
       )}
-      <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }} dangerouslySetInnerHTML={{ __html: svg }} />
+      <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }}><LiveSwap html={svg} tween={playing} /></div>
+    </div>
+  );
+}
+
+
+/** Cross-fade between rendered states — the quick tween that makes Play mode
+ *  feel alive instead of hard-cutting. */
+function LiveSwap({ html, tween }: { html: string; tween: boolean }) {
+  const [prev, setPrev] = useState<string | null>(null);
+  const last = useRef(html);
+  useEffect(() => {
+    if (last.current !== html) {
+      if (tween) setPrev(last.current);
+      last.current = html;
+      if (tween) {
+        const t = setTimeout(() => setPrev(null), 150);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [html, tween]);
+  return (
+    <div className="liveswap">
+      {prev && <div className="ls-prev" dangerouslySetInnerHTML={{ __html: prev }} />}
+      <div className={prev ? "ls-cur in" : "ls-cur"} dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }

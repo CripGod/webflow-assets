@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2 } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, PARTICLE_STYLES, ICONS_ENABLED, KIT_COMPONENTS, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -11,7 +11,7 @@ import { renderBevel } from "@/generator/bevel";
    Order mirrors how the object is understood: style → color → structure →
    surface → light → reflections → depth → advanced. */
 const GROUPS: Record<string, string[]> = {
-  style: ["shape", "mapping", "structure", "surface", "lighting", "gloss", "glow", "depth"],
+  style: ["shape", "mapping", "structure", "surface", "lighting", "gloss", "glow", "motion", "depth"],
   type: ["typography"],
   states: ["state", "states"],
   library: ["library"],
@@ -176,7 +176,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const savedLib = cfg.icon.def?.lib && ICON_LIBS.some((l) => l.id === cfg.icon.def!.lib) ? cfg.icon.def!.lib : "lucide";
@@ -211,6 +211,10 @@ export function Panel() {
   const C = D.candy;
   const palette = { dark: darken(D.effects.Bevel ?? "#0E9CC9", 0.5), glow: D.effects.Glow ?? "#8FF0FF" };
   useEffect(() => { ensureFont(D.type.font); }, [D.type.font]);
+
+  // focusing a kit component jumps the panel to the top so the banner is seen
+  const panelRef = useRef<HTMLElement>(null);
+  useEffect(() => { if (focus) panelRef.current?.scrollTo({ top: 0, behavior: "smooth" }); }, [focus]);
 
   const [fontDraft, setFontDraft] = useState("");
   const addFont = () => {
@@ -265,7 +269,13 @@ export function Panel() {
   }
 
   return (
-    <aside className="panel">
+    <aside className="panel" ref={panelRef}>
+      {focus && (
+        <div className="focusnote">
+          Editing <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — every control below shapes it live.
+          <button onClick={() => setFocus(null)}>Back to button</button>
+        </div>
+      )}
       {/* ── Global — whole-component adjustments per state ── */}
       <Section id="state" title="Global" right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
         <div className="segmini" role="radiogroup" aria-label="State being edited">
@@ -515,6 +525,31 @@ export function Panel() {
         <div className="sublabel">Base glow</div>
         <Slider label="Base glow" value={C.extrusion.glow} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.extrusion.glow = v; })} />
         <div className="helper">Light caught in the middle of the body, below the lower bloom. Uses the inner-glow color.</div>
+      </Section>
+
+      {/* ── F3 · Motion — Play mode & HTML export only ────── */}
+      <Section id="motion" title="Motion" summary={<span>{(C.shine?.on ?? false) || (C.particles?.on ?? false) ? "on" : "off"}</span>}>
+        <label className="check"><input type="checkbox" checked={C.shine?.on ?? false}
+          onChange={(e) => update((c) => { c.candy.shine.on = e.target.checked; })} /> Idle shine sweep</label>
+        {(C.shine?.on ?? false) && (<>
+          <Slider label="Idle delay" value={C.shine?.delay ?? 4} min={1} max={10} step={0.5} unit="s" onChange={(v) => update((c) => { c.candy.shine.delay = v; })} />
+          <Slider label="Shine opacity" value={C.shine?.opacity ?? 45} min={10} max={90} unit="%" onChange={(v) => update((c) => { c.candy.shine.opacity = v; })} />
+        </>)}
+        <div className="sublabel">Pressed particles</div>
+        <label className="check"><input type="checkbox" checked={C.particles?.on ?? false}
+          onChange={(e) => update((c) => { c.candy.particles.on = e.target.checked; })} /> Particle burst</label>
+        {(C.particles?.on ?? false) && (<>
+          <label className="fieldbox" style={{ minWidth: 0 }}>
+            <span className="fl">Particle style</span>
+            <select value={C.particles?.style ?? "sparks"} aria-label="Particle style"
+              onChange={(e) => update((c) => { c.candy.particles.style = e.target.value as typeof C.particles.style; })}>
+              {PARTICLE_STYLES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+          </label>
+          <Slider label="Amount" value={C.particles?.amount ?? 14} min={4} max={28} unit="" onChange={(v) => update((c) => { c.candy.particles.amount = v; })} />
+        </>)}
+        <div className="helper">Motion shows in Play mode and the downloaded HTML — colors auto-tone from the Color map. Particles fire on Pressed only. (Sprite exports for Unity/Unreal stay static.)</div>
       </Section>
 
       {/* ── G · Depth & Shadow ────────────────────────────── */}

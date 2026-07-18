@@ -54,19 +54,20 @@ export function buildHtml(cfg: GenConfig): string {
   ).join("\n");
   const label = (cfg.content.label || "component").replace(/[<>&"]/g, "");
 
-  // live, playable button — CSS swaps the pre-rendered state art
+  // live, playable button — states stack in one grid cell and cross-fade,
+  // rendered with motion on so the idle shine + pressed particles ship too
   const hasHover = cfg.visible.hover, hasPressed = cfg.visible.pressed;
   const live = `<div class="live" role="button" tabindex="0" aria-label="${label}">
-  <span class="s s-default">${renderBevel(cfg, "default")}</span>
-  ${hasHover ? `<span class="s s-hover">${renderBevel(cfg, "hover")}</span>` : ""}
-  ${hasPressed ? `<span class="s s-pressed">${renderBevel(cfg, "pressed")}</span>` : ""}
+  <span class="s s-default">${renderBevel(cfg, "default", true)}</span>
+  ${hasHover ? `<span class="s s-hover">${renderBevel(cfg, "hover", true)}</span>` : ""}
+  ${hasPressed ? `<span class="s s-pressed">${renderBevel(cfg, "pressed", true)}</span>` : ""}
 </div>`;
   const liveCss = `
-  .live { cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  .live .s { display: none; }
-  .live .s-default { display: block; }
-  ${hasHover ? `.live:hover .s-default { display: none; } .live:hover .s-hover { display: block; }` : ""}
-  ${hasPressed ? `.live:active .s-default, .live:active .s-hover { display: none; } .live:active .s-pressed { display: block; }` : ""}`;
+  .live { cursor: pointer; -webkit-tap-highlight-color: transparent; display: grid; place-items: center; }
+  .live .s { grid-area: 1 / 1; display: grid; place-items: center; opacity: 0; transition: opacity .12s ease-out; pointer-events: none; }
+  .live .s-default { opacity: 1; }
+  ${hasHover ? `.live:hover .s-default { opacity: 0; } .live:hover .s-hover { opacity: 1; }` : ""}
+  ${hasPressed ? `.live:active .s-default, .live:active .s-hover { opacity: 0; } .live:active .s-pressed { opacity: 1; }` : ""}`;
   return `<!doctype html>
 <html lang="en">
 <head>

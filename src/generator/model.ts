@@ -93,7 +93,18 @@ export interface CandyTokens {
   contact: { opacity: number };                                   // tight shadow where body meets ground
   texture: { amount: number; scale: number };                     // 0..100 ×2 (micro grain)
   pattern: { type: PatternType; scale: number; angle: number; opacity: number; color: string | null }; // null = tone-on-tone
+  /** Idle shine sweep — Play mode + HTML export only. */
+  shine: { on: boolean; delay: number; opacity: number };         // s between sweeps, 0..100
+  /** Pressed-state particles — auto-toned from the Color map. */
+  particles: { on: boolean; style: ParticleStyle; amount: number };
 }
+
+export type ParticleStyle = "sparks" | "stars" | "bubbles";
+export const PARTICLE_STYLES: { id: ParticleStyle; name: string }[] = [
+  { id: "sparks", name: "Sparks" },
+  { id: "stars", name: "Stars" },
+  { id: "bubbles", name: "Bubbles" },
+];
 
 /* Universal defaults — Chevon's approved settings (uigeneratorsettings_2). */
 export function defaultCandy(): CandyTokens {
@@ -109,6 +120,8 @@ export function defaultCandy(): CandyTokens {
     contact: { opacity: 32 },
     texture: { amount: 25, scale: 50 },
     pattern: { type: "stripes", scale: 100, angle: 45, opacity: 71, color: "#1d819a" },
+    shine: { on: true, delay: 4, opacity: 45 },
+    particles: { on: true, style: "sparks", amount: 14 },
   };
 }
 

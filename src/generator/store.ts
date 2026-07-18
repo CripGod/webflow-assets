@@ -50,6 +50,10 @@ export function hydrate(parsed: Record<string, any>): GenConfig {
     face: { ...d.face, ...parsed.face },
   } as GenConfig;
   if (!cfg.stateDesigns) cfg.stateDesigns = {};
+  // state forks saved before newer candy tokens existed get them merged in
+  for (const sd of Object.values(cfg.stateDesigns)) {
+    if (sd?.candy) sd.candy = mergeCandy(d.candy, sd.candy);
+  }
   if ((cfg.shape as string) === "shard") cfg.shape = "chamfer";
   (cfg.type.customFonts ?? []).forEach(registerCustomFont);
   return cfg;
