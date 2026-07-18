@@ -13,7 +13,13 @@ export const ROLE_HINT: Record<EffectRole, string> = {
   Bevel: "shell & wall", Glow: "inner glow", Highlight: "gloss & specular", Shadow: "grounding", "Inner Fill": "candy face",
 };
 
-export type Shape = "chamfer" | "pill" | "sharp" | "round" | "hex" | "trapezoid" | "notch";
+export type Shape =
+  | "chamfer" | "pill" | "sharp" | "round" | "hex" | "trapezoid" | "notch"
+  // v19 silhouette library — procedural geometry only; material stays separate
+  | "chunky" | "cutline" | "polybar" | "explorer" | "kart" | "mazepill"
+  | "fighthud" | "crest" | "blade" | "tavern" | "handdrawn"
+  // v20 archetypes — deep chamfer, swallowtail banner, shield, pixel steps
+  | "deepchamfer" | "banner" | "shield" | "pixelstep";
 export const SHAPES: { id: Shape; name: string }[] = [
   { id: "round", name: "Round" },
   { id: "pill", name: "Pill" },
@@ -22,6 +28,21 @@ export const SHAPES: { id: Shape; name: string }[] = [
   { id: "hex", name: "Hex — pointed ends" },
   { id: "trapezoid", name: "Trapezoid" },
   { id: "notch", name: "Notch — diagonal cut" },
+  { id: "chunky", name: "Crewmate Chunky" },
+  { id: "cutline", name: "Sport Cutline" },
+  { id: "polybar", name: "Racing Polybar" },
+  { id: "explorer", name: "Cosmic Explorer" },
+  { id: "kart", name: "Turbo Kart" },
+  { id: "mazepill", name: "Retro Maze Pill" },
+  { id: "fighthud", name: "Fighting HUD" },
+  { id: "crest", name: "Blade Crest" },
+  { id: "blade", name: "Persian Blade" },
+  { id: "tavern", name: "Arcane Tavern" },
+  { id: "handdrawn", name: "Hand-Drawn" },
+  { id: "deepchamfer", name: "Deep Chamfer" },
+  { id: "banner", name: "Pointed Banner" },
+  { id: "shield", name: "Shield Plaque" },
+  { id: "pixelstep", name: "Pixel Step" },
 ];
 /** Neutral canvas surfaces only — the stage never competes with the component. */
 export const CANVAS_BGS = [

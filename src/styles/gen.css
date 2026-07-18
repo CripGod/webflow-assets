@@ -481,3 +481,44 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 /* ── v18: library-save feedback ───────────────────────────────── */
 .randbtn.okflash { border-color: #2FA36B; color: #1E7A4E; background: rgba(47,163,107,0.1); }
 [data-theme="dark"] .randbtn.okflash { color: #7ADFA9; border-color: rgba(122,223,169,0.5); background: rgba(47,163,107,0.16); }
+
+/* ── v19: preset examples + silhouette picker ─────────────────── */
+.presetgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.presetcard {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 8px 9px; border-radius: 12px; border: 1px solid var(--line2);
+  background: var(--card); cursor: pointer; transition: border-color .15s, box-shadow .15s;
+}
+.presetcard:hover { border-color: #c3c8d0; }
+.presetcard.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.presetcard .presetart { width: 100%; display: grid; place-items: center; overflow: hidden; }
+.presetcard .presetart svg { width: 100%; height: auto; max-height: 74px; display: block; }
+.presetcard .presetname { font-size: 12px; font-weight: 600; color: var(--ink2); }
+.presetcard.on .presetname { color: var(--ink); }
+.shapegrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.shapecard {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 4px 7px; border-radius: 10px; border: 1px solid var(--line2);
+  background: var(--card); cursor: pointer; color: var(--ink3);
+  transition: border-color .15s, color .15s, box-shadow .15s;
+}
+.shapecard:hover { border-color: #c3c8d0; color: var(--ink2); }
+.shapecard.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); color: var(--ink); }
+.shapecard svg { width: 100%; height: 34px; }
+.shapecard svg path { fill: currentColor; opacity: .8; }
+.shapecard span { font-size: 10.5px; font-weight: 600; line-height: 1.15; text-align: center; }
+[data-theme="dark"] .presetcard.on, [data-theme="dark"] .shapecard.on { border-color: #EBEEFF; box-shadow: 0 0 0 1px #EBEEFF; }
+
+/* ── v20: dev outline preview + silhouette provenance ─────────── */
+.silsrc { color: var(--ink3); }
+.devoutlines {
+  position: fixed; inset: 0; z-index: 200; background: #000; overflow-y: auto;
+  padding: 26px 30px 40px; cursor: pointer;
+}
+.devo-head { color: rgba(255,255,255,.75); font-size: 13.5px; margin-bottom: 20px; line-height: 1.5; }
+.devo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 18px; }
+.devo-card { border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px 12px 12px; }
+.devo-card.on { border-color: rgba(255,255,255,.55); }
+.devo-card svg { width: 100%; height: auto; display: block; }
+.devo-name { color: #fff; font-size: 13px; font-weight: 600; margin-top: 6px; }
+.devo-src { color: rgba(255,255,255,.45); font-size: 11px; margin-top: 2px; }

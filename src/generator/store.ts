@@ -3,10 +3,11 @@ import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, Candy
 import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign } from "./model";
 import { getDef } from "./icons";
 import siteDefaultJson from "./site-default.json";
+import bubblePopJson from "./preset-bubble-pop.json";
 
 /* Keep the text treatment's accent colors in step with the shell palette so a
    preset or color roll never leaves a stale outline color behind. */
-function retintText(c: GenConfig) {
+export function retintText(c: GenConfig) {
   const bevel = c.effects.Bevel ?? "#0E9CC9";
   const glow = c.effects.Glow ?? darken(bevel, -0.4);
   c.type.outline.color = darken(bevel, 0.5);
@@ -369,6 +370,9 @@ export const useGen = create<GenStore>((set, get) => ({
     set({ panelW: v });
   },
   setPreset: (id) => {
+    // Bubble Pop ships as a fully authored look (Chevon's bubblepopdefault) —
+    // picking it loads that complete design rather than re-mixing tokens
+    if (id === "bubble-pop") { get().replaceConfig(hydrate(structuredClone(bubblePopJson) as Record<string, any>)); return; }
     const p = presetById(id);
     get().update((c) => {
       c.presetId = id; c.shape = p.shape; c.bevel = { ...p.bevel }; c.effects = { ...p.effects };

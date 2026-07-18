@@ -1,20 +1,51 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Sparkles, Box } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
-import { renderBevel } from "@/generator/bevel";
+import { renderBevel, shapePath } from "@/generator/bevel";
+import { hydrate, retintText } from "@/generator/store";
+import { defaultConfig, defaultCandy, applyPresetCandy } from "@/generator/model";
+import type { GenConfig } from "@/generator/model";
+import bubblePopJson from "@/generator/preset-bubble-pop.json";
+import { SILHOUETTES, silhouetteMeta } from "@/generator/silhouettes";
+
+/* Rendered mini-previews for the style presets — built once, by the same
+   renderer as everything else. */
+let presetArtCache: { id: string; name: string; svg: string }[] | null = null;
+function presetArt() {
+  if (!presetArtCache) presetArtCache = PRESETS.map((p) => {
+    let pc: GenConfig;
+    if (p.id === "bubble-pop") {
+      pc = hydrate(structuredClone(bubblePopJson) as Record<string, any>); // clone — hydrate keeps references
+    } else {
+      pc = defaultConfig();
+      pc.presetId = p.id; pc.shape = p.shape; pc.bevel = { ...p.bevel }; pc.effects = { ...p.effects };
+      const candy = defaultCandy(); applyPresetCandy(candy, p); pc.candy = candy;
+      retintText(pc);
+    }
+    pc.content.label = "PLAY";
+    pc.icon.show = false;
+    return { id: p.id, name: p.name, svg: renderBevel(pc, "default") };
+  });
+  return presetArtCache;
+}
 
 /* Rail buttons jump to their section group — the panel always shows the full
    stack, so nothing critical ever disappears from view. Order mirrors how the
    object is understood: style → color → structure → surface → light →
    reflections → depth → advanced. */
 const GROUPS: Record<string, string[]> = {
-  style: ["shape", "mapping", "structure", "surface", "lighting", "gloss", "glow", "depth"],
-  type: ["typography"],
   states: ["state", "states"],
+  style: ["shape"],
+  silhouette: ["silhouette"],
+  color: ["mapping"],
+  material: ["structure", "surface"],
+  lighting: ["lighting"],
+  fx: ["gloss", "glow", "depth"],
+  type: ["typography"],
   library: ["library"],
   icons: ["icon"],
 };
@@ -22,9 +53,14 @@ const GROUPS: Record<string, string[]> = {
 export function Rail() {
   const { sectionFilter, setSectionFilter } = useGen();
   const items = [
-    { id: "style", Icon: Layers, label: "Style & material" },
+    { id: "states", Icon: LayoutGrid, label: "Global & states" },
+    { id: "style", Icon: Layers, label: "Style preset" },
+    { id: "silhouette", Icon: Shapes, label: "Silhouette" },
+    { id: "color", Icon: Palette, label: "Color" },
+    { id: "material", Icon: Box, label: "Structure & surface" },
+    { id: "lighting", Icon: Sun, label: "Lighting" },
+    { id: "fx", Icon: Sparkles, label: "Gloss, glow & depth" },
     { id: "type", Icon: Type, label: "Typography" },
-    { id: "states", Icon: LayoutGrid, label: "States" },
     { id: "library", Icon: LibraryBig, label: "Component library" },
     ...(ICONS_ENABLED ? [{ id: "icons", Icon: Search, label: "Icon library" }] : []),
   ];
@@ -189,6 +225,7 @@ export function Panel() {
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
+  const [outlines, setOutlines] = useState(false);
   const savedLib = cfg.icon.def?.lib && ICON_LIBS.some((l) => l.id === cfg.icon.def!.lib) ? cfg.icon.def!.lib : "lucide";
   const [browseLib, setBrowseLib] = useState(savedLib);
   const libIsReady = libLoaded(browseLib);
@@ -317,20 +354,75 @@ export function Panel() {
         )}
       </Section>
 
-      {/* ── A · Shape (the candy construction) ────────────── */}
-      <Section id="shape" title="Shape" summary={<span className="mapbar" style={{ background: mapBar }} />}>
-        <label className="fieldbox" style={{ minWidth: 0 }}>
-          <span className="fl">Shape preset</span>
-          <select value={cfg.presetId} onChange={(e) => setPreset(e.target.value)} aria-label="Shape preset">
-            {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-        </label>
-        <div className="helper">Each preset is a different candy construction — shell, gloss and depth, not just a palette.</div>
+      {/* ── A · Style (the candy construction) ────────────── */}
+      <Section id="shape" title="Style" summary={<span className="mapbar" style={{ background: mapBar }} />}>
+        <div className="presetgrid">
+          {presetArt().map((p) => (
+            <button key={p.id} className={`presetcard${cfg.presetId === p.id ? " on" : ""}`} title={p.name}
+              onClick={() => setPreset(p.id)}>
+              <span className="presetart" dangerouslySetInnerHTML={{ __html: p.svg }} />
+              <span className="presetname">{p.name}</span>
+            </button>
+          ))}
+        </div>
+        <div className="helper">Each style is a different candy construction — shell, gloss and depth, not just a palette.</div>
         <button className="resetstate" onClick={randomize}>
           <Dices size={14} strokeWidth={2} /> Randomize
         </button>
       </Section>
+
+      {/* ── A2 · Silhouette — pure geometry, material stays ── */}
+      <Section id="silhouette" title="Silhouette" summary={<span>{SHAPES.find((sh) => sh.id === D.shape)?.name.split(" — ")[0]}</span>}>
+        <div className="shapegrid">
+          {SHAPES.map((sh) => (
+            <button key={sh.id} className={`shapecard${D.shape === sh.id ? " on" : ""}`} title={sh.name}
+              onClick={() => update((c) => { c.shape = sh.id; })}>
+              <svg viewBox="0 0 120 56" aria-hidden="true"><path d={shapePath(sh.id, 8, 8, 104, 40, D.bevel.softness)} /></svg>
+              <span>{sh.name.split(" — ")[0]}</span>
+            </button>
+          ))}
+        </div>
+        {D.shape !== "pill" && (
+          <Slider label="Corner softness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
+        )}
+        {silhouetteMeta(D.shape) && (
+          <div className="helper">{silhouetteMeta(D.shape)!.character} <span className="silsrc">({silhouetteMeta(D.shape)!.source} · {silhouetteMeta(D.shape)!.license})</span></div>
+        )}
+        <button className="resetstate" onClick={() => setOutlines(true)} title="Judge silhouettes as plain geometry — before materials flatter them">
+          <Shapes size={13} strokeWidth={2} /> Outline view — compare raw geometry
+        </button>
+        <div className="helper">Silhouette is pure geometry — switching it keeps your material, lighting, colors and type exactly as they are.</div>
+      </Section>
+
+      {outlines && (
+        <div className="devoutlines" role="dialog" aria-label="Silhouette outline comparison" onClick={() => setOutlines(false)}>
+          <div className="devo-head">
+            Raw silhouette geometry — <span style={{ color: "#fff" }}>white outline</span>,
+            <span style={{ color: "#c084fc" }}> purple dashes = fixed end caps (never stretch)</span>,
+            <span style={{ color: "#4ade80" }}> green = content-safe area</span>. Click anywhere to close.
+          </div>
+          <div className="devo-grid">
+            {SILHOUETTES.map((m) => {
+              const W = 250, H = 92, ox = 12, oy = 14, gw = W - 24, gh = H - 28;
+              const cap = Math.min(m.capScale * gh, gw * 0.45);
+              return (
+                <div key={m.id} className={`devo-card${D.shape === m.id ? " on" : ""}`}>
+                  <svg viewBox={`0 0 ${W} ${H}`}>
+                    <path d={shapePath(m.id, ox, oy, gw, gh, 60)} fill="none" stroke="#fff" strokeWidth="1.6" />
+                    <line x1={ox + cap} y1={3} x2={ox + cap} y2={H - 3} stroke="#c084fc" strokeWidth="1" strokeDasharray="4 3" />
+                    <line x1={ox + gw - cap} y1={3} x2={ox + gw - cap} y2={H - 3} stroke="#c084fc" strokeWidth="1" strokeDasharray="4 3" />
+                    <rect x={ox + m.content.left * gh} y={oy + m.content.top * gh}
+                      width={gw - (m.content.left + m.content.right) * gh} height={gh - (m.content.top + m.content.bottom) * gh}
+                      fill="none" stroke="#4ade80" strokeWidth="1" strokeDasharray="3 3" />
+                  </svg>
+                  <div className="devo-name">{m.name}</div>
+                  <div className="devo-src">{m.source} · {m.license}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── B · Color — THE color editor ──────────────────── */}
       <Section id="mapping" title="Color"
@@ -371,17 +463,6 @@ export function Panel() {
 
       {/* ── C · Structure — the object's build ────────────── */}
       <Section id="structure" title="Structure">
-        <label className="fieldbox" style={{ minWidth: 0 }}>
-          <span className="fl">Silhouette</span>
-          <select value={D.shape} aria-label="Silhouette"
-            onChange={(e) => update((c) => { c.shape = e.target.value as typeof cfg.shape; })}>
-            {SHAPES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-        </label>
-        {D.shape !== "pill" && (
-          <Slider label="Corner softness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
-        )}
         <Slider label="Wall width" value={D.bevel.width} min={4} max={26} unit="px" onChange={(v) => update((c) => { c.bevel.width = v; })} />
         <Slider label="Rim width" value={C.rim.width} min={0} max={10} unit="px" onChange={(v) => update((c) => { c.candy.rim.width = v; })} />
         <Slider label="Rim brightness" value={C.rim.brightness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.rim.brightness = v; })} />

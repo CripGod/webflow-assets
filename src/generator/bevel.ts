@@ -1,6 +1,26 @@
 import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef, StateDesign } from "./model";
 import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS } from "./model";
 import { iconGroup } from "./icons";
+import rough from "roughjs";
+
+/* Rough.js draws the hand-drawn *line character* over the approved outline —
+   it never designs the silhouette. Fixed seed keeps every render, state card,
+   copied code and download byte-identical. Results are memoized per path. */
+let roughGen: ReturnType<typeof rough.generator> | null = null;
+const inkCache = new Map<string, string>();
+function roughInk(d: string, color: string, sw: number): string {
+  const key = `${d}|${color}|${sw}`;
+  const hit = inkCache.get(key);
+  if (hit !== undefined) return hit;
+  roughGen ??= rough.generator();
+  const drawable = roughGen.path(d, { seed: 7, roughness: 1.7, bowing: 0.9 });
+  const out = `<g data-layer="ink" opacity="0.8">` + roughGen.toPaths(drawable)
+    .map((p) => `<path d="${p.d}" fill="none" stroke="${color}" stroke-width="${sw.toFixed(1)}" stroke-linecap="round"/>`)
+    .join("") + `</g>`;
+  if (inkCache.size > 80) inkCache.clear();
+  inkCache.set(key, out);
+  return out;
+}
 
 // Candy engine v9 — a hard-candy shell built from ordered, independently
 // tokenized layers:
@@ -37,9 +57,182 @@ function roundRect(x: number, y: number, w: number, h: number, r: number): strin
   const rr = Math.min(r, h / 2, w / 2);
   return `M ${x + rr} ${y} H ${x + w - rr} A ${rr} ${rr} 0 0 1 ${x + w} ${y + rr} V ${y + h - rr} A ${rr} ${rr} 0 0 1 ${x + w - rr} ${y + h} H ${x + rr} A ${rr} ${rr} 0 0 1 ${x} ${y + h - rr} V ${y + rr} A ${rr} ${rr} 0 0 1 ${x + rr} ${y} Z`;
 }
+/* Deterministic hash for authored irregularity (hand-drawn) — same output
+   every render, every export, every reload. */
+function silhash(i: number): number {
+  return ((((i + 7) * 2654435761) >>> 0) % 1000) / 1000 - 0.5;
+}
+/* One straight run broken into gently wobbling segments — the hand-drawn ink
+   line. Offsets are seeded, never random. */
+function inkRun(x1: number, y1: number, x2: number, y2: number, wob: number, salt: number): string {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const n = Math.max(2, Math.round(len / 56));
+  const nx = -(y2 - y1) / (len || 1), ny = (x2 - x1) / (len || 1);
+  let d = "";
+  for (let i = 0; i < n; i++) {
+    const tm = (i + 0.5) / n, t1 = (i + 1) / n;
+    const off = silhash(salt + i) * 2 * wob;
+    d += `Q ${(x1 + (x2 - x1) * tm + nx * off).toFixed(1)} ${(y1 + (y2 - y1) * tm + ny * off).toFixed(1)} ${(x1 + (x2 - x1) * t1).toFixed(1)} ${(y1 + (y2 - y1) * t1).toFixed(1)} `;
+  }
+  return d;
+}
+
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
   if (shape === "pill") return roundRect(x, y, w, h, h / 2);
   if (shape === "round") return roundRect(x, y, w, h, 10 + softness * 0.34);
+  /* ── v19 silhouette library — every layer insets this same geometry ── */
+  if (shape === "cutline") {
+    // broadcast-clean rectangle: small vertical cuts, wider clipped end caps
+    const cx = Math.min(w * 0.14, h * 0.42), cy = h * 0.2;
+    const v: [number, number][] = [
+      [x + cx, y], [x + w - cx, y], [x + w, y + cy], [x + w, y + h - cy],
+      [x + w - cx, y + h], [x + cx, y + h], [x, y + h - cy], [x, y + cy],
+    ];
+    return polyRounded(v, 2 + softness * 0.06);
+  }
+  if (shape === "polybar") {
+    // strong top chamfer caps, smaller stepped lower corners — automotive rail
+    const c = Math.min(w * 0.16, h * 0.6), b = c * 0.45, s = h * 0.26;
+    const v: [number, number][] = [
+      [x + c, y], [x + w - c, y], [x + w, y + s], [x + w, y + h - s * 0.55],
+      [x + w - b, y + h], [x + b, y + h], [x, y + h - s * 0.55], [x, y + s],
+    ];
+    return polyRounded(v, 2 + softness * 0.05);
+  }
+  if (shape === "explorer") {
+    // capsule with faceted (not circular) end housings
+    const c = Math.min(w * 0.13, h * 0.55);
+    const v: [number, number][] = [
+      [x + c, y], [x + w - c, y],
+      [x + w - c * 0.22, y + h * 0.24], [x + w, y + h * 0.5], [x + w - c * 0.22, y + h * 0.76],
+      [x + w - c, y + h], [x + c, y + h],
+      [x + c * 0.22, y + h * 0.76], [x, y + h * 0.5], [x + c * 0.22, y + h * 0.24],
+    ];
+    return polyRounded(v, 3 + softness * 0.08);
+  }
+  if (shape === "fighthud") {
+    // opposing arrow brackets with an inward notch — competitive HUD
+    const c = Math.min(w * 0.13, h * 0.85), n = c * 0.42;
+    const v: [number, number][] = [
+      [x + c, y], [x + w - c, y],
+      [x + w, y + h * 0.24], [x + w - n, y + h * 0.5], [x + w, y + h * 0.76],
+      [x + w - c, y + h], [x + c, y + h],
+      [x, y + h * 0.76], [x + n, y + h * 0.5], [x, y + h * 0.24],
+    ];
+    return polyRounded(v, 1.5 + softness * 0.03);
+  }
+  if (shape === "crest") {
+    // ceremonial plaque: sloped upper corners, shallow center point below
+    const c = Math.min(w * 0.18, h * 0.52);
+    const v: [number, number][] = [
+      [x + c, y], [x + w - c, y], [x + w, y + c * 0.75], [x + w, y + h * 0.82],
+      [x + w * 0.5, y + h], [x, y + h * 0.82], [x, y + c * 0.75],
+    ];
+    return polyRounded(v, 2 + softness * 0.06);
+  }
+  if (shape === "chunky") {
+    // toy capsule: big shoulders + soft inset breaks top and bottom center
+    const r = Math.min(h * 0.42, w * 0.3);
+    const nw = Math.min(w * 0.3, w - 2 * r - 10), nd = h * 0.05;
+    const mid = x + w / 2;
+    const dipTop = nw > 8 ? `H ${(mid - nw / 2).toFixed(1)} Q ${mid.toFixed(1)} ${(y + nd * 2).toFixed(1)} ${(mid + nw / 2).toFixed(1)} ${y} ` : "";
+    const dipBot = nw > 8 ? `H ${(mid + nw / 2).toFixed(1)} Q ${mid.toFixed(1)} ${(y + h - nd * 2).toFixed(1)} ${(mid - nw / 2).toFixed(1)} ${(y + h).toFixed(1)} ` : "";
+    return `M ${x + r} ${y} ${dipTop}H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} V ${y + h - r} A ${r} ${r} 0 0 1 ${x + w - r} ${y + h} ${dipBot}H ${x + r} A ${r} ${r} 0 0 1 ${x} ${y + h - r} V ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} Z`;
+  }
+  if (shape === "kart") {
+    // mechanical end caps taller than the center rail — clean stepped waist
+    const capW = Math.min(h * 0.8, w * 0.26), inset = h * 0.1, rc = h * 0.3;
+    const R = (n: number) => n.toFixed(1);
+    return `M ${R(x + capW)} ${R(y + inset)} H ${R(x + w - capW)} V ${y} H ${R(x + w - rc)} `
+      + `A ${R(rc)} ${R(rc)} 0 0 1 ${x + w} ${R(y + rc)} V ${R(y + h - rc)} A ${R(rc)} ${R(rc)} 0 0 1 ${R(x + w - rc)} ${y + h} `
+      + `H ${R(x + w - capW)} V ${R(y + h - inset)} H ${R(x + capW)} V ${y + h} H ${R(x + rc)} `
+      + `A ${R(rc)} ${R(rc)} 0 0 1 ${x} ${R(y + h - rc)} V ${R(y + rc)} A ${R(rc)} ${R(rc)} 0 0 1 ${R(x + rc)} ${y} `
+      + `H ${R(x + capW)} Z`;
+  }
+  if (shape === "mazepill") {
+    // arcade capsule — elliptical ends flatter than a true pill
+    const rx = Math.min(h * 0.62, w * 0.24), ry = h / 2;
+    return `M ${x + rx} ${y} H ${x + w - rx} A ${rx} ${ry} 0 0 1 ${x + w} ${y + ry} A ${rx} ${ry} 0 0 1 ${x + w - rx} ${y + h} H ${x + rx} A ${rx} ${ry} 0 0 1 ${x} ${y + ry} A ${rx} ${ry} 0 0 1 ${x + rx} ${y} Z`;
+  }
+  if (shape === "blade") {
+    // swept side tips, shallow concave top/bottom — regal and fluid
+    const sh = Math.min(w * 0.16, h * 1.1), dip = h * 0.1, tipY = y + h / 2;
+    return `M ${x} ${tipY} `
+      + `Q ${(x + sh * 0.35).toFixed(1)} ${(y + h * 0.1).toFixed(1)} ${(x + sh).toFixed(1)} ${(y + dip * 0.55).toFixed(1)} `
+      + `Q ${(x + w / 2).toFixed(1)} ${(y + dip * 1.9).toFixed(1)} ${(x + w - sh).toFixed(1)} ${(y + dip * 0.55).toFixed(1)} `
+      + `Q ${(x + w - sh * 0.35).toFixed(1)} ${(y + h * 0.1).toFixed(1)} ${x + w} ${tipY} `
+      + `Q ${(x + w - sh * 0.35).toFixed(1)} ${(y + h * 0.9).toFixed(1)} ${(x + w - sh).toFixed(1)} ${(y + h - dip * 0.55).toFixed(1)} `
+      + `Q ${(x + w / 2).toFixed(1)} ${(y + h - dip * 1.9).toFixed(1)} ${(x + sh).toFixed(1)} ${(y + h - dip * 0.55).toFixed(1)} `
+      + `Q ${(x + sh * 0.35).toFixed(1)} ${(y + h * 0.9).toFixed(1)} ${x} ${tipY} Z`;
+  }
+  if (shape === "tavern") {
+    // carved plaque: gently bowed top/bottom, softly concave side walls
+    const bow = h * 0.06, side = Math.max(1.5, w * 0.012), r = Math.min(w, h) * 0.14;
+    return `M ${(x + r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} `
+      + `Q ${(x + w / 2).toFixed(1)} ${(y - bow * 0.5).toFixed(1)} ${(x + w - r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} `
+      + `Q ${(x + w).toFixed(1)} ${(y + bow * 0.8).toFixed(1)} ${(x + w - side).toFixed(1)} ${(y + h * 0.26).toFixed(1)} `
+      + `Q ${(x + w - side * 2.6).toFixed(1)} ${(y + h / 2).toFixed(1)} ${(x + w - side).toFixed(1)} ${(y + h * 0.74).toFixed(1)} `
+      + `Q ${(x + w).toFixed(1)} ${(y + h - bow * 0.8).toFixed(1)} ${(x + w - r).toFixed(1)} ${(y + h - bow * 0.6).toFixed(1)} `
+      + `Q ${(x + w / 2).toFixed(1)} ${(y + h + bow * 0.5).toFixed(1)} ${(x + r).toFixed(1)} ${(y + h - bow * 0.6).toFixed(1)} `
+      + `Q ${x.toFixed(1)} ${(y + h - bow * 0.8).toFixed(1)} ${(x + side).toFixed(1)} ${(y + h * 0.74).toFixed(1)} `
+      + `Q ${(x + side * 2.6).toFixed(1)} ${(y + h / 2).toFixed(1)} ${(x + side).toFixed(1)} ${(y + h * 0.26).toFixed(1)} `
+      + `Q ${x.toFixed(1)} ${(y + bow * 0.8).toFixed(1)} ${(x + r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} Z`;
+  }
+  if (shape === "deepchamfer") {
+    // elongated octagon — cuts nearly half the height, unmistakably angular
+    const c = Math.min(w * 0.24, h * 0.44);
+    const v: [number, number][] = [
+      [x + c, y], [x + w - c, y], [x + w, y + c], [x + w, y + h - c],
+      [x + w - c, y + h], [x + c, y + h], [x, y + h - c], [x, y + c],
+    ];
+    return polyRounded(v, 2 + softness * 0.05);
+  }
+  if (shape === "banner") {
+    // ribbon with swallowtail ends — an inverted V cut into each end
+    const c = Math.min(w * 0.13, h * 0.62);
+    const v: [number, number][] = [
+      [x, y], [x + w, y], [x + w - c, y + h * 0.5], [x + w, y + h],
+      [x, y + h], [x + c, y + h * 0.5],
+    ];
+    return polyRounded(v, 1.5 + softness * 0.03);
+  }
+  if (shape === "shield") {
+    // flat top, straight walls, converging to a bottom center point
+    const drop = h * 0.55;
+    const v: [number, number][] = [
+      [x, y], [x + w, y], [x + w, y + drop],
+      [x + w * 0.5, y + h], [x, y + drop],
+    ];
+    return polyRounded(v, 3 + softness * 0.1);
+  }
+  if (shape === "pixelstep") {
+    // staircase-quantized corners — reads retro at any size
+    const st = Math.max(4, Math.round(h / 14)), n = 3;
+    let d = `M ${x + n * st} ${y} `;
+    for (let i = 0; i < n; i++) d += `H ${x + w - (n - i) * st} V ${y + (i + 1) * st} `;   // top-right stairs down
+    d += `H ${x + w} V ${y + h - n * st} `;
+    for (let i = 0; i < n; i++) d += `H ${x + w - (i + 1) * st} V ${y + h - n * st + (i + 1) * st} `; // bottom-right stairs
+    d += `H ${x + n * st} `;
+    for (let i = 0; i < n; i++) d += `H ${x + (n - i) * st} V ${y + h - (i + 1) * st} `;   // bottom-left stairs up
+    d += `H ${x} V ${y + n * st} `;
+    for (let i = 0; i < n; i++) d += `H ${x + (i + 1) * st} V ${y + n * st - (i + 1) * st} `; // top-left stairs
+    return d + "Z";
+  }
+  if (shape === "handdrawn") {
+    // inked plaque: seeded wobble runs + deliberately uneven corner cuts
+    const wob = Math.max(1, h * 0.015);
+    const r = Math.min(14, h * 0.14);
+    const c = [r * 1.2, r * 0.8, r * 1.05, r * 0.9]; // authored, not random
+    return `M ${(x + c[0]).toFixed(1)} ${y} `
+      + inkRun(x + c[0], y, x + w - c[1], y, wob, 11)
+      + `Q ${x + w} ${y} ${x + w} ${(y + c[1]).toFixed(1)} `
+      + inkRun(x + w, y + c[1], x + w, y + h - c[2], wob, 29)
+      + `Q ${x + w} ${y + h} ${(x + w - c[2]).toFixed(1)} ${y + h} `
+      + inkRun(x + w - c[2], y + h, x + c[3], y + h, wob, 47)
+      + `Q ${x} ${y + h} ${x} ${(y + h - c[3]).toFixed(1)} `
+      + inkRun(x, y + h - c[3], x, y + c[0], wob, 71)
+      + `Q ${x} ${y} ${(x + c[0]).toFixed(1)} ${y} Z`;
+  }
   if (shape === "hex") {
     const cut = Math.min(h * 0.5, w * 0.18);
     const v: [number, number][] = [
@@ -514,6 +707,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <g opacity="${(T.frame / 100).toFixed(2)}">
       <path d="${outer}" fill="url(#${id}band)" stroke="${darken(bevelC, disabled ? 0.25 : 0.5)}" stroke-width="1.5"/>
       ${rimW > 0.2 ? `<path d="${rimP}" fill="none" stroke="url(#${id}rim)" stroke-width="${rimW.toFixed(1)}" opacity="${((C.rim.brightness / 100) * (disabled ? 0.5 : 1)).toFixed(2)}"/>` : ""}
+      ${shape === "handdrawn" && !disabled ? roughInk(outer, darken(bevelC, 0.58), 1.4 * K) : ""}
     </g>
     <g opacity="${(T.interior / 100).toFixed(2)}">
       <path d="${faceP}" fill="url(#${id}face)"/>
