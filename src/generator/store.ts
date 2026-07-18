@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens } from "./model";
+import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape } from "./model";
 import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign } from "./model";
 import { getDef } from "./icons";
 import siteDefaultJson from "./site-default.json";
@@ -173,6 +173,8 @@ interface GenStore {
   removeBoardItem: (id: string) => void;
   focus: KitComponentId | null;
   setFocus: (f: KitComponentId | null) => void;
+  kitShapes: Partial<Record<KitComponentId, Shape>>;
+  setKitShape: (id: KitComponentId, shape: Shape) => void;
   bgImage: string | null;
   setBgImage: (url: string | null) => void;
 
@@ -284,6 +286,13 @@ export const useGen = create<GenStore>((set, get) => ({
   },
   focus: null,
   setFocus: (f) => set({ focus: f, phase: "master" }),
+  kitShapes: loadJson<Partial<Record<KitComponentId, Shape>>>("ui-generator-kitshapes", {}),
+  setKitShape: (id, shape) => {
+    markTouched();
+    const kitShapes = { ...get().kitShapes, [id]: shape };
+    saveJson("ui-generator-kitshapes", kitShapes);
+    set({ kitShapes });
+  },
   bgImage: null,
   setBgImage: (url) => set({ bgImage: url }),
   inheritDefaults: () => {

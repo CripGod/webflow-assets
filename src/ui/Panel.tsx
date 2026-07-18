@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Sparkles, Box } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -10,7 +10,7 @@ import { hydrate, retintText } from "@/generator/store";
 import { defaultConfig, defaultCandy, applyPresetCandy } from "@/generator/model";
 import type { GenConfig } from "@/generator/model";
 import bubblePopJson from "@/generator/preset-bubble-pop.json";
-import { SILHOUETTES, SILHOUETTE_CATEGORIES, silhouetteMeta } from "@/generator/silhouettes";
+import { SILHOUETTES, SILHOUETTE_CATEGORIES } from "@/generator/silhouettes";
 
 /* Rendered mini-previews for the style presets — built once, by the same
    renderer as everything else. */
@@ -221,7 +221,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -382,8 +382,8 @@ export function Panel() {
         </div>
         <div className="shapegrid">
           {SILHOUETTES.filter((m) => silCat === "All" || m.category === silCat).map((m) => (
-            <button key={m.id} className={`shapecard${D.shape === m.id ? " on" : ""}`} title={`${m.name} — ${m.character}`}
-              onClick={() => update((c) => { c.shape = m.id; })}>
+            <button key={m.id} className={`shapecard${(focus ? (kitShapes[focus] ?? KIT_SHAPE[focus] ?? D.shape) : D.shape) === m.id ? " on" : ""}`} title={`${m.name} — ${m.character}`}
+              onClick={() => { if (focus) setKitShape(focus, m.id); else update((c) => { c.shape = m.id; }); }}>
               <svg viewBox="0 0 120 56" aria-hidden="true"><path d={shapePath(m.id, 8, 8, 104, 40, D.bevel.softness)} /></svg>
               <span>{m.name}</span>
             </button>
@@ -392,9 +392,7 @@ export function Panel() {
         {D.shape !== "pill" && (
           <Slider label="Corner softness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
         )}
-        {silhouetteMeta(D.shape) && (
-          <div className="helper">{silhouetteMeta(D.shape)!.character} <span className="silsrc">({silhouetteMeta(D.shape)!.source} · {silhouetteMeta(D.shape)!.license})</span></div>
-        )}
+        {focus && <div className="helper">Picking a silhouette here reshapes only <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the style stays global.</div>}
         <button className="resetstate" onClick={() => setOutlines(true)} title="Judge silhouettes as plain geometry — before materials flatter them">
           <Shapes size={13} strokeWidth={2} /> Outline view — compare raw geometry
         </button>

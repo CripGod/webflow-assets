@@ -1,5 +1,5 @@
 import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef, StateDesign } from "./model";
-import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS } from "./model";
+import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE } from "./model";
 import { iconGroup } from "./icons";
 import rough from "roughjs";
 
@@ -88,7 +88,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + cx, y], [x + w - cx, y], [x + w, y + cy], [x + w, y + h - cy],
       [x + w - cx, y + h], [x + cx, y + h], [x, y + h - cy], [x, y + cy],
     ];
-    return polyRounded(v, 2 + softness * 0.06);
+    return polyRounded(v, 2 + softness * 0.2);
   }
   if (shape === "polybar") {
     // strong top chamfer caps, smaller stepped lower corners — automotive rail
@@ -97,7 +97,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + c, y], [x + w - c, y], [x + w, y + s], [x + w, y + h - s * 0.55],
       [x + w - b, y + h], [x + b, y + h], [x, y + h - s * 0.55], [x, y + s],
     ];
-    return polyRounded(v, 2 + softness * 0.05);
+    return polyRounded(v, 2 + softness * 0.18);
   }
   if (shape === "explorer") {
     // capsule with faceted (not circular) end housings
@@ -108,7 +108,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + w - c, y + h], [x + c, y + h],
       [x + c * 0.22, y + h * 0.76], [x, y + h * 0.5], [x + c * 0.22, y + h * 0.24],
     ];
-    return polyRounded(v, 3 + softness * 0.08);
+    return polyRounded(v, 3 + softness * 0.22);
   }
   if (shape === "fighthud") {
     // opposing arrow brackets with an inward notch — competitive HUD
@@ -119,7 +119,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + w - c, y + h], [x + c, y + h],
       [x, y + h * 0.76], [x + n, y + h * 0.5], [x, y + h * 0.24],
     ];
-    return polyRounded(v, 1.5 + softness * 0.03);
+    return polyRounded(v, 1.5 + softness * 0.12);
   }
   if (shape === "crest") {
     // ceremonial plaque: sloped upper corners, shallow center point below
@@ -128,7 +128,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + c, y], [x + w - c, y], [x + w, y + c * 0.75], [x + w, y + h * 0.82],
       [x + w * 0.5, y + h], [x, y + h * 0.82], [x, y + c * 0.75],
     ];
-    return polyRounded(v, 2 + softness * 0.06);
+    return polyRounded(v, 2 + softness * 0.2);
   }
   if (shape === "chunky") {
     // toy capsule: big shoulders + soft inset breaks top and bottom center
@@ -189,7 +189,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
     const v: [number, number][] = [
       [x, y], [x + w - pd, y], [x + w, y + h * 0.5], [x + w - pd, y + h], [x, y + h],
     ];
-    return polyRounded(v, h * 0.06);
+    return polyRounded(v, h * 0.04 + softness * 0.1);
   }
   if (shape === "doboMarquee") {
     // dobo_ui headerAsim: tapered plate over side drapes with rounded feet
@@ -202,7 +202,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + wo * 0.85, y + h * 0.86], [x + wo * 0.12, y + h], [x, y + ph * 0.78],
       [x + wo - wo * 0.18, y + ph * 0.5],
     ];
-    return polyRounded(v, h * 0.045 + softness * 0.02);
+    return polyRounded(v, h * 0.03 + softness * 0.12);
   }
   if (shape === "doboRibbon") {
     // dobo_ui headerBow: tapered plate, swallowtail side tails hanging low
@@ -216,7 +216,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x, y + h * 0.9], [x + wo * 0.5, y + h * 0.66], [x, y + h * 0.42],
       [x + wo + tp * 0.4, y + h * 0.32],
     ];
-    return polyRounded(v, h * 0.03);
+    return polyRounded(v, h * 0.02 + softness * 0.08);
   }
   if (shape === "doboBracket") {
     // dobo_ui labelAdvanced: bar with half-round side lobes + meeting notches
@@ -244,7 +244,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + c, y], [x + w - c, y], [x + w, y + c], [x + w, y + h - c],
       [x + w - c, y + h], [x + c, y + h], [x, y + h - c], [x, y + c],
     ];
-    return polyRounded(v, 2 + softness * 0.05);
+    return polyRounded(v, 2 + softness * 0.18);
   }
   if (shape === "banner") {
     // ribbon with swallowtail ends — an inverted V cut into each end
@@ -253,7 +253,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x, y], [x + w, y], [x + w - c, y + h * 0.5], [x + w, y + h],
       [x, y + h], [x + c, y + h * 0.5],
     ];
-    return polyRounded(v, 1.5 + softness * 0.03);
+    return polyRounded(v, 1.5 + softness * 0.12);
   }
   if (shape === "shield") {
     // flat top, straight walls, converging to a bottom center point
@@ -262,7 +262,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x, y], [x + w, y], [x + w, y + drop],
       [x + w * 0.5, y + h], [x, y + drop],
     ];
-    return polyRounded(v, 3 + softness * 0.1);
+    return polyRounded(v, 3 + softness * 0.26);
   }
   if (shape === "pixelstep") {
     // staircase-quantized corners — reads retro at any size
@@ -298,14 +298,14 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + cut, y], [x + w - cut, y], [x + w, y + h / 2],
       [x + w - cut, y + h], [x + cut, y + h], [x, y + h / 2],
     ];
-    return polyRounded(v, 2 + softness * 0.1);
+    return polyRounded(v, 2 + softness * 0.24);
   }
   if (shape === "trapezoid") {
     const t = Math.min(h * 0.28, w * 0.12);
     const v: [number, number][] = [
       [x + t, y], [x + w - t, y], [x + w, y + h], [x, y + h],
     ];
-    return polyRounded(v, 3 + softness * 0.12);
+    return polyRounded(v, 3 + softness * 0.3);
   }
   if (shape === "notch") {
     const c = Math.min(34, h * 0.26);
@@ -313,10 +313,10 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       [x + c, y], [x + w, y], [x + w, y + h - c],
       [x + w - c, y + h], [x, y + h], [x, y + c],
     ];
-    return polyRounded(v, 2 + softness * 0.1);
+    return polyRounded(v, 2 + softness * 0.24);
   }
   const cut = shape === "sharp" ? Math.min(34, h * 0.22) : Math.min(28, h * 0.17);
-  const r = shape === "sharp" ? 1.5 : 3 + softness * 0.14;
+  const r = shape === "sharp" ? 1.5 : 3 + softness * 0.3;
   const v: [number, number][] = [
     [x + cut, y], [x + w - cut, y], [x + w, y + cut], [x + w, y + h - cut],
     [x + w - cut, y + h], [x + cut, y + h], [x, y + h - cut], [x, y + cut],
@@ -824,7 +824,7 @@ function inject(track: string, extra: string): string {
   return track.replace("</g>\n</svg>", extra + "</g>\n</svg>");
 }
 
-export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default", value?: number): string {
+export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default", value?: number, shapeOv?: Shape): string {
   const k = SIZE_K[size];
   const bw = cfg.bevel.width;
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
@@ -832,24 +832,27 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   const font = cfg.type.font;
   const wellOf = (w: number, h: number, inset: number) =>
     shapePath(cfg.shape, 39 + inset, 30 + inset, w - inset * 2, h - inset * 2, Math.max(0, cfg.bevel.softness - 10));
+  // style is global; the silhouette can differ per component (user override
+  // wins, then the curated default, then the master's shape)
+  const sov: Shape | undefined = shapeOv ?? KIT_SHAPE[id];
 
   switch (id) {
     case "primary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { shapeOverride: sov });
     case "secondary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: "Secondary" });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: "Secondary", shapeOverride: sov });
     case "small":
-      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: "GO", iconDef: null });
+      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: "GO", iconDef: null, shapeOverride: sov });
     case "ghost":
-      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: "Ghost", iconDef: null });
+      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: "Ghost", iconDef: null, shapeOverride: sov });
     case "iconbtn":
-      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k });
+      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, shapeOverride: sov });
     case "chip":
-      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: "NEW", iconDef: STOCK_ICONS.star });
+      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: "NEW", iconDef: STOCK_ICONS.star, shapeOverride: sov });
     case "badge":
-      return build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: "12", iconDef: null, fixedW: 118 * k });
+      return build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov });
     case "tab":
-      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: "TAB", iconDef: null });
+      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: "TAB", iconDef: null, shapeOverride: sov });
     case "segment": {
       const w = 560 * k, h = 106 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
@@ -862,13 +865,11 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       return inject(track, well + t("ONE", 39 + bw + segW * 0.5, 0.55) + t("TWO", 39 + bw + segW * 1.5, 1) + t("THREE", 39 + bw + segW * 2.5, 0.55));
     }
     case "checkbox":
-      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 54 * k }, { iconDef: STOCK_ICONS.check, label: "", fixedW: 118 * k });
+      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 54 * k }, { iconDef: STOCK_ICONS.check, label: "", fixedW: 118 * k, shapeOverride: sov });
     case "radio":
-      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k });
-    case "switchOn":
-    case "switchOff":
+      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k, shapeOverride: sov });
     case "toggle": {
-      const on = id !== "switchOff";
+      const on = (value ?? 1) > 0.5;
       const w = 210 * k, h = 108 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
       const inset = bw + 4;
@@ -916,9 +917,26 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const ph = `<text x="${39 + inset + 18 * k}" y="${30 + h / 2 + 1}" font-family="'${font}', Inter, sans-serif" font-size="${30 * k}" font-style="italic" font-weight="500" fill="rgba(255,255,255,0.55)" dominant-baseline="central">Type something…</text>`;
       return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.9"/>` + ph);
     }
-    case "dropdown":
-      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: "Select option", iconDef: STOCK_ICONS.chevron });
-    case "icondrop":
-      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 44 * k }, { iconDef: STOCK_ICONS.chevron, label: "", fixedW: 122 * k });
+    case "header":
+      return build(cfg, state, { x: 52, y: 34, h: 158 * k, fs: 46 * k, iconSize: 0 }, { iconDef: null, shapeOverride: sov });
+    case "dropdown": {
+      const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov });
+      if (state !== "pressed") return btn;
+      // pressed = open: the menu drops beneath, drawn from the same palette
+      const m = btn.match(/width="([\d.]+)" height="([\d.]+)" viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+      if (!m) return btn;
+      const vw = +m[1];
+      const bw2 = vw - 78, rowH = 44 * k, pad = 10 * k, menuH = rowH * 3 + pad * 2;
+      const my = 30 + 110 * k + 10 * k;
+      const face = darken(effect(cfg.effects, "Inner Fill"), 0.55);
+      const hi = effect(cfg.effects, "Glow");
+      const rows = ["Option one", "Option two", "Option three"].map((t, i) =>
+        `${i === 0 ? `<rect x="${39 + 6}" y="${(my + pad + i * rowH).toFixed(1)}" width="${bw2 - 12}" height="${rowH}" rx="${8 * k}" fill="${hexRgba(hi, 0.22)}"/>` : ""}
+         <text x="${39 + 20 * k}" y="${(my + pad + i * rowH + rowH / 2).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${26 * k}" font-weight="600" fill="${i === 0 ? "#FFFFFF" : "rgba(255,255,255,0.66)"}" dominant-baseline="central">${t}</text>`).join("");
+      const menu = `<g><path d="${roundRect(39, my, bw2, menuH, 12 * k)}" fill="${face}" stroke="${darken(bevel, 0.5)}" stroke-width="1.5"/>${rows}</g>`;
+      // the menu overlays below the button (overflow: visible) so the card
+      // never reflows — pressing doesn't shift the pointer off the component
+      return inject(btn.replace("<svg ", '<svg style="overflow:visible" '), menu);
+    }
   }
 }

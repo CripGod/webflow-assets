@@ -47,8 +47,8 @@ export const SHAPES: { id: Shape; name: string }[] = [
   { id: "banner", name: "Pointed Banner" },
   { id: "shield", name: "Shield Plaque" },
   { id: "pixelstep", name: "Pixel Step" },
-  { id: "kenneyRect", name: "Kenney Rectangle" },
-  { id: "kenneyTag", name: "Kenney Tag" },
+  { id: "kenneyRect", name: "Crisp Panel" },
+  { id: "kenneyTag", name: "Pointer Tag" },
   { id: "doboMarquee", name: "Marquee Plaque" },
   { id: "doboRibbon", name: "Bow Ribbon" },
   { id: "doboBracket", name: "Bracket Label" },
@@ -515,9 +515,9 @@ export function randomizeConfig(c: GenConfig): GenConfig {
 /* ── kit ───────────────────────────────────────────────────────── */
 export type KitComponentId =
   | "primary" | "secondary" | "small" | "ghost" | "iconbtn"
-  | "chip" | "badge" | "tab" | "segment"
-  | "checkbox" | "radio" | "switchOn" | "switchOff" | "toggle"
-  | "slider" | "progress" | "input" | "dropdown" | "icondrop";
+  | "chip" | "badge" | "tab" | "segment" | "header"
+  | "checkbox" | "radio" | "toggle"
+  | "slider" | "progress" | "input" | "dropdown";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -529,17 +529,25 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "badge", name: "Badge" },
   { id: "tab", name: "Small tab" },
   { id: "segment", name: "Segmented control" },
+  { id: "header", name: "Header banner" },
   { id: "checkbox", name: "Checkbox" },
   { id: "radio", name: "Radio button" },
-  { id: "switchOn", name: "Switch (on)" },
-  { id: "switchOff", name: "Switch (off)" },
   { id: "toggle", name: "Toggle" },
   { id: "slider", name: "Slider" },
   { id: "progress", name: "Progress bar" },
   { id: "input", name: "Input field" },
   { id: "dropdown", name: "Dropdown" },
-  { id: "icondrop", name: "Icon dropdown" },
 ];
+
+/* Style is global; silhouettes are per-component. These are the curated
+   defaults — the master's silhouette everywhere else, and each component
+   can be overridden individually while focused. */
+export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
+  header: "doboMarquee",
+  chip: "doboBracket",
+  tab: "kenneyTag",
+  badge: "shield",
+};
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the
    renderer stays pure. */
