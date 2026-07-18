@@ -522,3 +522,14 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .devo-card svg { width: 100%; height: auto; display: block; }
 .devo-name { color: #fff; font-size: 13px; font-weight: 600; margin-top: 6px; }
 .devo-src { color: rgba(255,255,255,.45); font-size: 11px; margin-top: 2px; }
+
+/* ── v22: silhouette categories ───────────────────────────────── */
+.silcats { display: flex; flex-wrap: wrap; gap: 6px; }
+.silcats button {
+  height: 28px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line2);
+  background: var(--card); color: var(--ink2); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.silcats button:hover { border-color: #c3c8d0; }
+.silcats button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+[data-theme="dark"] .silcats button.on { background: #EBEEFF; border-color: #EBEEFF; color: #101122; }
+.devo-cat { color: rgba(255,255,255,.6); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin: 22px 0 12px; }

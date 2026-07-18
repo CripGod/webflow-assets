@@ -178,6 +178,65 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       + `Q ${(x + side * 2.6).toFixed(1)} ${(y + h / 2).toFixed(1)} ${(x + side).toFixed(1)} ${(y + h * 0.26).toFixed(1)} `
       + `Q ${x.toFixed(1)} ${(y + bow * 0.8).toFixed(1)} ${(x + r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} Z`;
   }
+  if (shape === "kenneyRect") {
+    // measured from Kenney UI Pack 2.0 button_rectangle_flat.svg: r = 6/64 h
+    return roundRect(x, y, w, h, h * 0.094);
+  }
+  if (shape === "kenneyTag") {
+    // Kenney slide_hangle.svg rotated to read horizontally: 45° shoulders,
+    // point depth 10/32 h, corner rounding 2/32 h — all measured, not invented
+    const pd = Math.min(h * 0.31, w * 0.2);
+    const v: [number, number][] = [
+      [x, y], [x + w - pd, y], [x + w, y + h * 0.5], [x + w - pd, y + h], [x, y + h],
+    ];
+    return polyRounded(v, h * 0.06);
+  }
+  if (shape === "doboMarquee") {
+    // dobo_ui headerAsim: tapered plate over side drapes with rounded feet
+    const wo = Math.min(h * 0.26, w * 0.13), ph = h * 0.74, tp = h * 0.05;
+    const v: [number, number][] = [
+      [x + wo, y], [x + w - wo, y],
+      [x + w - wo + wo * 0.18, y + ph * 0.5], [x + w, y + ph * 0.78],
+      [x + w - wo * 0.12, y + h], [x + w - wo * 0.85, y + h * 0.86], [x + w - wo - tp, y + ph],
+      [x + wo + tp, y + ph],
+      [x + wo * 0.85, y + h * 0.86], [x + wo * 0.12, y + h], [x, y + ph * 0.78],
+      [x + wo - wo * 0.18, y + ph * 0.5],
+    ];
+    return polyRounded(v, h * 0.045 + softness * 0.02);
+  }
+  if (shape === "doboRibbon") {
+    // dobo_ui headerBow: tapered plate, swallowtail side tails hanging low
+    const wo = Math.min(h * 0.24, w * 0.12), ph = h * 0.72, tp = h * 0.06;
+    const v: [number, number][] = [
+      [x + wo, y], [x + w - wo, y],
+      [x + w - wo - tp * 0.4, y + h * 0.32], [x + w, y + h * 0.42],
+      [x + w - wo * 0.5, y + h * 0.66], [x + w, y + h * 0.9],
+      [x + w - wo * 0.8, y + h], [x + w - wo - tp, y + ph],
+      [x + wo + tp, y + ph], [x + wo * 0.8, y + h],
+      [x, y + h * 0.9], [x + wo * 0.5, y + h * 0.66], [x, y + h * 0.42],
+      [x + wo + tp * 0.4, y + h * 0.32],
+    ];
+    return polyRounded(v, h * 0.03);
+  }
+  if (shape === "doboBracket") {
+    // dobo_ui labelAdvanced: bar with half-round side lobes + meeting notches
+    const lr = h * 0.3, cy2 = y + h / 2;
+    const a = 1.257; // 72° — lobe arc attach angle
+    const sinA = Math.sin(a), cosA = Math.cos(a);
+    const cxR = x + w - lr * 1.02, cxL = x + lr * 1.02;
+    const bx1 = x + lr * 1.45, bx2 = x + w - lr * 1.45; // bar run
+    const R = (n: number) => n.toFixed(1);
+    // right lobe attach points (top S, bottom E), mirrored on the left
+    const SxR = cxR + lr * cosA, SyT = cy2 - lr * sinA, SyB = cy2 + lr * sinA;
+    const SxL = cxL - lr * cosA;
+    return `M ${R(bx1)} ${y} H ${R(bx2)} `
+      + `Q ${R(bx2 + lr * 0.45)} ${y} ${R(SxR)} ${R(SyT)} `
+      + `A ${R(lr)} ${R(lr)} 0 0 1 ${R(SxR)} ${R(SyB)} `
+      + `Q ${R(bx2 + lr * 0.45)} ${y + h} ${R(bx2)} ${y + h} H ${R(bx1)} `
+      + `Q ${R(bx1 - lr * 0.45)} ${y + h} ${R(SxL)} ${R(SyB)} `
+      + `A ${R(lr)} ${R(lr)} 0 0 1 ${R(SxL)} ${R(SyT)} `
+      + `Q ${R(bx1 - lr * 0.45)} ${y} ${R(bx1)} ${y} Z`;
+  }
   if (shape === "deepchamfer") {
     // elongated octagon — cuts nearly half the height, unmistakably angular
     const c = Math.min(w * 0.24, h * 0.44);

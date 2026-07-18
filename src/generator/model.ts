@@ -19,7 +19,11 @@ export type Shape =
   | "chunky" | "cutline" | "polybar" | "explorer" | "kart" | "mazepill"
   | "fighthud" | "crest" | "blade" | "tavern" | "handdrawn"
   // v20 archetypes — deep chamfer, swallowtail banner, shield, pixel steps
-  | "deepchamfer" | "banner" | "shield" | "pixelstep";
+  | "deepchamfer" | "banner" | "shield" | "pixelstep"
+  // v21 — measured from Kenney UI Pack 2.0 vector sources (CC0)
+  | "kenneyRect" | "kenneyTag"
+  // v22 — measured from Vector UI Pack (dobo_ui by Duplo) renders
+  | "doboMarquee" | "doboRibbon" | "doboBracket";
 export const SHAPES: { id: Shape; name: string }[] = [
   { id: "round", name: "Round" },
   { id: "pill", name: "Pill" },
@@ -43,6 +47,11 @@ export const SHAPES: { id: Shape; name: string }[] = [
   { id: "banner", name: "Pointed Banner" },
   { id: "shield", name: "Shield Plaque" },
   { id: "pixelstep", name: "Pixel Step" },
+  { id: "kenneyRect", name: "Kenney Rectangle" },
+  { id: "kenneyTag", name: "Kenney Tag" },
+  { id: "doboMarquee", name: "Marquee Plaque" },
+  { id: "doboRibbon", name: "Bow Ribbon" },
+  { id: "doboBracket", name: "Bracket Label" },
 ];
 /** Neutral canvas surfaces only — the stage never competes with the component. */
 export const CANVAS_BGS = [

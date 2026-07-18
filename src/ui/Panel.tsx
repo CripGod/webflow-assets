@@ -10,7 +10,7 @@ import { hydrate, retintText } from "@/generator/store";
 import { defaultConfig, defaultCandy, applyPresetCandy } from "@/generator/model";
 import type { GenConfig } from "@/generator/model";
 import bubblePopJson from "@/generator/preset-bubble-pop.json";
-import { SILHOUETTES, silhouetteMeta } from "@/generator/silhouettes";
+import { SILHOUETTES, SILHOUETTE_CATEGORIES, silhouetteMeta } from "@/generator/silhouettes";
 
 /* Rendered mini-previews for the style presets — built once, by the same
    renderer as everything else. */
@@ -226,6 +226,7 @@ export function Panel() {
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
   const [outlines, setOutlines] = useState(false);
+  const [silCat, setSilCat] = useState<string>("All");
   const savedLib = cfg.icon.def?.lib && ICON_LIBS.some((l) => l.id === cfg.icon.def!.lib) ? cfg.icon.def!.lib : "lucide";
   const [browseLib, setBrowseLib] = useState(savedLib);
   const libIsReady = libLoaded(browseLib);
@@ -373,12 +374,18 @@ export function Panel() {
 
       {/* ── A2 · Silhouette — pure geometry, material stays ── */}
       <Section id="silhouette" title="Silhouette" summary={<span>{SHAPES.find((sh) => sh.id === D.shape)?.name.split(" — ")[0]}</span>}>
+        <div className="silcats" role="radiogroup" aria-label="Silhouette category">
+          {["All", ...SILHOUETTE_CATEGORIES].map((cat) => (
+            <button key={cat} className={silCat === cat ? "on" : ""} role="radio" aria-checked={silCat === cat}
+              onClick={() => setSilCat(cat)}>{cat}</button>
+          ))}
+        </div>
         <div className="shapegrid">
-          {SHAPES.map((sh) => (
-            <button key={sh.id} className={`shapecard${D.shape === sh.id ? " on" : ""}`} title={sh.name}
-              onClick={() => update((c) => { c.shape = sh.id; })}>
-              <svg viewBox="0 0 120 56" aria-hidden="true"><path d={shapePath(sh.id, 8, 8, 104, 40, D.bevel.softness)} /></svg>
-              <span>{sh.name.split(" — ")[0]}</span>
+          {SILHOUETTES.filter((m) => silCat === "All" || m.category === silCat).map((m) => (
+            <button key={m.id} className={`shapecard${D.shape === m.id ? " on" : ""}`} title={`${m.name} — ${m.character}`}
+              onClick={() => update((c) => { c.shape = m.id; })}>
+              <svg viewBox="0 0 120 56" aria-hidden="true"><path d={shapePath(m.id, 8, 8, 104, 40, D.bevel.softness)} /></svg>
+              <span>{m.name}</span>
             </button>
           ))}
         </div>
@@ -401,8 +408,11 @@ export function Panel() {
             <span style={{ color: "#c084fc" }}> purple dashes = fixed end caps (never stretch)</span>,
             <span style={{ color: "#4ade80" }}> green = content-safe area</span>. Click anywhere to close.
           </div>
+          {SILHOUETTE_CATEGORIES.map((cat) => (
+          <div key={cat}>
+          <div className="devo-cat">{cat}</div>
           <div className="devo-grid">
-            {SILHOUETTES.map((m) => {
+            {SILHOUETTES.filter((m) => m.category === cat).map((m) => {
               const W = 250, H = 92, ox = 12, oy = 14, gw = W - 24, gh = H - 28;
               const cap = Math.min(m.capScale * gh, gw * 0.45);
               return (
@@ -421,6 +431,8 @@ export function Panel() {
               );
             })}
           </div>
+          </div>
+          ))}
         </div>
       )}
 
