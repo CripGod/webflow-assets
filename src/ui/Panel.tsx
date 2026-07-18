@@ -228,7 +228,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, styleLib, saveStyle, applyStyle, removeStyle, canvasMode } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, styleLib, saveStyle, applyStyle, removeStyle, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -315,6 +315,15 @@ export function Panel() {
           </div>
         </div>
         <section className="sec">
+          <div className="sec-head"><h3>Backdrop</h3></div>
+          <div className="sec-body">
+            <label className="check"><input type="checkbox" checked={bgShow} onChange={(e) => setBg({ bgShow: e.target.checked })} /> Show background image</label>
+            <Slider label="Opacity" value={bgOpacity} min={0} max={100} unit="%" onChange={(v) => setBg({ bgOpacity: v })} />
+            <Slider label="Blur" value={bgBlur} min={0} max={20} unit="px" onChange={(v) => setBg({ bgBlur: v })} />
+            <div className="helper">Artist-only — the backdrop never ships in exports. Upload or clear the image from the canvas toolbar; canvas color dots switch to a flat color.</div>
+          </div>
+        </section>
+        <section className="sec">
           <div className="sec-head"><h3>Library</h3><span className="sum">{library.length} saved</span></div>
           <div className="sec-body">
             <div className="libgrid">
@@ -325,6 +334,7 @@ export function Panel() {
                   <div className="librow">
                     <span className="libname">{item.name}</span>
                     <button className="chipbtn" title="Add to stage" onClick={() => addToBoard(item.id)}><Plus size={14} strokeWidth={2.2} /></button>
+                    <button className="chipbtn" title="Update this saved component to the current style" onClick={() => refreshLibraryItem(item.id)}><RotateCcw size={13} strokeWidth={2} /></button>
                     <button className="chipbtn" title="Delete" onClick={() => removeFromLibrary(item.id)}><Trash2 size={13} strokeWidth={2} /></button>
                   </div>
                 </div>
@@ -725,6 +735,7 @@ export function Panel() {
         </div>
         <div className="helper">Paste the family name exactly as it appears on fonts.google.com (e.g. “Titan One”).</div>
         <Slider label="Size" value={T2.size} min={28} max={76} unit="px" onChange={(v) => update((c) => { c.type.size = v; })} />
+        <Slider label="Vertical nudge" value={T2.oy ?? 0} min={-20} max={20} unit="px" onChange={(v) => update((c) => { c.type.oy = v; })} />
         <Slider label="Weight" value={T2.weight} min={400} max={900} step={100} unit="" onChange={(v) => update((c) => { c.type.weight = v; })} />
         <Slider label="Spacing" value={T2.spacing} min={-5} max={20} unit="" onChange={(v) => update((c) => { c.type.spacing = v; })} />
         <div className="ctl">

@@ -198,6 +198,9 @@ interface GenStore {
   setBgImage: (url: string | null) => void;
   helpOn: boolean;
   setHelpOn: (v: boolean) => void;
+  bgShow: boolean; bgOpacity: number; bgBlur: number;
+  setBg: (p: Partial<{ bgShow: boolean; bgOpacity: number; bgBlur: number }>) => void;
+  refreshLibraryItem: (id: string) => void;
 
   update: (fn: (c: GenConfig) => void) => void;
   undo: () => void;
@@ -346,6 +349,14 @@ export const useGen = create<GenStore>((set, get) => ({
   setBgImage: (url) => set({ bgImage: url }),
   helpOn: false,
   setHelpOn: (v) => set({ helpOn: v }),
+  bgShow: true, bgOpacity: 100, bgBlur: 0,
+  setBg: (p) => set(p),
+  refreshLibraryItem: (id) => {
+    const clone = typeof structuredClone === "function" ? structuredClone : ((x: unknown) => JSON.parse(JSON.stringify(x)));
+    const library = get().library.map((l) => l.id === id ? { ...l, cfg: clone(get().cfg) as GenConfig } : l);
+    saveJson(LIB_KEY, library);
+    set({ library });
+  },
   inheritDefaults: () => {
     const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
     cfg.stateDesigns = {};
@@ -389,6 +400,12 @@ export const useGen = create<GenStore>((set, get) => ({
       fn(t);
       d.effects = t.effects; d.face = t.face; d.bevel = t.bevel; d.candy = t.candy;
       d.lighting = t.lighting; d.shadow = t.shadow; d.transparency = t.transparency; d.type = t.type;
+      // the typeface is one decision for the whole component — weight, colors
+      // and effects stay state-specific
+      if (d.type.font !== cfg.type.font) {
+        cfg.type.font = d.type.font;
+        for (const other of Object.values(cfg.stateDesigns)) { if (other?.type) other.type.font = d.type.font; }
+      }
       cfg.content = t.content; cfg.icon = t.icon; cfg.states = t.states; cfg.visible = t.visible;
       cfg.canvas = t.canvas; cfg.presetId = t.presetId;
     } else {
@@ -432,7 +449,12 @@ export const useGen = create<GenStore>((set, get) => ({
   setPreset: (id) => {
     // Bubble Pop ships as a fully authored look (Chevon's bubblepopdefault) —
     // picking it loads that complete design rather than re-mixing tokens
-    if (PRESET_DEFAULTS[id]) { get().replaceConfig(hydrate(structuredClone(PRESET_DEFAULTS[id]))); return; }
+    if (PRESET_DEFAULTS[id]) {
+      const next = hydrate(structuredClone(PRESET_DEFAULTS[id]));
+      next.canvas = get().cfg.canvas; // presets restyle the component, never the stage
+      get().replaceConfig(next);
+      return;
+    }
     const p = presetById(id);
     get().update((c) => {
       c.presetId = id; c.shape = p.shape; c.bevel = { ...p.bevel }; c.effects = { ...p.effects };

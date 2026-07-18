@@ -560,3 +560,4 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .helphint { flex: 1; min-width: 0; text-align: center; font-size: 13px; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 12px; }
 .helphint.off { color: var(--ink3); font-size: 12px; }
 .board.stage169 { overflow: visible; box-shadow: 0 0 0 6px rgba(20,22,28,.65), 0 24px 60px rgba(0,0,0,.5); }
+.board-bg { position: absolute; inset: 0; background-size: cover; background-position: center; pointer-events: none; }

@@ -10,7 +10,7 @@ import { downloadSvg } from "@/generator/exportUtils";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, kitShapes } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, kitShapes, bgShow, bgOpacity, bgBlur } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -55,7 +55,7 @@ export function CanvasView() {
   const onPointerUp = () => { drag.current = null; };
 
   return (
-    <div className={`canvas-wrap${phase === "kit" ? " kitmode" : ""}`}>
+    <div className={`canvas-wrap${phase !== "master" ? " kitmode" : ""}`}>
       <div
         ref={scroller}
         className={`canvas${panMode ? " pan" : ""}`}
@@ -103,8 +103,10 @@ export function CanvasView() {
             />
           </div>
         ) : phase === "board" ? (
-          <div className="board stage169" style={{ transform: `scale(${zoom})`, transformOrigin: "top left",
-            backgroundImage: bgImage ? `url(${bgImage})` : undefined }}>
+          <div className="board stage169" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+            {bgImage && bgShow && (
+              <div className="board-bg" style={{ backgroundImage: `url(${bgImage})`, opacity: bgOpacity / 100, filter: bgBlur ? `blur(${bgBlur}px)` : undefined }} />
+            )}
             {board.map((b) => {
               const item = library.find((l) => l.id === b.libId);
               if (!item) return null;

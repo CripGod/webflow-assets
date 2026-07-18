@@ -154,6 +154,7 @@ export interface TypeCfg {
   italic: boolean;
   spacing: number;     // letter-spacing, em/100 (-5..20)
   case: TextCase;
+  oy?: number;         // vertical nudge px — visually center against the shell
   fillMode: "auto" | "solid" | "gradient";
   fill: string;
   fill2: string;       // gradient bottom
