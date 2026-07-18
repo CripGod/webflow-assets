@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens } from "./model";
 import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign } from "./model";
 import { getDef } from "./icons";
+import siteDefaultJson from "./site-default.json";
 
 /* Keep the text treatment's accent colors in step with the shell palette so a
    preset or color roll never leaves a stale outline color behind. */
@@ -22,6 +23,9 @@ function retintText(c: GenConfig) {
 const LS_KEY = "ui-generator-v10"; // v10: specular modes, solid extrusion, gloss layering
 const LS_KEY_V9 = "ui-generator-v9";
 const LS_KEY_V8 = "ui-generator-v8";
+// set once the user actually edits — an untouched visitor tracks the site default
+const TOUCHED_KEY = "ui-generator-touched";
+export function markTouched() { try { localStorage.setItem(TOUCHED_KEY, "1"); } catch { /* ignore */ } }
 
 /* Deep-merge saved candy tokens over the current defaults so new fields
    (specular mode, gloss layer, contact…) always arrive with sane values. */
@@ -95,22 +99,32 @@ function migrateV8(old: Record<string, any>): GenConfig {
    and "Reset component" returns to it. Changing the site's default = export
    settings in the app, rename to default-settings.json, upload to the repo.
    No rebuild needed. */
-let siteDefault: GenConfig | null = null;
+/* The default ships inside the bundle (site-default.json) so first paint is
+   always current, and ./default-settings.json — when reachable — overrides it,
+   which keeps "upload one JSON" as the admin path. */
+let siteDefault: GenConfig | null = hydrate(siteDefaultJson as Record<string, any>);
 export function getDefault(): GenConfig {
   const d = siteDefault ?? defaultConfig();
   return (typeof structuredClone === "function" ? structuredClone(d) : JSON.parse(JSON.stringify(d))) as GenConfig;
 }
 export function fetchSiteDefault(): void {
-  fetch("./default-settings.json", { cache: "no-store" })
+  fetch("./default-settings.json?ts=" + Date.now(), { cache: "no-store" })
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
       if (!j || typeof j !== "object" || !j.presetId || !j.candy) return;
       siteDefault = hydrate(j as Record<string, any>);
-      // a brand-new visitor (nothing saved yet) adopts the site default
-      const hasSave = localStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY_V9) || localStorage.getItem(LS_KEY_V8);
-      if (!hasSave) useGen.getState().replaceConfig(getDefault());
+      adoptDefaultIfUntouched();
     })
-    .catch(() => { /* offline or file absent — built-in defaults stand */ });
+    .catch(() => { adoptDefaultIfUntouched(); /* bundled default stands */ });
+}
+/* Anyone who has never edited (fresh visitor, or someone who only looked
+   around) follows the site default — their library and board are untouched. */
+function adoptDefaultIfUntouched(): void {
+  if (localStorage.getItem(TOUCHED_KEY) === "1") return;
+  const next = getDefault();
+  if (JSON.stringify(useGen.getState().cfg) === JSON.stringify(next)) return;
+  useGen.setState({ cfg: next });
+  try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
 }
 
 function load(): GenConfig {
@@ -125,7 +139,7 @@ function load(): GenConfig {
     const v8 = localStorage.getItem(LS_KEY_V8);
     if (v8) return migrateV8(JSON.parse(v8));
   } catch { /* ignore */ }
-  return defaultConfig();
+  return getDefault();
 }
 
 interface GenStore {
@@ -280,6 +294,7 @@ export const useGen = create<GenStore>((set, get) => ({
     get().replaceConfig(cfg);
   },
   replaceConfig: (next) => {
+    markTouched();
     past.push(get().cfg);
     if (past.length > 60) past.shift();
     future.length = 0;
@@ -293,6 +308,7 @@ export const useGen = create<GenStore>((set, get) => ({
   },
 
   update: (fn) => {
+    markTouched();
     const prev = get().cfg;
     // structuredClone is ~3-4x faster than JSON round-tripping — keeps rapid
     // slider drags responsive

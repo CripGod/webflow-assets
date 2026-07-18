@@ -110,7 +110,7 @@ interface Geom { x: number; y: number; h: number; fs: number; iconSize: number; 
 
 /** Core builder — the candy stack. Width grows with the content. */
 function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
-  label?: string; iconDef?: IconDef | null; secondary?: boolean; shapeOverride?: Shape; fixedW?: number; motion?: boolean;
+  label?: string; iconDef?: IconDef | null; secondary?: boolean; shapeOverride?: Shape; fixedW?: number;
 } = {}): string {
   const id = "b" + UID++;
   const disabled = state === "disabled";
@@ -421,60 +421,6 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     : inheritTypo ? (T2.fillMode === "auto" ? autoLabel : P(T2.fill))
     : cfg.icon.color ? P(cfg.icon.color) : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
 
-  /* ── motion layers: idle shine sweep + pressed particles ─────
-     Play-mode / HTML-export only (opts.motion); deterministic hash keeps the
-     renderer pure. */
-  const prand = (i: number, salt: number) => (((i + 1) * (salt + 13) * 2654435761) % 1000) / 1000;
-  let motionFx = "";
-  if (opts.motion && !disabled) {
-    // state forks saved before these tokens existed inherit the base design's
-    const SH = C.shine ?? cfg.candy.shine ?? { on: false, delay: 4, opacity: 45 };
-    if (SH.on) {
-      const idle = Math.max(1.2, SH.delay ?? 4);
-      const cycle = idle + 0.7;
-      const holdPct = ((idle / cycle) * 100).toFixed(1);
-      // parked off the right edge (clipped away) for the idle delay, then one
-      // swift right→left pass; re-renders on interaction restart the idle wait
-      motionFx += `<g clip-path="url(#${id}oc)"><g class="sh${id}">
-        <rect x="0" y="${y - 24}" width="${(w * 0.24).toFixed(0)}" height="${(h + depth + 48).toFixed(0)}" fill="url(#${id}shg)" transform="skewX(-18)"/>
-      </g></g>
-      <style>.sh${id}{animation:shx${id} ${cycle.toFixed(1)}s linear infinite;}
-      @keyframes shx${id}{0%{transform:translateX(${(x + w * 1.15).toFixed(0)}px);}${holdPct}%{transform:translateX(${(x + w * 1.15).toFixed(0)}px);}100%{transform:translateX(${(x - w * 0.4).toFixed(0)}px);}}</style>`;
-    }
-    const PA = C.particles ?? cfg.candy.particles ?? { on: false, style: "sparks" as const, amount: 14 };
-    if (PA.on && state === "pressed") {
-      const n = clamp(PA.amount ?? 14, 4, 28);
-      const pcols = [glowC, hiC, lighten(fillC, 0.35), lighten(glowC, 0.3)];
-      const bits: string[] = [];
-      const frames: string[] = [];
-      const ctrX = x + w / 2, ctrY = y + h / 2;
-      for (let i = 0; i < n; i++) {
-        const a = prand(i, 1) * Math.PI * 2;
-        const col = pcols[i % pcols.length];
-        const dur = (0.55 + prand(i, 3) * 0.6).toFixed(2);
-        const dly = (prand(i, 5) * 0.5).toFixed(2);
-        const px0 = ctrX + Math.cos(a) * (w * 0.42);
-        const py0 = ctrY + Math.sin(a) * (h * 0.46);
-        const sizeP = 2.5 + prand(i, 7) * 3.5;
-        let dx = Math.cos(a) * (34 + prand(i, 9) * 44);
-        let dy = Math.sin(a) * (26 + prand(i, 11) * 36);
-        let shapeM = `<circle r="${sizeP.toFixed(1)}" fill="${col}"/>`;
-        if ((PA.style ?? "sparks") === "stars") {
-          const sc = (sizeP / 10).toFixed(2);
-          shapeM = `<path d="${starPath(20)}" transform="translate(-10 -10) scale(${sc})" transform-origin="10 10" fill="${col}"/>`;
-        } else if (PA.style === "bubbles") {
-          dx = (prand(i, 13) - 0.5) * 30;
-          dy = -(40 + prand(i, 15) * 50);
-          shapeM = `<circle r="${(sizeP * 1.15).toFixed(1)}" fill="none" stroke="${col}" stroke-width="1.6"/>`;
-        }
-        bits.push(`<g class="pt${id}_${i}" transform="translate(${px0.toFixed(1)} ${py0.toFixed(1)})">${shapeM}</g>`);
-        frames.push(`.pt${id}_${i}{animation:ptk${id}_${i} ${dur}s ease-out ${dly}s infinite;opacity:0;}
-        @keyframes ptk${id}_${i}{0%{transform:translate(${px0.toFixed(1)}px,${py0.toFixed(1)}px) scale(.6);opacity:1;}80%{opacity:.9;}100%{transform:translate(${(px0 + dx).toFixed(1)}px,${(py0 + dy).toFixed(1)}px) scale(${PA.style === "bubbles" ? 1.15 : 0.25});opacity:0;}}`);
-      }
-      motionFx += `<g>${bits.join("")}</g><style>${frames.join("")}</style>`;
-    }
-  }
-  const needOuterClip = motionFx.includes(`url(#${id}oc)`);
 
   /* layout */
   const cx = x + w / 2, cy = y + h / 2;
@@ -555,8 +501,6 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   ${T2.outline.on && T2.outline.color2 ? `<linearGradient id="${id}og" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.outline.color)}"/><stop offset="1" stop-color="${P(T2.outline.color2)}"/></linearGradient>` : ""}
   ${textFxDef}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
-  ${needOuterClip ? `<clipPath id="${id}oc"><path d="${outer}"/></clipPath>
-  <linearGradient id="${id}shg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="${((C.shine?.opacity ?? 45) / 100).toFixed(2)}"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>` : ""}
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
   ${aura ? `<filter id="${id}gb" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="11"/></filter>` : ""}
   ${noise ? `<filter id="${id}nz" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="2.6" intercept="-0.8"/><feFuncG type="linear" slope="2.6" intercept="-0.8"/><feFuncB type="linear" slope="2.6" intercept="-0.8"/></feComponentTransfer></filter>` : ""}
@@ -595,7 +539,6 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     </g>
     ${C.gloss.layer === "above" ? `<g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${gloss}</g>` : ""}
     <g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${specular}</g>
-    ${motionFx}
   </g>
 </g>
 </svg>`;
@@ -603,8 +546,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
 
 /** Master component — width follows the label. Margins are 1.5× so large
  *  shadow distances never clip against the invisible canvas bounds. */
-export function renderBevel(cfg: GenConfig, state: GenStateName, motion = false): string {
-  return build(cfg, state, { x: 52, y: 36, h: 168, fs: 52, iconSize: 46 }, { motion });
+export function renderBevel(cfg: GenConfig, state: GenStateName): string {
+  return build(cfg, state, { x: 52, y: 36, h: 168, fs: 52, iconSize: 46 });
 }
 
 /* ── kit components ────────────────────────────────────────────── */
@@ -628,7 +571,7 @@ function inject(track: string, extra: string): string {
   return track.replace("</g>\n</svg>", extra + "</g>\n</svg>");
 }
 
-export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default", motion = false): string {
+export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default", value?: number): string {
   const k = SIZE_K[size];
   const bw = cfg.bevel.width;
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
@@ -639,21 +582,21 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
 
   switch (id) {
     case "primary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { motion });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k });
     case "secondary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: "Secondary", motion });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: "Secondary" });
     case "small":
-      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: "GO", iconDef: null, motion });
+      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: "GO", iconDef: null });
     case "ghost":
-      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: "Ghost", iconDef: null, motion });
+      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: "Ghost", iconDef: null });
     case "iconbtn":
-      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, motion });
+      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k });
     case "chip":
-      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: "NEW", iconDef: STOCK_ICONS.star, motion });
+      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: "NEW", iconDef: STOCK_ICONS.star });
     case "badge":
-      return build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: "12", iconDef: null, fixedW: 118 * k, motion });
+      return build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: "12", iconDef: null, fixedW: 118 * k });
     case "tab":
-      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: "TAB", iconDef: null, motion });
+      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: "TAB", iconDef: null });
     case "segment": {
       const w = 560 * k, h = 106 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
@@ -666,9 +609,9 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       return inject(track, well + t("ONE", 39 + bw + segW * 0.5, 0.55) + t("TWO", 39 + bw + segW * 1.5, 1) + t("THREE", 39 + bw + segW * 2.5, 0.55));
     }
     case "checkbox":
-      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 54 * k }, { iconDef: STOCK_ICONS.check, label: "", fixedW: 118 * k, motion });
+      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 54 * k }, { iconDef: STOCK_ICONS.check, label: "", fixedW: 118 * k });
     case "radio":
-      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k, motion });
+      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k });
     case "switchOn":
     case "switchOff":
     case "toggle": {
@@ -689,7 +632,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const gapPad = 5 * k;
       const bh = h - inset * 2 - gapPad * 2;
       const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
-      const fillW = (w - inset * 2 - gapPad * 2) * 0.62;
+      const fillW = (w - inset * 2 - gapPad * 2) * clamp(value ?? 0.62, 0, 1);
       const gid = "sl" + UID++;
       const knobX = bx + fillW, knobY = 30 + h / 2;
       return inject(track,

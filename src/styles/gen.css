@@ -455,13 +455,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-pop);
 }
 
-/* ── v17: play-mode state tween + focus banner + edit cue ─────── */
-.liveswap { position: relative; display: grid; place-items: center; }
-.liveswap .ls-prev, .liveswap .ls-cur { grid-area: 1 / 1; display: grid; place-items: center; }
-.liveswap .ls-prev { animation: lsout .15s ease-out forwards; pointer-events: none; }
-.liveswap .ls-cur.in { animation: lsin .15s ease-out; }
-@keyframes lsout { from { opacity: 1; } to { opacity: 0; } }
-@keyframes lsin { from { opacity: 0; } to { opacity: 1; } }
+/* ── v17: focus banner + edit cue ─────────────────────────────── */
 .focusnote {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   margin: 0 0 14px; padding: 10px 12px; border-radius: 11px;
@@ -483,3 +477,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   opacity: 0; transition: opacity .15s;
 }
 .kitcard.quiet:hover .editcue { opacity: 1; }
+
+/* ── v18: library-save feedback ───────────────────────────────── */
+.randbtn.okflash { border-color: #2FA36B; color: #1E7A4E; background: rgba(47,163,107,0.1); }
+[data-theme="dark"] .randbtn.okflash { color: #7ADFA9; border-color: rgba(122,223,169,0.5); background: rgba(47,163,107,0.16); }

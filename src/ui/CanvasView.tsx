@@ -10,7 +10,7 @@ import { downloadSvg } from "@/generator/exportUtils";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, addToLibrary } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -31,8 +31,8 @@ export function CanvasView() {
   const playing = canvasMode === "play";
   const displayed: GenStateName = phase === "master" && playing && live && selectedState !== "disabled" ? live : selectedState;
   const heroSvg = useMemo(
-    () => (focus ? renderKit(cfg, focus, "m", displayed, playing) : renderBevel(cfg, displayed, playing)),
-    [cfg, displayed, focus, playing]
+    () => (focus ? renderKit(cfg, focus, "m", displayed) : renderBevel(cfg, displayed)),
+    [cfg, displayed, focus]
   );
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
@@ -99,7 +99,8 @@ export function CanvasView() {
                 onPointerUp: () => setLive("hover"),
                 onPointerCancel: () => setLive(null),
               } : {})}
-            ><LiveSwap html={heroSvg} tween={playing} /></div>
+              dangerouslySetInnerHTML={{ __html: heroSvg }}
+            />
           </div>
         ) : phase === "board" ? (
           <div className="board" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
@@ -143,12 +144,7 @@ export function CanvasView() {
                 playing={playing}
                 onSize={(s) => setKitSize(id, s)}
                 onExport={() => downloadSvg(renderKit(cfg, id, kitSizes[id] ?? "m"), `kit-${id}-${kitSizes[id] ?? "m"}.svg`)}
-                onEdit={() => {
-                  if (window.confirm("Save the current master to your library before editing this component?")) {
-                    addToLibrary(cfg.content.label || "Component");
-                  }
-                  setFocus(id);
-                }} />
+                onEdit={() => setFocus(id)} />
             ))}
           </div>
         )}
@@ -225,7 +221,7 @@ export function CanvasView() {
             <button className={`scard clickable${s === selectedState ? " sel" : ""}`} key={s}
               onClick={() => setSelectedState(s)} title={`Edit ${CAP[s]}`} aria-pressed={s === selectedState}>
               <div className="scard-title">{CAP[s]}{s === selectedState ? " · editing" : ""}</div>
-              <div className="scard-body" dangerouslySetInnerHTML={{ __html: renderBevel(cfg, s) }} />
+              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(cfg, focus, "m", s) : renderBevel(cfg, s) }} />
             </button>
           ))}
         </div>
@@ -237,13 +233,32 @@ export function CanvasView() {
 
 /** One kit component card — chrome appears on hover; Play mode makes it live;
  *  clicking the artwork opens it for focused editing. */
+const SWITCH_IDS: KitComponentId[] = ["toggle", "switchOn", "switchOff"];
+
 function KitPiece({ id, name, cfg, size, dark, capColor, playing, onSize, onExport, onEdit }: {
   id: KitComponentId; name: string; cfg: GenConfig; size: KitSize; dark: boolean; capColor?: string;
   playing: boolean; onSize: (s: KitSize) => void; onExport: () => void; onEdit: () => void;
 }) {
   const [live, setLive] = useState<GenStateName>("default");
+  // Play mode makes controls really work: switches flip, the slider slides.
+  const isSwitch = SWITCH_IDS.includes(id);
+  const isSlider = id === "slider";
+  const [switchOn, setSwitchOn] = useState(id !== "switchOff");
+  const [sliderVal, setSliderVal] = useState(0.62);
+  const sliding = useRef(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const state: GenStateName = playing ? live : "default";
-  const svg = useMemo(() => renderKit(cfg, id, size, state, playing), [cfg, id, size, state, playing]);
+  const liveId: KitComponentId = playing && isSwitch ? (switchOn ? (id === "toggle" ? "toggle" : "switchOn") : "switchOff") : id;
+  const svg = useMemo(
+    () => renderKit(cfg, liveId, size, state, playing && isSlider ? sliderVal : undefined),
+    [cfg, liveId, size, state, playing, isSlider, sliderVal]
+  );
+  const setFromPointer = (e: React.PointerEvent) => {
+    const r = bodyRef.current?.querySelector("svg")?.getBoundingClientRect();
+    if (!r) return;
+    const pad = r.width * 0.1; // track inset within the artwork
+    setSliderVal(Math.max(0, Math.min(1, (e.clientX - r.left - pad) / (r.width - pad * 2))));
+  };
   return (
     <div className={`kitcard quiet${dark ? " dark" : ""}`}>
       <div className="kitcard-head" style={{ color: capColor }}>
@@ -257,16 +272,28 @@ function KitPiece({ id, name, cfg, size, dark, capColor, playing, onSize, onExpo
           <Download size={13} strokeWidth={2} />
         </button>
       </div>
-      <div className="kitcard-body" role="button" tabIndex={0}
+      <div className="kitcard-body" role="button" tabIndex={0} ref={bodyRef}
         title={playing ? name : `Edit ${name}`}
-        onClick={() => { if (!playing) onEdit(); }}
+        onClick={() => {
+          if (!playing) { onEdit(); return; }
+          if (isSwitch) setSwitchOn((v) => !v);
+        }}
+        onDoubleClick={() => { if (!playing) onEdit(); }}
         onKeyDown={(e) => { if (!playing && (e.key === "Enter" || e.key === " ")) onEdit(); }}
         {...(playing ? {
           onPointerEnter: () => setLive("hover"),
-          onPointerLeave: () => setLive("default"),
-          onPointerDown: () => setLive("pressed"),
-          onPointerUp: () => setLive("hover"),
-        } : {})}><LiveSwap html={svg} tween={playing} /></div>
+          onPointerLeave: () => { setLive("default"); sliding.current = false; },
+          onPointerDown: (e: React.PointerEvent) => {
+            setLive("pressed");
+            if (isSlider) {
+              sliding.current = true;
+              (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+              setFromPointer(e);
+            }
+          },
+          onPointerMove: (e: React.PointerEvent) => { if (isSlider && sliding.current) setFromPointer(e); },
+          onPointerUp: () => { setLive("hover"); sliding.current = false; },
+        } : {})} dangerouslySetInnerHTML={{ __html: svg }} />
       {!playing && (
         <span className="editcue"><SquarePen size={12} strokeWidth={2} /> Edit</span>
       )}
@@ -283,7 +310,7 @@ function BoardPiece({ b, cfg, playing, onDragStart, onDragMove, onDragEnd, onSca
 }) {
   const [live, setLive] = useState<GenStateName>("default");
   const state: GenStateName = playing ? live : "default";
-  const svg = useMemo(() => renderBevel(cfg, state, playing), [cfg, state, playing]);
+  const svg = useMemo(() => renderBevel(cfg, state), [cfg, state]);
   const sc = b.scale ?? 1;
   return (
     <div className={`board-item${playing ? " playing" : ""}`} style={{ left: b.x, top: b.y }}
@@ -308,31 +335,7 @@ function BoardPiece({ b, cfg, playing, onDragStart, onDragMove, onDragEnd, onSca
           <button title="Remove from stage" onClick={onRemove}><X size={12} strokeWidth={2.4} /></button>
         </div>
       )}
-      <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }}><LiveSwap html={svg} tween={playing} /></div>
-    </div>
-  );
-}
-
-
-/** Cross-fade between rendered states — the quick tween that makes Play mode
- *  feel alive instead of hard-cutting. */
-function LiveSwap({ html, tween }: { html: string; tween: boolean }) {
-  const [prev, setPrev] = useState<string | null>(null);
-  const last = useRef(html);
-  useEffect(() => {
-    if (last.current !== html) {
-      if (tween) setPrev(last.current);
-      last.current = html;
-      if (tween) {
-        const t = setTimeout(() => setPrev(null), 150);
-        return () => clearTimeout(t);
-      }
-    }
-  }, [html, tween]);
-  return (
-    <div className="liveswap">
-      {prev && <div className="ls-prev" dangerouslySetInnerHTML={{ __html: prev }} />}
-      <div className={prev ? "ls-cur in" : "ls-cur"} dangerouslySetInnerHTML={{ __html: html }} />
+      <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }} dangerouslySetInnerHTML={{ __html: svg }} />
     </div>
   );
 }

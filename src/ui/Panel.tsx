@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2 } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, PARTICLE_STYLES, ICONS_ENABLED, KIT_COMPONENTS, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
 import { renderBevel } from "@/generator/bevel";
 
-/* Rail buttons isolate their section group in the panel. Click again to show all.
-   Order mirrors how the object is understood: style → color → structure →
-   surface → light → reflections → depth → advanced. */
+/* Rail buttons jump to their section group — the panel always shows the full
+   stack, so nothing critical ever disappears from view. Order mirrors how the
+   object is understood: style → color → structure → surface → light →
+   reflections → depth → advanced. */
 const GROUPS: Record<string, string[]> = {
-  style: ["shape", "mapping", "structure", "surface", "lighting", "gloss", "glow", "motion", "depth"],
+  style: ["shape", "mapping", "structure", "surface", "lighting", "gloss", "glow", "depth"],
   type: ["typography"],
   states: ["state", "states"],
   library: ["library"],
@@ -27,12 +28,21 @@ export function Rail() {
     { id: "library", Icon: LibraryBig, label: "Component library" },
     ...(ICONS_ENABLED ? [{ id: "icons", Icon: Search, label: "Icon library" }] : []),
   ];
+  const jump = (id: string) => {
+    setSectionFilter(id);
+    // open the group's sections for real, then bring the first into view
+    useGen.setState((st) => ({ open: { ...st.open, ...Object.fromEntries((GROUPS[id] ?? []).map((k) => [k, true])) } }));
+    window.setTimeout(() => {
+      const first = GROUPS[id]?.[0];
+      document.querySelector(`[data-sec="${first}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 40);
+  };
   return (
     <nav className="rail" aria-label="Sections">
       {items.map(({ id, Icon, label }) => (
         <button key={id} className={sectionFilter === id ? "on" : ""} title={label} aria-label={label}
           aria-pressed={sectionFilter === id}
-          onClick={() => setSectionFilter(sectionFilter === id ? null : id)}>
+          onClick={() => jump(id)}>
           <Icon size={22} strokeWidth={1.7} />
         </button>
       ))}
@@ -46,11 +56,10 @@ export function Rail() {
 function Section({ id, title, summary, right, children }: {
   id: string; title: React.ReactNode; summary?: React.ReactNode; right?: React.ReactNode; children?: React.ReactNode;
 }) {
-  const { open, toggle, sectionFilter } = useGen();
-  if (sectionFilter && !GROUPS[sectionFilter]?.includes(id)) return null;
-  const isOpen = !!open[id] || !!sectionFilter; // isolating a group opens its sections
+  const { open, toggle } = useGen();
+  const isOpen = !!open[id];
   return (
-    <section className="sec">
+    <section className="sec" data-sec={id}>
       <div className="sec-head" onClick={() => toggle(id)} role="button" aria-expanded={isOpen} tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggle(id); }}>
         <h3>{title}</h3>
@@ -179,6 +188,7 @@ export function Panel() {
   const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
+  const [justAdded, setJustAdded] = useState(false);
   const savedLib = cfg.icon.def?.lib && ICON_LIBS.some((l) => l.id === cfg.icon.def!.lib) ? cfg.icon.def!.lib : "lucide";
   const [browseLib, setBrowseLib] = useState(savedLib);
   const libIsReady = libLoaded(browseLib);
@@ -527,31 +537,6 @@ export function Panel() {
         <div className="helper">Light caught in the middle of the body, below the lower bloom. Uses the inner-glow color.</div>
       </Section>
 
-      {/* ── F3 · Motion — Play mode & HTML export only ────── */}
-      <Section id="motion" title="Motion" summary={<span>{(C.shine?.on ?? false) || (C.particles?.on ?? false) ? "on" : "off"}</span>}>
-        <label className="check"><input type="checkbox" checked={C.shine?.on ?? false}
-          onChange={(e) => update((c) => { c.candy.shine.on = e.target.checked; })} /> Idle shine sweep</label>
-        {(C.shine?.on ?? false) && (<>
-          <Slider label="Idle delay" value={C.shine?.delay ?? 4} min={1} max={10} step={0.5} unit="s" onChange={(v) => update((c) => { c.candy.shine.delay = v; })} />
-          <Slider label="Shine opacity" value={C.shine?.opacity ?? 45} min={10} max={90} unit="%" onChange={(v) => update((c) => { c.candy.shine.opacity = v; })} />
-        </>)}
-        <div className="sublabel">Pressed particles</div>
-        <label className="check"><input type="checkbox" checked={C.particles?.on ?? false}
-          onChange={(e) => update((c) => { c.candy.particles.on = e.target.checked; })} /> Particle burst</label>
-        {(C.particles?.on ?? false) && (<>
-          <label className="fieldbox" style={{ minWidth: 0 }}>
-            <span className="fl">Particle style</span>
-            <select value={C.particles?.style ?? "sparks"} aria-label="Particle style"
-              onChange={(e) => update((c) => { c.candy.particles.style = e.target.value as typeof C.particles.style; })}>
-              {PARTICLE_STYLES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-          </label>
-          <Slider label="Amount" value={C.particles?.amount ?? 14} min={4} max={28} unit="" onChange={(v) => update((c) => { c.candy.particles.amount = v; })} />
-        </>)}
-        <div className="helper">Motion shows in Play mode and the downloaded HTML — colors auto-tone from the Color map. Particles fire on Pressed only. (Sprite exports for Unity/Unreal stay static.)</div>
-      </Section>
-
       {/* ── G · Depth & Shadow ────────────────────────────── */}
       <Section id="depth" title="Depth & Shadow">
         <div className="sublabel">Cast shadow</div>
@@ -765,9 +750,14 @@ export function Panel() {
       </Section>
 
       <div className="btnrow">
-        <button className="randbtn" title="Approve this component and save it to the library"
-          onClick={() => addToLibrary(cfg.content.label || "Component")}>
-          <CheckCircle2 size={16} strokeWidth={1.9} /> OK — add to library
+        <button className={`randbtn${justAdded ? " okflash" : ""}`} title="Approve this component and save it to the library"
+          onClick={() => {
+            addToLibrary(cfg.content.label || "Component");
+            setJustAdded(true);
+            useGen.setState((st) => ({ open: { ...st.open, library: true } }));
+            window.setTimeout(() => setJustAdded(false), 1800);
+          }}>
+          <CheckCircle2 size={16} strokeWidth={1.9} /> {justAdded ? `✓ Saved — ${library.length} in Library` : "OK — add to library"}
         </button>
       </div>
       {(
