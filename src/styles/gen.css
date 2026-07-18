@@ -401,3 +401,30 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 /* ── v13: logo inversion in dark mode ────────────────────────── */
 [data-theme="dark"] img.logo { filter: invert(1) hue-rotate(180deg); }
 .valbox .numin { width: 44px; }
+
+/* ── v15: library grid, sketch board ─────────────────────────── */
+.libgrid { display: flex; flex-direction: column; gap: 12px; }
+.libcard { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 10px; }
+.libthumb { width: 100%; border: 0; background: none; cursor: pointer; padding: 0; border-radius: 8px; overflow: hidden; }
+.libthumb svg { width: 100%; height: auto; display: block; }
+.libthumb:hover { outline: 2px solid var(--line2); }
+.librow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.libname { flex: 1; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board { position: relative; width: 2400px; height: 1500px; }
+.board-item { position: absolute; cursor: grab; user-select: none; -webkit-user-select: none; }
+.board-item:active { cursor: grabbing; }
+.board-item svg { display: block; pointer-events: none; }
+.board-x {
+  position: absolute; top: 2px; right: 2px; z-index: 5; width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--line2); background: var(--card); color: var(--ink2); display: grid; place-items: center;
+  cursor: pointer; opacity: 0; transition: opacity .15s;
+}
+.board-item:hover .board-x { opacity: 1; }
+.board-hint { position: absolute; top: 220px; left: 50%; transform: translateX(-50%); font-size: 14px; font-weight: 500; white-space: nowrap; }
+.makekit {
+  position: fixed; display: none; }
+.board .makekit {
+  display: flex; position: absolute; top: 24px; left: 24px; align-items: center; gap: 8px;
+  height: 40px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line2);
+  background: var(--card); color: var(--ink); font-size: 13.5px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-pop);
+}

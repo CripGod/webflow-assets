@@ -13,12 +13,15 @@ export const ROLE_HINT: Record<EffectRole, string> = {
   Bevel: "shell & wall", Glow: "inner glow", Highlight: "gloss & specular", Shadow: "grounding", "Inner Fill": "candy face",
 };
 
-export type Shape = "chamfer" | "pill" | "sharp" | "round";
+export type Shape = "chamfer" | "pill" | "sharp" | "round" | "hex" | "trapezoid" | "notch";
 export const SHAPES: { id: Shape; name: string }[] = [
   { id: "round", name: "Round" },
   { id: "pill", name: "Pill" },
   { id: "chamfer", name: "Chamfer" },
   { id: "sharp", name: "Sharp" },
+  { id: "hex", name: "Hex — pointed ends" },
+  { id: "trapezoid", name: "Trapezoid" },
+  { id: "notch", name: "Notch — diagonal cut" },
 ];
 /** Neutral canvas surfaces only — the stage never competes with the component. */
 export const CANVAS_BGS = [
@@ -127,7 +130,7 @@ export interface TypeCfg {
   /** Relief follows the master light: highlight toward it, shade away from it.
    *  strength -100..100 (negative = deboss/engrave); distance = offset px;
    *  softness = blur; hiOpacity/shOpacity control each side independently. */
-  emboss: { on: boolean; strength: number; softness: number; distance: number; hiOpacity: number; shOpacity: number };
+  emboss: { on: boolean; strength: number; softness: number; distance: number; hiOpacity: number; shOpacity: number; hiColor: string; shColor: string };
   glow: { on: boolean; color: string; size: number; opacity: number };
   preset: string;
 }
@@ -153,13 +156,13 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
   t.fillOpacity = 100;
   t.outline = { on: false, color: palette.dark, color2: null, width: 2.5 };
   t.shadow = { on: false, color: palette.dark, x: 0, y: 3, blur: 2, opacity: 50 };
-  t.emboss = { on: false, strength: 55, softness: 30, distance: 2, hiOpacity: 70, shOpacity: 60 };
+  t.emboss = { on: false, strength: 55, softness: 30, distance: 2, hiOpacity: 70, shOpacity: 60, hiColor: "#FFFFFF", shColor: "#04080E" };
   t.glow = { on: false, color: palette.glow, size: 8, opacity: 80 };
   if (id === "none") { t.fillMode = "auto"; return; }
   if (id === "outline") { t.outline.on = true; return; }
   if (id === "shadow") { t.shadow.on = true; return; }
   if (id === "emboss") { t.emboss.on = true; return; }
-  if (id === "innerbevel") { t.emboss = { on: true, strength: -60, softness: 30, distance: 2, hiOpacity: 65, shOpacity: 65 }; return; }
+  if (id === "innerbevel") { t.emboss = { on: true, strength: -60, softness: 30, distance: 2, hiOpacity: 65, shOpacity: 65, hiColor: "#FFFFFF", shColor: "#04080E" }; return; }
   if (id === "glow") { t.glow.on = true; return; }
   if (id === "outshadow") { t.outline.on = true; t.shadow.on = true; return; }
   if (id === "outemboss") { t.outline.on = true; t.emboss.on = true; return; }
@@ -167,7 +170,7 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
     t.fillMode = "solid"; t.fill = "#FFFFFF";
     t.outline = { on: true, color: palette.dark, color2: null, width: 2.6 };
     t.shadow = { on: true, color: palette.dark, x: 0, y: 3, blur: 1.5, opacity: 45 };
-    t.emboss = { on: true, strength: 30, softness: 25, distance: 2, hiOpacity: 75, shOpacity: 60 };
+    t.emboss = { on: true, strength: 30, softness: 25, distance: 2, hiOpacity: 75, shOpacity: 60, hiColor: "#FFFFFF", shColor: "#04080E" };
     return;
   }
   if (id === "arcade") {
@@ -178,14 +181,14 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
   }
   if (id === "chiseled") {
     t.fillMode = "gradient"; t.fill = "#F4F6F8"; t.fill2 = "#B9C0CC";
-    t.emboss = { on: true, strength: -70, softness: 20, distance: 2.5, hiOpacity: 65, shOpacity: 70 };
+    t.emboss = { on: true, strength: -70, softness: 20, distance: 2.5, hiOpacity: 65, shOpacity: 70, hiColor: "#FFFFFF", shColor: "#04080E" };
     t.shadow = { on: true, color: palette.dark, x: 0, y: 2, blur: 1, opacity: 35 };
     return;
   }
   if (id === "glass") {
     // frosted label sealed in the shell: translucent fill, soft engrave
     t.fillMode = "solid"; t.fill = "#FFFFFF"; t.fillOpacity = 34;
-    t.emboss = { on: true, strength: -48, softness: 72, distance: 2, hiOpacity: 60, shOpacity: 60 };
+    t.emboss = { on: true, strength: -48, softness: 72, distance: 2, hiOpacity: 60, shOpacity: 60, hiColor: "#FFFFFF", shColor: "#04080E" };
     t.shadow = { on: true, color: "#FFFFFF", x: 0, y: 1, blur: 0.5, opacity: 35 };
     return;
   }
@@ -335,7 +338,7 @@ export function presetById(id: string): Preset {
 export function defaultStates(): Record<GenStateName, StateAdjust> {
   return {
     default: { brightness: 5, glow: 0, lift: 0, opacity: 100 },
-    hover: { brightness: 8, glow: 100, lift: -3, opacity: 100 },
+    hover: { brightness: 8, glow: 38, lift: -3, opacity: 100 },
     pressed: { brightness: -6, glow: 12, lift: 3, opacity: 100 },
     disabled: { brightness: 0, glow: 0, lift: 0, opacity: 62 },
   };
@@ -349,7 +352,7 @@ export function defaultType(): TypeCfg {
     fillMode: "gradient", fill: "#00b5c2", fill2: "#0f96c2", fillOpacity: 100,
     outline: { on: false, color: "#0B6183", color2: null, width: 0.5 },
     shadow: { on: true, color: "#659db3", x: 0, y: 3, blur: 1.5, opacity: 45 },
-    emboss: { on: true, strength: -74, softness: 0, distance: 2, hiOpacity: 70, shOpacity: 60 },
+    emboss: { on: true, strength: -74, softness: 0, distance: 2, hiOpacity: 70, shOpacity: 60, hiColor: "#FFFFFF", shColor: "#04080E" },
     glow: { on: true, color: "#8FF0FF", size: 15, opacity: 100 },
     preset: "candy",
   };
@@ -359,7 +362,7 @@ export function defaultConfig(): GenConfig {
   const p = PRESETS[0];
   const candy = defaultCandy();
   applyPresetCandy(candy, p);
-  const base: GenConfig = {
+  return {
     presetId: p.id,
     stateDesigns: {},
     shape: "pill",
@@ -377,15 +380,6 @@ export function defaultConfig(): GenConfig {
     visible: { hover: true, pressed: true, disabled: true },
     canvas: "#000000",
   };
-  // shipped state forks (uigeneratorsettings_3): hover flips to the warm
-  // red/orange colorway with a solid tan label; pressed is pinned to the
-  // base design so later Default edits don't drift it
-  const hover = pickDesign(base);
-  hover.effects = { Bevel: "#c82a0e", Glow: "#ff968f", Highlight: "#FFFFFF", Shadow: "#0A4A62", "Inner Fill": "#f08c2d" };
-  hover.type.fillMode = "solid";
-  hover.type.fill = "#b98350";
-  base.stateDesigns = { hover, pressed: pickDesign(base) };
-  return base;
 }
 
 export function applyPresetCandy(candy: CandyTokens, p: Preset) {
@@ -432,29 +426,32 @@ export function hslHex(h: number, s: number, l: number): string {
    glow, a deep grounded shadow, and a near-white highlight with a hint of the
    accent temperature. */
 type Harmony = "analogous" | "complementary" | "split" | "triadic" | "monochrome";
-const HARMONIES: Harmony[] = ["analogous", "complementary", "split", "triadic", "monochrome"];
 
 export function randomizeConfig(c: GenConfig): GenConfig {
   const r = (min: number, max: number) => Math.round(min + Math.random() * (max - min));
   const h = r(0, 359);
-  const scheme = HARMONIES[r(0, HARMONIES.length - 1)];
+  // contrast-first: complementary-family schemes dominate; shell sits well
+  // below the face, the accent well above — every roll separates cleanly.
+  const roll = Math.random();
+  const scheme: Harmony = roll < 0.35 ? "complementary" : roll < 0.6 ? "split" : roll < 0.8 ? "triadic" : roll < 0.95 ? "analogous" : "monochrome";
   const accentHue =
-    scheme === "analogous" ? (h + r(25, 45)) % 360 :
-    scheme === "complementary" ? (h + 180 + r(-12, 12) + 360) % 360 :
+    scheme === "analogous" ? (h + r(30, 50)) % 360 :
+    scheme === "complementary" ? (h + 180 + r(-10, 10) + 360) % 360 :
     scheme === "split" ? (h + (Math.random() < 0.5 ? 150 : 210) + 360) % 360 :
     scheme === "triadic" ? (h + 120) % 360 :
-    h; // monochrome
+    h;
   const shellHue = (h + r(-8, 8) + 360) % 360;
+  // lighting and speculars are intentionally untouched: a roll changes the
+  // palette, never the light rig or reflections the user has set up.
   return {
     ...c,
     effects: {
-      "Inner Fill": hslHex(h, r(76, 94), r(52, 60)),          // the candy face: vivid, mid-light
-      Bevel: hslHex(shellHue, r(66, 84), r(38, 46)),          // shell: same family, one step deeper
-      Glow: hslHex(accentHue, r(82, 96), r(72, 84)),          // accent light per the harmony
-      Shadow: hslHex(shellHue, r(52, 68), r(16, 24)),         // deep grounded shade, never gray mud
-      Highlight: hslHex(accentHue, r(8, 16), 98),             // near-white, tinted by the accent
+      "Inner Fill": hslHex(h, r(80, 96), r(50, 60)),          // vivid mid-light face
+      Bevel: hslHex(shellHue, r(70, 88), r(28, 38)),          // shell: clearly deeper than the face
+      Glow: hslHex(accentHue, r(86, 98), r(76, 88)),          // luminous accent, far above the face
+      Shadow: hslHex(shellHue, r(55, 70), r(12, 20)),         // grounded near-black, still hued
+      Highlight: hslHex(accentHue, r(6, 14), 99),             // near-white with accent temperature
     },
-    lighting: { ...c.lighting, angle: [70, 90, 110][r(0, 2)], highlight: r(64, 90), lowlight: r(34, 60) },
   };
 }
 

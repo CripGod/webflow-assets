@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Code2, Check, CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun, Gamepad2 } from "lucide-react";
-import { useGen, hydrate } from "@/generator/store";
-import { defaultConfig } from "@/generator/model";
+import { useGen, hydrate, getDefault } from "@/generator/store";
 import { renderBevel } from "@/generator/bevel";
 import { downloadSvg, downloadPng, downloadHtml, downloadSettings, downloadGameKit, copyText } from "@/generator/exportUtils";
 
@@ -126,7 +125,7 @@ export function TopBar() {
             <button onClick={() => {
               // component-only reset: the stage (canvas color, grid, zoom) is
               // the user's workspace and stays put
-              const d = defaultConfig();
+              const d = getDefault();
               d.canvas = cfg.canvas;
               replaceConfig(d);
               setMenuOpen(false);

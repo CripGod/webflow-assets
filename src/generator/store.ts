@@ -85,6 +85,30 @@ function migrateV8(old: Record<string, any>): GenConfig {
   return c;
 }
 
+/* ── site default — the "admin" path ──────────────────────────────
+   On boot the app fetches default-settings.json from its own origin. If
+   present, that file IS the universal default: fresh sessions open with it
+   and "Reset component" returns to it. Changing the site's default = export
+   settings in the app, rename to default-settings.json, upload to the repo.
+   No rebuild needed. */
+let siteDefault: GenConfig | null = null;
+export function getDefault(): GenConfig {
+  const d = siteDefault ?? defaultConfig();
+  return (typeof structuredClone === "function" ? structuredClone(d) : JSON.parse(JSON.stringify(d))) as GenConfig;
+}
+export function fetchSiteDefault(): void {
+  fetch("./default-settings.json", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      if (!j || typeof j !== "object" || !j.presetId || !j.candy) return;
+      siteDefault = hydrate(j as Record<string, any>);
+      // a brand-new visitor (nothing saved yet) adopts the site default
+      const hasSave = localStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY_V9) || localStorage.getItem(LS_KEY_V8);
+      if (!hasSave) useGen.getState().replaceConfig(getDefault());
+    })
+    .catch(() => { /* offline or file absent — built-in defaults stand */ });
+}
+
 function load(): GenConfig {
   try {
     for (const key of [LS_KEY, LS_KEY_V9]) {
@@ -103,7 +127,7 @@ function load(): GenConfig {
 interface GenStore {
   cfg: GenConfig;
   selectedState: GenStateName;
-  phase: "master" | "kit";
+  phase: "master" | "kit" | "board";
   kitSizes: Partial<Record<KitComponentId, KitSize>>;
   zoom: number;
   panMode: boolean;
@@ -119,6 +143,16 @@ interface GenStore {
   setCanvasMode: (m: "design" | "play") => void;
   inheritDefaults: () => void;
   replaceConfig: (next: GenConfig) => void;
+  library: LibItem[];
+  addToLibrary: (name: string) => void;
+  removeFromLibrary: (id: string) => void;
+  loadFromLibrary: (id: string) => void;
+  board: BoardItem[];
+  addToBoard: (libId: string) => void;
+  moveBoardItem: (id: string, x: number, y: number) => void;
+  removeBoardItem: (id: string) => void;
+  bgImage: string | null;
+  setBgImage: (url: string | null) => void;
 
   update: (fn: (c: GenConfig) => void) => void;
   undo: () => void;
@@ -127,7 +161,7 @@ interface GenStore {
   setPreset: (id: string) => void;
   randomize: () => void;
   setSelectedState: (s: GenStateName) => void;
-  setPhase: (p: "master" | "kit") => void;
+  setPhase: (p: "master" | "kit" | "board") => void;
   setKitSize: (id: KitComponentId, s: KitSize) => void;
   setZoom: (z: number) => void;
   setPanMode: (v: boolean) => void;
@@ -135,6 +169,18 @@ interface GenStore {
   setSectionFilter: (v: string | null) => void;
   randomizeColors: () => void;
   toggle: (section: string) => void;
+}
+
+export interface LibItem { id: string; name: string; cfg: GenConfig }
+export interface BoardItem { id: string; libId: string; x: number; y: number }
+const LIB_KEY = "ui-generator-library";
+const BOARD_KEY = "ui-generator-board";
+function loadJson<T>(key: string, fallback: T): T {
+  try { const raw = localStorage.getItem(key); if (raw) return JSON.parse(raw) as T; } catch { /* ignore */ }
+  return fallback;
+}
+function saveJson(key: string, v: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* quota — keep in memory */ }
 }
 
 let saveTimer: number | undefined;
@@ -166,9 +212,51 @@ export const useGen = create<GenStore>((set, get) => ({
   setTheme: (t) => {
     try { localStorage.setItem("ui-generator-theme", t); } catch { /* ignore */ }
     set({ theme: t });
+    // the stage follows the shell — users can re-mix the canvas afterwards
+    const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
+    cfg.canvas = t === "dark" ? "#000000" : "#F4F5F7";
+    get().replaceConfig(cfg);
   },
   canvasMode: "design" as const,
   setCanvasMode: (m) => set({ canvasMode: m }),
+  library: loadJson<LibItem[]>(LIB_KEY, []),
+  addToLibrary: (name) => {
+    const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
+    const item: LibItem = { id: "lib" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, cfg };
+    const library = [...get().library, item];
+    saveJson(LIB_KEY, library);
+    set({ library });
+  },
+  removeFromLibrary: (id) => {
+    const library = get().library.filter((l) => l.id !== id);
+    const board = get().board.filter((b) => b.libId !== id);
+    saveJson(LIB_KEY, library); saveJson(BOARD_KEY, board);
+    set({ library, board });
+  },
+  loadFromLibrary: (id) => {
+    const item = get().library.find((l) => l.id === id);
+    if (item) get().replaceConfig((typeof structuredClone === "function" ? structuredClone(item.cfg) : JSON.parse(JSON.stringify(item.cfg))) as GenConfig);
+  },
+  board: loadJson<BoardItem[]>(BOARD_KEY, []),
+  addToBoard: (libId) => {
+    const n = get().board.length;
+    const item: BoardItem = { id: "bd" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), libId, x: 80 + (n % 3) * 340, y: 80 + Math.floor(n / 3) * 220 };
+    const board = [...get().board, item];
+    saveJson(BOARD_KEY, board);
+    set({ board, phase: "board" });
+  },
+  moveBoardItem: (id, x, y) => {
+    const board = get().board.map((b) => (b.id === id ? { ...b, x, y } : b));
+    set({ board });
+    saveJson(BOARD_KEY, board);
+  },
+  removeBoardItem: (id) => {
+    const board = get().board.filter((b) => b.id !== id);
+    saveJson(BOARD_KEY, board);
+    set({ board });
+  },
+  bgImage: null,
+  setBgImage: (url) => set({ bgImage: url }),
   inheritDefaults: () => {
     const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
     cfg.stateDesigns = {};
@@ -277,3 +365,6 @@ export const useGen = create<GenStore>((set, get) => ({
   },
   toggle: (s) => set((st) => ({ open: { ...st.open, [s]: !st.open[s] } })),
 }));
+
+// kick off the site-default fetch once the store exists
+fetchSiteDefault();

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Send } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
+import { renderBevel } from "@/generator/bevel";
 
 /* Rail buttons isolate their section group in the panel. Click again to show all.
    Order mirrors how the object is understood: style → color → structure →
@@ -13,6 +14,7 @@ const GROUPS: Record<string, string[]> = {
   style: ["shape", "mapping", "structure", "surface", "lighting", "gloss", "glow", "depth"],
   type: ["typography"],
   states: ["state", "states"],
+  library: ["library"],
   icons: ["icon"],
 };
 
@@ -22,6 +24,7 @@ export function Rail() {
     { id: "style", Icon: Layers, label: "Style & material" },
     { id: "type", Icon: Type, label: "Typography" },
     { id: "states", Icon: LayoutGrid, label: "States" },
+    { id: "library", Icon: LibraryBig, label: "Component library" },
     ...(ICONS_ENABLED ? [{ id: "icons", Icon: Search, label: "Icon library" }] : []),
   ];
   return (
@@ -173,7 +176,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const savedLib = cfg.icon.def?.lib && ICON_LIBS.some((l) => l.id === cfg.icon.def!.lib) ? cfg.icon.def!.lib : "lucide";
@@ -373,15 +376,12 @@ export function Panel() {
       </Section>
 
       {/* ── E · Lighting ──────────────────────────────────── */}
-      <Section id="lighting" title="Lighting">
+      <Section id="lighting" title="Lighting" summary={<span>{D.lighting.angle}°</span>}>
+        <Slider label="Light angle" value={D.lighting.angle} min={0} max={360} unit="°" onChange={(v) => update((c) => { c.lighting.angle = ((v % 360) + 360) % 360; })} />
         <div className="ctl">
-          <label>Angle</label>
+          <label>Direction</label>
           <AngleDial value={D.lighting.angle} onChange={(v) => update((c) => { c.lighting.angle = v; })} />
-          <span className="valbox">
-            <input className="numin" type="number" min={0} max={360} value={D.lighting.angle} aria-label="Lighting angle degrees"
-              onChange={(e) => update((c) => { c.lighting.angle = ((+e.target.value % 360) + 360) % 360; })} />
-            <i>°</i>
-          </span>
+          <span className="mr-hint">drag the dial or slide above</span>
         </div>
         <Slider label="Highlight" value={D.lighting.highlight} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.lighting.highlight = v; })} />
         <Slider label="Lowlight" value={D.lighting.lowlight} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.lighting.lowlight = v; })} />
@@ -438,7 +438,7 @@ export function Panel() {
             </select>
             <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
           </label>
-          <Slider label="Size" value={C.specular.size} min={4} max={60} unit="px" onChange={(v) => update((c) => { c.candy.specular.size = v; })} />
+          <Slider label="Size" value={C.specular.size} min={4} max={100} unit="px" onChange={(v) => update((c) => { c.candy.specular.size = v; })} />
           <Slider label="Shape" value={C.specular.stretch} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.stretch = v; })} />
           <Slider label="Intensity" value={C.specular.intensity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.intensity = v; })} />
           <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
@@ -561,8 +561,12 @@ export function Panel() {
           <Slider label="Depth" value={T2.emboss.strength} min={-100} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.strength = v; })} />
           <Slider label="Distance" value={T2.emboss.distance ?? 2} min={0} max={8} step={0.5} unit="px" onChange={(v) => update((c) => { c.type.emboss.distance = v; })} />
           <Slider label="Softness" value={T2.emboss.softness ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.softness = v; })} />
-          <Slider label="Highlight" value={T2.emboss.hiOpacity ?? 70} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.hiOpacity = v; })} />
-          <Slider label="Shade" value={T2.emboss.shOpacity ?? 60} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.shOpacity = v; })} />
+          <div className="sublabel">Highlight side</div>
+          <Well label="Color" value={T2.emboss.hiColor ?? "#FFFFFF"} onChange={(v) => update((c) => { c.type.emboss.hiColor = v; })} />
+          <Slider label="Opacity" value={T2.emboss.hiOpacity ?? 70} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.hiOpacity = v; })} />
+          <div className="sublabel">Shadow side</div>
+          <Well label="Color" value={T2.emboss.shColor ?? "#04080E"} onChange={(v) => update((c) => { c.type.emboss.shColor = v; })} />
+          <Slider label="Opacity" value={T2.emboss.shOpacity ?? 60} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.emboss.shOpacity = v; })} />
           <div className="helper">The relief follows the master light — spin the Lighting angle and the highlight and shade travel with it. Positive embosses, negative debosses.</div>
         </FxToggle>
         <FxToggle label="Glow" on={T2.glow.on} onToggle={(v) => update((c) => { c.type.glow.on = v; })}>
@@ -646,6 +650,29 @@ export function Panel() {
       </Section>
       )}
 
+      {/* ── Library — approved components ─────────────────── */}
+      <Section id="library" title="Library" summary={<span>{library.length} saved</span>}>
+        {library.length === 0 && <div className="helper">Nothing saved yet. Dial in a component, then hit “OK — add to library” below.</div>}
+        <div className="libgrid">
+          {library.map((item) => (
+            <div className="libcard" key={item.id}>
+              <button className="libthumb" title={`Load ${item.name}`} onClick={() => loadFromLibrary(item.id)}
+                dangerouslySetInnerHTML={{ __html: renderBevel(item.cfg, "default") }} />
+              <div className="librow">
+                <span className="libname">{item.name}</span>
+                <button className="chipbtn" title="Send to board" aria-label={`Send ${item.name} to board`} onClick={() => addToBoard(item.id)}>
+                  <Send size={13} strokeWidth={2} />
+                </button>
+                <button className="chipbtn" title="Delete" aria-label={`Delete ${item.name}`} onClick={() => removeFromLibrary(item.id)}>
+                  <Trash2 size={13} strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="helper">Click a thumbnail to load it into the editor. Send to board to sketch layouts.</div>
+      </Section>
+
       {/* ── States shown ──────────────────────────────────── */}
       <Section id="states" title="States shown" summary={<span>{1 + Object.values(cfg.visible).filter(Boolean).length} states</span>}>
         <label className="check"><input type="checkbox" checked disabled /> Default (hero)</label>
@@ -659,11 +686,25 @@ export function Panel() {
 
       {!sectionFilter && (
         <div className="btnrow">
+          <button className="randbtn" title="Approve this component and save it to the library"
+            onClick={() => addToLibrary(cfg.content.label || "Component")}>
+            <CheckCircle2 size={16} strokeWidth={1.9} /> OK — add to library
+          </button>
+        </div>
+      )}
+      {!sectionFilter && (
+        <div className="btnrow">
           <button className={`randbtn kit${phase === "kit" ? " on" : ""}`}
             onClick={() => setPhase(phase === "kit" ? "master" : "kit")}
             title={phase === "kit" ? "Back to the master component" : "Save style and apply it to the kit"}>
             {phase === "kit" ? <PenTool size={16} strokeWidth={1.9} /> : <Hammer size={16} strokeWidth={1.9} />}
             {phase === "kit" ? "Edit master" : "Build kit"}
+          </button>
+          <button className={`randbtn kit${phase === "board" ? " on" : ""}`}
+            onClick={() => setPhase(phase === "board" ? "master" : "board")}
+            title="Free sketch area — drag saved components around">
+            <LayoutGrid size={16} strokeWidth={1.9} />
+            {phase === "board" ? "Edit master" : "Board"}
           </button>
         </div>
       )}

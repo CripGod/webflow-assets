@@ -40,6 +40,29 @@ function roundRect(x: number, y: number, w: number, h: number, r: number): strin
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
   if (shape === "pill") return roundRect(x, y, w, h, h / 2);
   if (shape === "round") return roundRect(x, y, w, h, 10 + softness * 0.34);
+  if (shape === "hex") {
+    const cut = Math.min(h * 0.5, w * 0.18);
+    const v: [number, number][] = [
+      [x + cut, y], [x + w - cut, y], [x + w, y + h / 2],
+      [x + w - cut, y + h], [x + cut, y + h], [x, y + h / 2],
+    ];
+    return polyRounded(v, 2 + softness * 0.1);
+  }
+  if (shape === "trapezoid") {
+    const t = Math.min(h * 0.28, w * 0.12);
+    const v: [number, number][] = [
+      [x + t, y], [x + w - t, y], [x + w, y + h], [x, y + h],
+    ];
+    return polyRounded(v, 3 + softness * 0.12);
+  }
+  if (shape === "notch") {
+    const c = Math.min(34, h * 0.26);
+    const v: [number, number][] = [
+      [x + c, y], [x + w, y], [x + w, y + h - c],
+      [x + w - c, y + h], [x, y + h], [x, y + c],
+    ];
+    return polyRounded(v, 2 + softness * 0.1);
+  }
   const cut = shape === "sharp" ? Math.min(34, h * 0.22) : Math.min(28, h * 0.17);
   const r = shape === "sharp" ? 1.5 : 3 + softness * 0.14;
   const v: [number, number][] = [
@@ -134,7 +157,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const gap = showText && iconDef ? cfg.icon.gap * K : 0;
   const spacingEm = T2.spacing / 100;
   const weightK = 1 + Math.max(0, T2.weight - 700) * 0.0004;
-  const italicPad = T2.italic ? fs * 0.22 : 0; // slanted glyphs overhang their advance
+  const italicPad = T2.italic ? fs * 0.3 : 0; // slanted glyphs overhang their advance
   const textW = (showText ? label.length * fs * fontDef.factor * (1 + spacingEm) * weightK * 1.06 : 0) + italicPad;
   const contentW = textW + (iconDef ? iconSize : 0) + gap;
   const endRoom = shape === "pill" ? h * 0.16 : 0; // rounded ends eat width
@@ -340,9 +363,13 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   /* ── 12 · content: expanded text & icon treatment ────────────── */
   const tFill = T2.fillMode === "auto" ? autoLabel
     : T2.fillMode === "gradient" ? `url(#${id}tg)` : P(T2.fill);
-  const tFilters: string[] = [];
-  // Effect geometry scales with the type size so a 76px headline carries the
-  // same visual relief as 40px UI copy — fixed pixels vanish at display sizes.
+  // Text effects render through a native SVG filter with a generous explicit
+  // region — CSS filters on SVG text clip and misrender in Safari, which is
+  // exactly the "cut-off italics / invisible emboss" failure. Geometry scales
+  // with the type size so a 76px headline carries the same relief as 40px.
+  const prims: string[] = [];
+  const fds = (dx: number | string, dy: number | string, dev: number, color: string, op: number | string) =>
+    `<feDropShadow dx="${dx}" dy="${dy}" stdDeviation="${dev.toFixed(1)}" flood-color="${color}" flood-opacity="${op}"/>`;
   const fsc = fs / 40;
   if (T2.emboss.on && !disabled) {
     // emboss (raised) or deboss (engraved). The relief follows the master
@@ -359,12 +386,19 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       const sxo = (-lx * dist * sign).toFixed(1), syo = (-ly * dist * sign).toFixed(1);
       const hiO = (a * ((T2.emboss.hiOpacity ?? 70) / 100)).toFixed(2);
       const shO = (a * ((T2.emboss.shOpacity ?? 60) / 100)).toFixed(2);
-      tFilters.push(`drop-shadow(${hx}px ${hy}px ${ebl}px rgba(255,255,255,${hiO})) drop-shadow(${sxo}px ${syo}px ${ebl}px rgba(4,8,14,${shO}))`);
+      prims.push(fds(hx, hy, Number(ebl) * 0.5, T2.emboss.hiColor ?? "#FFFFFF", hiO));
+      prims.push(fds(sxo, syo, Number(ebl) * 0.5, T2.emboss.shColor ?? "#04080E", shO));
     }
   }
-  if (T2.shadow.on) tFilters.push(`drop-shadow(${(T2.shadow.x * fsc).toFixed(1)}px ${(T2.shadow.y * fsc).toFixed(1)}px ${(T2.shadow.blur * fsc).toFixed(1)}px ${hexRgba(T2.shadow.color, T2.shadow.opacity / 100)})`);
-  if (T2.glow.on && !disabled) tFilters.push(`drop-shadow(0 0 ${(T2.glow.size * 0.6).toFixed(1)}px ${hexRgba(T2.glow.color, T2.glow.opacity / 100)}) drop-shadow(0 0 ${(T2.glow.size * 1.6).toFixed(1)}px ${hexRgba(T2.glow.color, (T2.glow.opacity / 100) * 0.6)})`);
-  const textFilter = tFilters.length ? ` style="filter:${tFilters.join(" ")}"` : "";
+  if (T2.shadow.on) prims.push(fds((T2.shadow.x * fsc).toFixed(1), (T2.shadow.y * fsc).toFixed(1), T2.shadow.blur * fsc * 0.5, T2.shadow.color, (T2.shadow.opacity / 100).toFixed(2)));
+  if (T2.glow.on && !disabled) {
+    prims.push(fds(0, 0, T2.glow.size * 0.3, T2.glow.color, (T2.glow.opacity / 100).toFixed(2)));
+    prims.push(fds(0, 0, T2.glow.size * 0.8, T2.glow.color, ((T2.glow.opacity / 100) * 0.6).toFixed(2)));
+  }
+  const textFxDef = prims.length
+    ? `<filter id="${id}tf" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">${prims.join("")}</filter>`
+    : "";
+  const textFilter = prims.length ? ` filter="url(#${id}tf)"` : "";
   const outlineStroke = T2.outline.color2 ? `url(#${id}og)` : P(T2.outline.color);
   const outlineAttrs = T2.outline.on
     ? ` stroke="${outlineStroke}" stroke-width="${(T2.outline.width * (fs / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
@@ -376,13 +410,19 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   if (iFx.shadow) iFilters.push(`drop-shadow(0 2px 1.5px rgba(0,0,0,0.4))`);
   if (iFx.glow && !disabled) iFilters.push(`drop-shadow(0 0 5px ${glowC}) drop-shadow(0 0 12px ${hexRgba(glowC, 0.6)})`);
   const iconFilter = iFilters.length ? iFilters.join(" ") : undefined;
-  const iconColor = disabled ? "#A7AAB4" : cfg.icon.color ? P(cfg.icon.color) : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
+  // explicit kit icons (icon button) inherit the typography treatment:
+  // same fill resolution and the same effect filter as the label
+  const inheritTypo = opts.iconDef !== undefined && !!iconDef && !showText;
+  const iconColor = disabled ? "#A7AAB4"
+    : inheritTypo ? (T2.fillMode === "auto" ? autoLabel : P(T2.fill))
+    : cfg.icon.color ? P(cfg.icon.color) : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
 
   /* layout */
   const cx = x + w / 2, cy = y + h / 2;
   const startX = cx - contentW / 2;
   const placeLeft = opts.iconDef === undefined && cfg.icon.placement === "left" && !iconOnly;
-  const textX = placeLeft ? startX + (iconDef ? iconSize + gap : 0) + textW / 2 : startX + textW / 2;
+  const italicShift = T2.italic ? italicPad * 0.35 : 0; // rebalance the lean
+  const textX = (placeLeft ? startX + (iconDef ? iconSize + gap : 0) + textW / 2 : startX + textW / 2) - italicShift;
   const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K;
   const iconY = cy - iconSize / 2 + cfg.icon.oy * K;
 
@@ -454,6 +494,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   </radialGradient>
   ${T2.fillMode === "gradient" ? `<linearGradient id="${id}tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.fill)}"/><stop offset="1" stop-color="${P(T2.fill2)}"/></linearGradient>` : ""}
   ${T2.outline.on && T2.outline.color2 ? `<linearGradient id="${id}og" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.outline.color)}"/><stop offset="1" stop-color="${P(T2.outline.color2)}"/></linearGradient>` : ""}
+  ${textFxDef}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
   ${aura ? `<filter id="${id}gb" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="11"/></filter>` : ""}
@@ -482,12 +523,14 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     </g>
     <g opacity="${(T.content / 100).toFixed(2)}">
       ${showText ? `<text x="${textX.toFixed(1)}" y="${cy + 1}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${label}</text>` : ""}
-      ${iconDef ? iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
-        strokeWidth: cfg.icon.strokeWidth / 10,
-        opacity: (cfg.icon.opacity / 100),
-        rotation: cfg.icon.rotation,
-        filter: iconFilter,
-      }) : ""}
+      ${iconDef ? (inheritTypo && prims.length
+        ? `<g filter="url(#${id}tf)">${iconGroup(iconDef, iconX, iconY, iconSize, iconColor, { strokeWidth: cfg.icon.strokeWidth / 10 })}</g>`
+        : iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
+            strokeWidth: cfg.icon.strokeWidth / 10,
+            opacity: (cfg.icon.opacity / 100),
+            rotation: cfg.icon.rotation,
+            filter: iconFilter,
+          })) : ""}
     </g>
     ${C.gloss.layer === "above" ? `<g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)">${gloss}${specular}</g>` : ""}
   </g>
@@ -514,23 +557,39 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     case "iconbtn":
       return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k });
     case "toggle": {
+      // inherits the master silhouette; a dark well gives the knob negative space
       const w = 210 * k, h = 108 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
-      const knobR = (h - cfg.bevel.width * 2) / 2 - 6;
-      const kx = 39 + w - cfg.bevel.width - 6 - knobR, ky = 30 + h / 2;
-      const glow = effect(cfg.effects, "Glow"), fill = "#FFFFFF";
-      const knob = `<circle cx="${kx}" cy="${ky}" r="${knobR}" fill="${fill}" stroke="${darken(effect(cfg.effects, "Bevel"), 0.3)}" stroke-width="2"/>
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const bw = cfg.bevel.width;
+      const wellInset = bw + 4;
+      const well = shapePath(cfg.shape, 39 + wellInset, 30 + wellInset, w - wellInset * 2, h - wellInset * 2, Math.max(0, cfg.bevel.softness - 10));
+      const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
+      const knobR = (h - bw * 2) / 2 - 12;
+      const kx = 39 + w - wellInset - 8 - knobR, ky = 30 + h / 2;
+      const glow = effect(cfg.effects, "Glow");
+      const knob = `<path d="${well}" fill="${wellFill}" opacity="0.92"/>
+        <circle cx="${kx}" cy="${ky}" r="${knobR}" fill="#FFFFFF" stroke="${darken(effect(cfg.effects, "Bevel"), 0.3)}" stroke-width="2"/>
         <circle cx="${kx}" cy="${ky}" r="${Math.max(3, knobR * 0.28)}" fill="${state === "disabled" ? "#A7AAB4" : glow}"/>`;
       return track.replace("</g>\n</svg>", knob + "</g>\n</svg>");
     }
     case "progress": {
+      // inherits the master silhouette; the fill floats in a dark well with a
+      // clear gap all round, like classic HUD energy bars
       const w = 520 * k, h = 64 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { shapeOverride: "pill", iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
       const bw = cfg.bevel.width;
       const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
-      const fw = (w - bw * 2 - 8) * 0.62;
+      const wellInset = bw + 3;
+      const gapPad = 6 * k;
+      const well = shapePath(cfg.shape, 39 + wellInset, 30 + wellInset, w - wellInset * 2, h - wellInset * 2, Math.max(0, cfg.bevel.softness - 10));
+      const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
+      const bx = 39 + wellInset + gapPad, by = 30 + wellInset + gapPad;
+      const bh = h - wellInset * 2 - gapPad * 2;
+      const fw = (w - wellInset * 2 - gapPad * 2) * 0.62;
       const bar = `<defs><linearGradient id="pg${UID}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
-        <path d="${roundRect(39 + bw + 4, 30 + bw + 4, fw, h - bw * 2 - 8, (h - bw * 2 - 8) / 2)}" fill="url(#pg${UID})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>`;
+        <path d="${well}" fill="${wellFill}" opacity="0.92"/>
+        <path d="${roundRect(bx, by, fw, bh, bh / 2)}" fill="url(#pg${UID})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
+        <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>`;
       return track.replace("</g>\n</svg>", bar + "</g>\n</svg>");
     }
   }

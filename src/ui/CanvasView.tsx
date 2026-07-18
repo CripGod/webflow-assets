@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square, SquarePen, Play } from "lucide-react";
+import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, Hammer } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
 import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES } from "@/generator/model";
@@ -9,7 +9,7 @@ import { downloadSvg } from "@/generator/exportUtils";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, removeBoardItem, bgImage, setBgImage } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -18,6 +18,8 @@ export function CanvasView() {
     return () => document.removeEventListener("mousedown", close);
   }, []);
   const scroller = useRef<HTMLDivElement>(null);
+  const bgInput = useRef<HTMLInputElement>(null);
+  const boardDrag = useRef<{ id: string; dx: number; dy: number; ox: number; oy: number } | null>(null);
   const drag = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
   // live interaction: hovering/pressing the hero previews those states ("hot"),
   // while edits keep applying to the selected state.
@@ -53,7 +55,12 @@ export function CanvasView() {
       <div
         ref={scroller}
         className={`canvas${panMode ? " pan" : ""}`}
-        style={{
+        style={bgImage ? {
+          backgroundColor: cfg.canvas,
+          backgroundImage: `url(${bgImage})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        } : {
           backgroundColor: cfg.canvas,
           backgroundImage:
             gridStyle === "dots" ? `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px)` :
@@ -85,6 +92,40 @@ export function CanvasView() {
               } : {})}
               dangerouslySetInnerHTML={{ __html: heroSvg }}
             />
+          </div>
+        ) : phase === "board" ? (
+          <div className="board" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+            {board.map((b) => {
+              const item = library.find((l) => l.id === b.libId);
+              if (!item) return null;
+              return (
+                <div className="board-item" key={b.id} style={{ left: b.x, top: b.y }}
+                  onPointerDown={(e) => {
+                    boardDrag.current = { id: b.id, dx: e.clientX, dy: e.clientY, ox: b.x, oy: b.y };
+                    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const d = boardDrag.current;
+                    if (!d || d.id !== b.id) return;
+                    moveBoardItem(b.id, d.ox + (e.clientX - d.dx) / zoom, d.oy + (e.clientY - d.dy) / zoom);
+                  }}
+                  onPointerUp={() => { boardDrag.current = null; }}
+                  onPointerCancel={() => { boardDrag.current = null; }}>
+                  <button className="board-x" title="Remove from board" onClick={() => removeBoardItem(b.id)}>
+                    <X size={12} strokeWidth={2.4} />
+                  </button>
+                  <div dangerouslySetInnerHTML={{ __html: renderBevel(item.cfg, "default") }} />
+                </div>
+              );
+            })}
+            {board.length === 0 && (
+              <div className="board-hint" style={{ color: capColor }}>
+                The sketch board is empty — open the Library and send components here.
+              </div>
+            )}
+            <button className="makekit" onClick={() => setPhase("kit")} title="Arrange everything as an organized kit">
+              <Hammer size={14} strokeWidth={2} /> Make kit
+            </button>
           </div>
         ) : (
           <div className="kitgrid" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
@@ -151,6 +192,22 @@ export function CanvasView() {
               </div>
             )}
           </div>
+          <span className="zdiv" />
+          <button title="Upload a background image — see your assets on a real game screen" onClick={() => bgInput.current?.click()}
+            className={bgImage ? "on" : ""}>
+            <ImagePlus size={17} strokeWidth={1.8} />
+          </button>
+          {bgImage && (
+            <button title="Clear background image" onClick={() => setBgImage(null)}>
+              <X size={16} strokeWidth={2} />
+            </button>
+          )}
+          <input ref={bgInput} type="file" accept="image/*" style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) setBgImage(URL.createObjectURL(f));
+              e.target.value = "";
+            }} />
           <span className="zdiv" />
           {CANVAS_BGS.map((b) => (
             <button key={b.id} className={`bgdot${cfg.canvas === b.id ? " on" : ""}`} title={`Canvas: ${b.name}`}
