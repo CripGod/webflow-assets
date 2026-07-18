@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS, KIT_SHAPE } from "./model";
 import { getDef } from "./icons";
 import siteDefaultJson from "./site-default.json";
 import bubblePopJson from "./preset-bubble-pop.json";
@@ -219,7 +219,11 @@ interface GenStore {
   toggle: (section: string) => void;
 }
 
-export interface LibItem { id: string; name: string; cfg: GenConfig }
+/** A saved component remembers *which* kit piece it is (when saved while one
+ *  was focused), so the board can render and play it as that piece — a slider
+ *  stays a slider. Absent = the master button (all older saves). */
+export interface LibKit { id: KitComponentId; size: KitSize; shape?: Shape }
+export interface LibItem { id: string; name: string; cfg: GenConfig; kit?: LibKit }
 export interface StyleItem {
   id: string; name: string;
   style: Pick<GenConfig, "effects" | "face" | "bevel" | "candy" | "lighting" | "shadow" | "transparency" | "type" | "states" | "stateDesigns">;
@@ -273,8 +277,12 @@ export const useGen = create<GenStore>((set, get) => ({
   setCanvasMode: (m) => set({ canvasMode: m }),
   library: loadJson<LibItem[]>(LIB_KEY, []),
   addToLibrary: (name) => {
+    const { focus, kitSizes, kitShapes } = get();
     const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
-    const item: LibItem = { id: "lib" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, cfg };
+    const kit: LibKit | undefined = focus
+      ? { id: focus, size: kitSizes[focus] ?? "m", shape: kitShapes[focus] ?? KIT_SHAPE[focus] }
+      : undefined;
+    const item: LibItem = { id: "lib" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, cfg, ...(kit ? { kit } : {}) };
     const library = [...get().library, item];
     saveJson(LIB_KEY, library);
     set({ library });
@@ -481,8 +489,7 @@ export const useGen = create<GenStore>((set, get) => ({
       const bevel = c.effects.Bevel ?? "#0E9CC9";
       c.candy.gloss.tint = darken(bevel, 0.15);
       c.candy.gloss.tint2 = hexMix(c.effects.Glow ?? "#8FF0FF", "#FFFFFF", 0.5);
-      // stage flips light/dark occasionally
-      c.canvas = (["#FFFFFF", "#F4F5F7", "#1C1D22", "#000000"] as const)[roll(4)];
+      // the stage is the user's workspace — a roll restyles the component only
       retintText(c);
     });
   },

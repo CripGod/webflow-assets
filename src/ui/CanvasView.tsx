@@ -1,16 +1,17 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import type { GenConfig, KitComponentId, Shape } from "@/generator/model";
-import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, PenTool } from "lucide-react";
+import { Hand, Minus, Plus, LayoutGrid, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, PenTool } from "lucide-react";
 import { useGen } from "@/generator/store";
+import type { BoardItem, LibItem } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
 import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES } from "@/generator/model";
-import type { GenStateName, KitSize } from "@/generator/model";
-import { downloadSvg } from "@/generator/exportUtils";
+import type { GenStateName } from "@/generator/model";
+import { KitPage } from "./KitPage";
+import { LiveArt } from "./LiveArt";
 
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, kitShapes, bgShow, bgOpacity, bgBlur } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, kitShapes, bgShow, bgOpacity, bgBlur } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -111,7 +112,7 @@ export function CanvasView() {
               const item = library.find((l) => l.id === b.libId);
               if (!item) return null;
               return (
-                <BoardPiece key={b.id} b={b} cfg={item.cfg} playing={playing}
+                <BoardPiece key={b.id} b={b} item={item} playing={playing}
                   onDragStart={(e) => {
                     boardDrag.current = { id: b.id, dx: e.clientX, dy: e.clientY, ox: b.x, oy: b.y };
                   }}
@@ -135,17 +136,8 @@ export function CanvasView() {
             </button>
           </div>
         ) : (
-          <div className="kitgrid" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
-            <button className="makekit kitback" onClick={() => setPhase("master")} title="Back to the component editor">
-              <PenTool size={14} strokeWidth={2} /> Edit master
-            </button>
-            {KIT_COMPONENTS.map(({ id, name }) => (
-              <KitPiece key={id} id={id} name={name} cfg={cfg} size={kitSizes[id] ?? "m"} dark={dark} capColor={capColor}
-                playing={playing} kitShape={kitShapes[id]}
-                onSize={(s) => setKitSize(id, s)}
-                onExport={() => downloadSvg(renderKit(cfg, id, kitSizes[id] ?? "m", "default", undefined, kitShapes[id]), `kit-${id}-${kitSizes[id] ?? "m"}.svg`)}
-                onEdit={() => setFocus(id)} />
-            ))}
+          <div className="kitwrap" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
+            <KitPage />
           </div>
         )}
 
@@ -234,95 +226,18 @@ export function CanvasView() {
 }
 
 
-/** One kit component card — chrome appears on hover; Play mode makes it live;
- *  clicking the artwork opens it for focused editing. */
-const SWITCH_IDS: KitComponentId[] = ["toggle"];
-
-function KitPiece({ id, name, cfg, size, dark, capColor, playing, kitShape, onSize, onExport, onEdit }: {
-  id: KitComponentId; name: string; cfg: GenConfig; size: KitSize; dark: boolean; capColor?: string;
-  playing: boolean; kitShape?: Shape; onSize: (s: KitSize) => void; onExport: () => void; onEdit: () => void;
-}) {
-  const [live, setLive] = useState<GenStateName>("default");
-  // Play mode makes controls really work: switches flip, the slider slides.
-  const isSwitch = SWITCH_IDS.includes(id);
-  const isSlider = id === "slider";
-  const [switchOn, setSwitchOn] = useState(true);
-  const [sliderVal, setSliderVal] = useState(0.62);
-  const sliding = useRef(false);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const state: GenStateName = playing ? live : "default";
-  const liveVal = playing && isSlider ? sliderVal : playing && isSwitch ? (switchOn ? 1 : 0) : undefined;
-  const svg = useMemo(
-    () => renderKit(cfg, id, size, state, liveVal, kitShape),
-    [cfg, id, size, state, liveVal, kitShape]
-  );
-  const setFromPointer = (e: React.PointerEvent) => {
-    const r = bodyRef.current?.querySelector("svg")?.getBoundingClientRect();
-    if (!r) return;
-    const pad = r.width * 0.1; // track inset within the artwork
-    setSliderVal(Math.max(0, Math.min(1, (e.clientX - r.left - pad) / (r.width - pad * 2))));
-  };
-  return (
-    <div className={`kitcard quiet${dark ? " dark" : ""}`}>
-      <div className="kitcard-head" style={{ color: capColor }}>
-        <span>{name}</span>
-        <span className="sizechips">
-          {(["s", "m", "l"] as const).map((s) => (
-            <button key={s} className={size === s ? "on" : ""} onClick={() => onSize(s)}>{s.toUpperCase()}</button>
-          ))}
-        </span>
-        <button className="kitdl" title={`Export ${name} SVG`} onClick={onExport}>
-          <Download size={13} strokeWidth={2} />
-        </button>
-      </div>
-      <div className="kitcard-body" role="button" tabIndex={0} ref={bodyRef}
-        title={playing ? name : `Edit ${name}`}
-        onClick={() => {
-          if (!playing) { onEdit(); return; }
-          if (isSwitch) setSwitchOn((v) => !v);
-        }}
-        onDoubleClick={() => { if (!playing) onEdit(); }}
-        onKeyDown={(e) => { if (!playing && (e.key === "Enter" || e.key === " ")) onEdit(); }}
-        {...(playing ? {
-          onPointerEnter: (e: React.PointerEvent) => setLive(e.buttons === 1 ? "pressed" : "hover"),
-          onPointerLeave: (e: React.PointerEvent) => { if (e.buttons !== 1) { setLive("default"); sliding.current = false; } },
-          onPointerDown: (e: React.PointerEvent) => {
-            setLive("pressed");
-            if (isSlider) {
-              sliding.current = true;
-              (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-              setFromPointer(e);
-            }
-          },
-          onPointerMove: (e: React.PointerEvent) => { if (isSlider && sliding.current) setFromPointer(e); },
-          onPointerUp: () => { setLive("hover"); sliding.current = false; },
-        } : {})} dangerouslySetInnerHTML={{ __html: svg }} />
-      {!playing && (
-        <span className="editcue"><SquarePen size={12} strokeWidth={2} /> Edit</span>
-      )}
-    </div>
-  );
-}
-
 /** A component placed on the sketch board — draggable and scalable in design
- *  mode, fully alive (hover / press) in Play mode. */
-function BoardPiece({ b, cfg, playing, onDragStart, onDragMove, onDragEnd, onScale, onRemove }: {
-  b: { id: string; x: number; y: number; scale?: number }; cfg: GenConfig; playing: boolean;
+ *  mode, fully alive in Play mode: buttons hover and press, and a saved
+ *  slider, toggle, segment, dropdown or progress plays as that component. */
+function BoardPiece({ b, item, playing, onDragStart, onDragMove, onDragEnd, onScale, onRemove }: {
+  b: BoardItem; item: LibItem; playing: boolean;
   onDragStart: (e: React.PointerEvent) => void; onDragMove: (e: React.PointerEvent) => void; onDragEnd: () => void;
   onScale: (dir: 1 | -1) => void; onRemove: () => void;
 }) {
-  const [live, setLive] = useState<GenStateName>("default");
-  const state: GenStateName = playing ? live : "default";
-  const svg = useMemo(() => renderBevel(cfg, state), [cfg, state]);
   const sc = b.scale ?? 1;
   return (
     <div className={`board-item${playing ? " playing" : ""}`} style={{ left: b.x, top: b.y }}
-      {...(playing ? {
-        onPointerEnter: (e: React.PointerEvent) => setLive(e.buttons === 1 ? "pressed" : "hover"),
-        onPointerLeave: (e: React.PointerEvent) => { if (e.buttons !== 1) setLive("default"); },
-        onPointerDown: () => setLive("pressed"),
-        onPointerUp: () => setLive("hover"),
-      } : {
+      {...(playing ? {} : {
         onPointerDown: (e: React.PointerEvent) => {
           onDragStart(e);
           (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -338,7 +253,12 @@ function BoardPiece({ b, cfg, playing, onDragStart, onDragMove, onDragEnd, onSca
           <button title="Remove from stage" onClick={onRemove}><X size={12} strokeWidth={2.4} /></button>
         </div>
       )}
-      <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }} dangerouslySetInnerHTML={{ __html: svg }} />
+      <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }}>
+        {/* anchorContent: the saved x/y keeps pointing at the shell, not the
+            glow pad — layouts arranged before the pad existed stay put */}
+        <LiveArt cfg={item.cfg} playing={playing} anchorContent
+          kit={item.kit ? { id: item.kit.id, size: item.kit.size, shape: item.kit.shape } : undefined} />
+      </div>
     </div>
   );
 }
