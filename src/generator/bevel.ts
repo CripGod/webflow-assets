@@ -457,7 +457,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const auraC = disabled ? "#B9BEC6" : C.aura.color ? P(C.aura.color) : glowC;
   const glowOp = (adj.glow / 100) * (secondary ? 0.4 : 1) * (disabled ? 0 : 1);
   const aura = glowOp > 0.01
-    ? `<path d="${outer}" transform="translate(0 ${(lift + visDepth * 0.4).toFixed(1)})" fill="${auraC}" opacity="${glowOp.toFixed(2)}" filter="url(#${id}gb)"/>`
+    ? `<path d="${outer}" transform="translate(0 ${(lift + visDepth * 0.4).toFixed(1)})" fill="${auraC}" opacity="${Math.min(1, glowOp * 1.35).toFixed(2)}" filter="url(#${id}gb)"/>
+       <path d="${outer}" transform="translate(0 ${(lift + visDepth * 0.4).toFixed(1)})" fill="${auraC}" opacity="${(glowOp * 0.6).toFixed(2)}" filter="url(#${id}gb2)"/>`
     : "";
 
   /* 2 ── extrusion body — a connected solid, not a dark underlay.
@@ -755,7 +756,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   ${textFxDef}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
-  ${aura ? `<filter id="${id}gb" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="11"/></filter>` : ""}
+  ${aura ? `<filter id="${id}gb" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="14"/></filter>
+  <filter id="${id}gb2" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="30"/></filter>` : ""}
   ${noise ? `<filter id="${id}nz" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="2.6" intercept="-0.8"/><feFuncG type="linear" slope="2.6" intercept="-0.8"/><feFuncB type="linear" slope="2.6" intercept="-0.8"/></feComponentTransfer></filter>` : ""}
 </defs>
 <g opacity="${(adj.opacity / 100).toFixed(2)}">

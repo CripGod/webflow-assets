@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Code2, Check, CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun, Gamepad2 } from "lucide-react";
+import { CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun, Gamepad2 } from "lucide-react";
 import { useGen, hydrate, getDefault } from "@/generator/store";
 import { renderBevel } from "@/generator/bevel";
 import { downloadSvg, downloadPng, downloadHtml, downloadSettings, downloadGameKit, copyText } from "@/generator/exportUtils";
@@ -12,11 +12,29 @@ function Logo() {
   return <img className="logo" src={logoUrl} alt="PatternBreak" />;
 }
 
+/* When Help is on (❓ at the bottom of the tray), this area narrates whatever
+   the pointer is over, using the same titles the controls already carry. */
+function HelpHint() {
+  const { helpOn } = useGen();
+  const [hint, setHint] = useState("");
+  useEffect(() => {
+    if (!helpOn) { setHint(""); return; }
+    const over = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement).closest?.("[title],[aria-label]") as HTMLElement | null;
+      setHint(el?.title || el?.getAttribute("aria-label") || "");
+    };
+    document.addEventListener("mouseover", over);
+    return () => document.removeEventListener("mouseover", over);
+  }, [helpOn]);
+  if (!helpOn) return <span className="helphint off">Turn on Help (❓ bottom of the tray) for live hints here.</span>;
+  return <span className="helphint">{hint || "Roll over anything — I'll explain it here."}</span>;
+}
+
 export function TopBar() {
   const { cfg, saveStatus, selectedState, theme, setTheme, replaceConfig } = useGen();
   const [menuOpen, setMenuOpen] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const acctRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -58,15 +76,7 @@ export function TopBar() {
       </div>
       <div className="top-spacer" />
 
-      <button className="copycode" onClick={copyCode} title="Copy component code (SVG)">
-        {copied ? <Check size={17} strokeWidth={2.2} color="#16a34a" /> : <Code2 size={17} strokeWidth={1.9} />}
-        {copied ? "Copied" : "Copy code"}
-      </button>
-
-      <button className="copycode" onClick={dlHtml} title="Download a self-contained HTML page with every state">
-        <FileDown size={17} strokeWidth={1.9} />
-        Download HTML
-      </button>
+      <HelpHint />
 
       <div className="top-spacer" />
 

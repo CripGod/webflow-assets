@@ -1,0 +1,485 @@
+{
+  "presetId": "neon-versus",
+  "stateDesigns": {
+    "hover": {
+      "shape": "fighthud",
+      "effects": {
+        "Bevel": "#B4126B",
+        "Glow": "#FF3EC8",
+        "Highlight": "#FFE9F7",
+        "Shadow": "#3D0430",
+        "Inner Fill": "#1C0F2E"
+      },
+      "face": {
+        "mode": "light",
+        "contrast": 0,
+        "midpoint": 61
+      },
+      "bevel": {
+        "width": 10,
+        "softness": 20
+      },
+      "candy": {
+        "extrusion": {
+          "depth": 24,
+          "darkness": 80,
+          "glow": 69
+        },
+        "rim": {
+          "width": 3,
+          "brightness": 80
+        },
+        "innerEdge": {
+          "strength": 45,
+          "width": 3
+        },
+        "innerGlow": {
+          "opacity": 78,
+          "size": 48,
+          "color": null
+        },
+        "aura": {
+          "color": null
+        },
+        "gloss": {
+          "on": true,
+          "height": 54,
+          "curve": -30,
+          "opacity": 12,
+          "softness": 0,
+          "layer": "below",
+          "fill": "gradient",
+          "tint": "#402b59",
+          "tint2": "#bb1168"
+        },
+        "specular": {
+          "on": true,
+          "mode": "line",
+          "size": 60,
+          "stretch": 21,
+          "intensity": 26,
+          "softness": 100,
+          "angle": 1,
+          "gap": 300,
+          "ox": 9,
+          "oy": -29
+        },
+        "bloom": {
+          "opacity": 55,
+          "size": 70
+        },
+        "contact": {
+          "opacity": 32
+        },
+        "texture": {
+          "amount": 25,
+          "scale": 50
+        },
+        "pattern": {
+          "type": "halftone",
+          "scale": 10,
+          "angle": 65,
+          "opacity": 100,
+          "color": null
+        }
+      },
+      "lighting": {
+        "angle": 93,
+        "highlight": 78,
+        "lowlight": 46
+      },
+      "shadow": {
+        "distance": 28,
+        "blur": 14,
+        "opacity": 40
+      },
+      "transparency": {
+        "frame": 100,
+        "interior": 100,
+        "content": 100
+      },
+      "type": {
+        "font": "Lilita One",
+        "customFonts": [],
+        "size": 76,
+        "weight": 500,
+        "italic": true,
+        "spacing": 1,
+        "case": "upper",
+        "fillMode": "gradient",
+        "fill": "#000000",
+        "fill2": "#ff51ce",
+        "fillOpacity": 100,
+        "outline": {
+          "on": true,
+          "color": "#f02d99",
+          "color2": "#040103",
+          "width": 2
+        },
+        "shadow": {
+          "on": true,
+          "color": "#440729",
+          "x": 3,
+          "y": 2,
+          "blur": 6,
+          "opacity": 91
+        },
+        "emboss": {
+          "on": false,
+          "strength": -54,
+          "softness": 31,
+          "hiOpacity": 42,
+          "shOpacity": 100
+        },
+        "glow": {
+          "on": true,
+          "color": "#FF3EC8",
+          "size": 24,
+          "opacity": 100
+        },
+        "preset": "candy"
+      }
+    },
+    "pressed": {
+      "shape": "fighthud",
+      "effects": {
+        "Bevel": "#B4126B",
+        "Glow": "#FF3EC8",
+        "Highlight": "#FFE9F7",
+        "Shadow": "#3D0430",
+        "Inner Fill": "#1C0F2E"
+      },
+      "face": {
+        "mode": "light",
+        "contrast": 0,
+        "midpoint": 61
+      },
+      "bevel": {
+        "width": 10,
+        "softness": 20
+      },
+      "candy": {
+        "extrusion": {
+          "depth": 10,
+          "darkness": 80,
+          "glow": 69
+        },
+        "rim": {
+          "width": 3,
+          "brightness": 80
+        },
+        "innerEdge": {
+          "strength": 45,
+          "width": 3
+        },
+        "innerGlow": {
+          "opacity": 78,
+          "size": 48,
+          "color": null
+        },
+        "aura": {
+          "color": null
+        },
+        "gloss": {
+          "on": true,
+          "height": 54,
+          "curve": -30,
+          "opacity": 21,
+          "softness": 0,
+          "layer": "below",
+          "fill": "gradient",
+          "tint": "#402b59",
+          "tint2": "#bb1168"
+        },
+        "specular": {
+          "on": true,
+          "mode": "line",
+          "size": 60,
+          "stretch": 21,
+          "intensity": 26,
+          "softness": 100,
+          "angle": 1,
+          "gap": 300,
+          "ox": 9,
+          "oy": -29
+        },
+        "bloom": {
+          "opacity": 55,
+          "size": 70
+        },
+        "contact": {
+          "opacity": 32
+        },
+        "texture": {
+          "amount": 25,
+          "scale": 50
+        },
+        "pattern": {
+          "type": "halftone",
+          "scale": 10,
+          "angle": 65,
+          "opacity": 100,
+          "color": null
+        }
+      },
+      "lighting": {
+        "angle": 93,
+        "highlight": 78,
+        "lowlight": 46
+      },
+      "shadow": {
+        "distance": 28,
+        "blur": 14,
+        "opacity": 40
+      },
+      "transparency": {
+        "frame": 100,
+        "interior": 100,
+        "content": 100
+      },
+      "type": {
+        "font": "Lilita One",
+        "customFonts": [],
+        "size": 76,
+        "weight": 500,
+        "italic": true,
+        "spacing": 1,
+        "case": "upper",
+        "fillMode": "gradient",
+        "fill": "#000000",
+        "fill2": "#ff51ce",
+        "fillOpacity": 100,
+        "outline": {
+          "on": true,
+          "color": "#f02d99",
+          "color2": "#040103",
+          "width": 2
+        },
+        "shadow": {
+          "on": true,
+          "color": "#440729",
+          "x": 3,
+          "y": 2,
+          "blur": 6,
+          "opacity": 91
+        },
+        "emboss": {
+          "on": false,
+          "strength": -54,
+          "softness": 31,
+          "hiOpacity": 42,
+          "shOpacity": 100
+        },
+        "glow": {
+          "on": false,
+          "color": "#FF3EC8",
+          "size": 8,
+          "opacity": 100
+        },
+        "preset": "candy"
+      }
+    }
+  },
+  "shape": "fighthud",
+  "effects": {
+    "Bevel": "#B4126B",
+    "Glow": "#FF3EC8",
+    "Highlight": "#FFE9F7",
+    "Shadow": "#3D0430",
+    "Inner Fill": "#1C0F2E"
+  },
+  "face": {
+    "mode": "light",
+    "contrast": 0,
+    "midpoint": 61
+  },
+  "bevel": {
+    "width": 10,
+    "softness": 20
+  },
+  "candy": {
+    "extrusion": {
+      "depth": 12,
+      "darkness": 80,
+      "glow": 69
+    },
+    "rim": {
+      "width": 3,
+      "brightness": 80
+    },
+    "innerEdge": {
+      "strength": 45,
+      "width": 3
+    },
+    "innerGlow": {
+      "opacity": 78,
+      "size": 48,
+      "color": null
+    },
+    "aura": {
+      "color": null
+    },
+    "gloss": {
+      "on": true,
+      "height": 54,
+      "curve": -30,
+      "opacity": 12,
+      "softness": 0,
+      "layer": "below",
+      "fill": "gradient",
+      "tint": "#402b59",
+      "tint2": "#bb1168"
+    },
+    "specular": {
+      "on": true,
+      "mode": "line",
+      "size": 60,
+      "stretch": 21,
+      "intensity": 26,
+      "softness": 100,
+      "angle": 1,
+      "gap": 300,
+      "ox": 9,
+      "oy": -29
+    },
+    "bloom": {
+      "opacity": 55,
+      "size": 70
+    },
+    "contact": {
+      "opacity": 32
+    },
+    "texture": {
+      "amount": 25,
+      "scale": 50
+    },
+    "pattern": {
+      "type": "stripes",
+      "scale": 34,
+      "angle": 65,
+      "opacity": 26,
+      "color": null
+    }
+  },
+  "lighting": {
+    "angle": 93,
+    "highlight": 78,
+    "lowlight": 46
+  },
+  "shadow": {
+    "distance": 28,
+    "blur": 14,
+    "opacity": 40
+  },
+  "transparency": {
+    "frame": 100,
+    "interior": 100,
+    "content": 100
+  },
+  "content": {
+    "label": "FIGHT!"
+  },
+  "type": {
+    "font": "Fredoka",
+    "customFonts": [],
+    "size": 76,
+    "weight": 500,
+    "italic": true,
+    "spacing": 1,
+    "case": "upper",
+    "fillMode": "gradient",
+    "fill": "#000000",
+    "fill2": "#ff51ce",
+    "fillOpacity": 100,
+    "outline": {
+      "on": true,
+      "color": "#f02d99",
+      "color2": "#040103",
+      "width": 2
+    },
+    "shadow": {
+      "on": true,
+      "color": "#440729",
+      "x": 3,
+      "y": 2,
+      "blur": 6,
+      "opacity": 91
+    },
+    "emboss": {
+      "on": false,
+      "strength": -54,
+      "softness": 31,
+      "hiOpacity": 42,
+      "shOpacity": 100
+    },
+    "glow": {
+      "on": false,
+      "color": "#FF3EC8",
+      "size": 8,
+      "opacity": 100
+    },
+    "preset": "candy"
+  },
+  "icon": {
+    "show": true,
+    "def": {
+      "lib": "lucide",
+      "name": "Play",
+      "viewBox": "0 0 24 24",
+      "inner": "<polygon points=\"6 3 20 12 6 21 6 3\"/>",
+      "mode": "stroke"
+    },
+    "placement": "right",
+    "only": false,
+    "size": 100,
+    "strokeWidth": 24,
+    "color": null,
+    "opacity": 100,
+    "rotation": 0,
+    "gap": 18,
+    "ox": 0,
+    "oy": 0,
+    "fx": {
+      "shadow": false,
+      "glow": false,
+      "emboss": false
+    }
+  },
+  "states": {
+    "default": {
+      "brightness": 8,
+      "glow": 70,
+      "lift": 2,
+      "opacity": 100,
+      "saturation": 81
+    },
+    "hover": {
+      "brightness": 8,
+      "glow": 100,
+      "lift": 2,
+      "opacity": 100,
+      "saturation": 81
+    },
+    "pressed": {
+      "brightness": 8,
+      "glow": 70,
+      "lift": 4,
+      "opacity": 100,
+      "saturation": 100
+    },
+    "disabled": {
+      "brightness": 8,
+      "glow": 70,
+      "lift": 2,
+      "opacity": 100,
+      "saturation": 81
+    }
+  },
+  "visible": {
+    "hover": true,
+    "pressed": true,
+    "disabled": true
+  },
+  "canvas": "#F4F5F7",
+  "skew": 0
+}

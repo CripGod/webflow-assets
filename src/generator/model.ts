@@ -25,7 +25,7 @@ export type Shape =
   // v22 — measured from Vector UI Pack (dobo_ui by Duplo) renders
   | "doboMarquee" | "doboRibbon" | "doboBracket";
 export const SHAPES: { id: Shape; name: string }[] = [
-  { id: "round", name: "Round" },
+  { id: "round", name: "Rounded" },
   { id: "pill", name: "Pill" },
   { id: "sharp", name: "Sharp" },
   { id: "hex", name: "Hex — pointed ends" },

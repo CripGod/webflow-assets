@@ -4,6 +4,15 @@ import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetB
 import { getDef } from "./icons";
 import siteDefaultJson from "./site-default.json";
 import bubblePopJson from "./preset-bubble-pop.json";
+import neonVersusJson from "./preset-neon-versus.json";
+import grapeJellyJson from "./preset-grape-jelly.json";
+
+/* Presets with fully authored default designs (Chevon's uploads). */
+export const PRESET_DEFAULTS: Record<string, Record<string, any>> = {
+  "bubble-pop": bubblePopJson as Record<string, any>,
+  "neon-versus": neonVersusJson as Record<string, any>,
+  "grape-jelly": grapeJellyJson as Record<string, any>,
+};
 
 /* Keep the text treatment's accent colors in step with the shell palette so a
    preset or color roll never leaves a stale outline color behind. */
@@ -187,6 +196,8 @@ interface GenStore {
   removeStyle: (id: string) => void;
   bgImage: string | null;
   setBgImage: (url: string | null) => void;
+  helpOn: boolean;
+  setHelpOn: (v: boolean) => void;
 
   update: (fn: (c: GenConfig) => void) => void;
   undo: () => void;
@@ -333,6 +344,8 @@ export const useGen = create<GenStore>((set, get) => ({
   },
   bgImage: null,
   setBgImage: (url) => set({ bgImage: url }),
+  helpOn: false,
+  setHelpOn: (v) => set({ helpOn: v }),
   inheritDefaults: () => {
     const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
     cfg.stateDesigns = {};
@@ -419,7 +432,7 @@ export const useGen = create<GenStore>((set, get) => ({
   setPreset: (id) => {
     // Bubble Pop ships as a fully authored look (Chevon's bubblepopdefault) —
     // picking it loads that complete design rather than re-mixing tokens
-    if (id === "bubble-pop") { get().replaceConfig(hydrate(structuredClone(bubblePopJson) as Record<string, any>)); return; }
+    if (PRESET_DEFAULTS[id]) { get().replaceConfig(hydrate(structuredClone(PRESET_DEFAULTS[id]))); return; }
     const p = presetById(id);
     get().update((c) => {
       c.presetId = id; c.shape = p.shape; c.bevel = { ...p.bevel }; c.effects = { ...p.effects };
@@ -433,7 +446,7 @@ export const useGen = create<GenStore>((set, get) => ({
     const next = randomizeConfig(get().cfg);
     const roll = (n: number) => Math.floor(Math.random() * n);
     get().update((c) => {
-      c.effects = next.effects; c.lighting = next.lighting;
+      c.effects = next.effects; // lighting stays put — rolled light angles tilted the speculars askew
       // typography joins the roll
       c.type.font = GAME_FONTS[roll(GAME_FONTS.length)].name;
       // pattern rolls tone-on-tone so it stays harmonious

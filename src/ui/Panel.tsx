@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Sparkles, Box } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
 import type { GenStateName, BlendMode } from "@/generator/model";
@@ -9,7 +9,7 @@ import { renderBevel, shapePath } from "@/generator/bevel";
 import { hydrate, retintText } from "@/generator/store";
 import { defaultConfig, defaultCandy, applyPresetCandy } from "@/generator/model";
 import type { GenConfig } from "@/generator/model";
-import bubblePopJson from "@/generator/preset-bubble-pop.json";
+import { PRESET_DEFAULTS } from "@/generator/store";
 import { SILHOUETTES, SILHOUETTE_CATEGORIES } from "@/generator/silhouettes";
 
 /* Rendered mini-previews for the style presets — built once, by the same
@@ -18,8 +18,8 @@ let presetArtCache: { id: string; name: string; svg: string }[] | null = null;
 function presetArt() {
   if (!presetArtCache) presetArtCache = PRESETS.map((p) => {
     let pc: GenConfig;
-    if (p.id === "bubble-pop") {
-      pc = hydrate(structuredClone(bubblePopJson) as Record<string, any>); // clone — hydrate keeps references
+    if (PRESET_DEFAULTS[p.id]) {
+      pc = hydrate(structuredClone(PRESET_DEFAULTS[p.id])); // clone — hydrate keeps references
     } else {
       pc = defaultConfig();
       pc.presetId = p.id; pc.shape = p.shape; pc.bevel = { ...p.bevel }; pc.effects = { ...p.effects };
@@ -43,23 +43,21 @@ const GROUPS: Record<string, string[]> = {
   silhouette: ["silhouette"],
   color: ["mapping"],
   material: ["structure", "surface"],
-  lighting: ["lighting"],
-  fx: ["gloss", "glow", "depth"],
+  lighting: ["lighting", "gloss", "glow", "depth"],
   type: ["typography"],
   library: ["library"],
   icons: ["icon"],
 };
 
 export function Rail() {
-  const { sectionFilter, setSectionFilter } = useGen();
+  const { sectionFilter, setSectionFilter, phase, setPhase, helpOn, setHelpOn } = useGen();
   const items = [
     { id: "states", Icon: LayoutGrid, label: "Global & states" },
     { id: "style", Icon: Layers, label: "Style preset" },
     { id: "silhouette", Icon: Shapes, label: "Silhouette" },
     { id: "color", Icon: Palette, label: "Color" },
     { id: "material", Icon: Box, label: "Structure & surface" },
-    { id: "lighting", Icon: Sun, label: "Lighting" },
-    { id: "fx", Icon: Sparkles, label: "Gloss, glow & depth" },
+    { id: "lighting", Icon: Sun, label: "Lighting, gloss & depth" },
     { id: "type", Icon: Type, label: "Typography" },
     { id: "library", Icon: LibraryBig, label: "Component library" },
     ...(ICONS_ENABLED ? [{ id: "icons", Icon: Search, label: "Icon library" }] : []),
@@ -83,8 +81,17 @@ export function Rail() {
         </button>
       ))}
       <span className="gap" />
+      <button title="The Kit — pick a component to work on" aria-label="The Kit"
+        className={phase === "kit" ? "on" : ""} onClick={() => setPhase(phase === "kit" ? "master" : "kit")}>
+        <Hammer size={21} strokeWidth={1.7} />
+      </button>
+      <button title="The Board — stage components over a background" aria-label="The Board"
+        className={phase === "board" ? "on" : ""} onClick={() => setPhase(phase === "board" ? "master" : "board")}>
+        <LayoutGrid size={21} strokeWidth={1.7} />
+      </button>
       <button title="Settings" aria-label="Settings"><Settings size={22} strokeWidth={1.7} /></button>
-      <button title="Help" aria-label="Help"><HelpCircle size={22} strokeWidth={1.7} /></button>
+      <button title="Help — live hints in the top bar while you roll over controls" aria-label="Help"
+        className={helpOn ? "on" : ""} onClick={() => setHelpOn(!helpOn)}><HelpCircle size={22} strokeWidth={1.7} /></button>
     </nav>
   );
 }
@@ -221,7 +228,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, styleLib, saveStyle, applyStyle, removeStyle } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, styleLib, saveStyle, applyStyle, removeStyle, canvasMode } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -335,8 +342,10 @@ export function Panel() {
     );
   }
 
+  const playLocked = canvasMode === "play";
   return (
-    <aside className="panel" ref={panelRef}>
+    <aside className={`panel${playLocked ? " playlock" : ""}`} ref={panelRef}>
+      {playLocked && <div className="playnote">Play mode — controls are paused so you can feel the states. Switch back to Design (✎ in the canvas toolbar) to edit.</div>}
       {focus && (
         <div className="focusnote">
           Editing <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — every control below shapes it live.
@@ -512,7 +521,7 @@ export function Panel() {
         <Slider label="Rim brightness" value={C.rim.brightness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.rim.brightness = v; })} />
         <Slider label="Inner edge" value={C.innerEdge.strength} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerEdge.strength = v; })} />
         <Slider label="Edge width" value={C.innerEdge.width} min={0} max={6} unit="px" onChange={(v) => update((c) => { c.candy.innerEdge.width = v; })} />
-        <Slider label="Extrusion depth" value={C.extrusion.depth} min={0} max={24} unit="px" onChange={(v) => update((c) => { c.candy.extrusion.depth = v; })} />
+        <Slider label="Extrusion depth" value={C.extrusion.depth} min={0} max={48} unit="px" onChange={(v) => update((c) => { c.candy.extrusion.depth = v; })} />
       </Section>
 
       {/* ── D · Surface ───────────────────────────────────── */}
@@ -610,10 +619,15 @@ export function Panel() {
             ))}
           </div>
         </div>
-        {C.gloss.fill !== "highlight" && (
+        {C.gloss.fill !== "highlight" && (<>
           <Well label={C.gloss.fill === "gradient" ? "Gloss top" : "Gloss color"} value={C.gloss.tint}
             onChange={(v) => update((c) => { c.candy.gloss.tint = v; })} />
-        )}
+          {C.gloss.fill === "gradient" && (
+            <button className="resetstate" onClick={() => update((c) => { const t = c.candy.gloss.tint; c.candy.gloss.tint = c.candy.gloss.tint2; c.candy.gloss.tint2 = t; })}>
+              <ArrowUpDown size={13} strokeWidth={2} /> Swap gloss colors
+            </button>
+          )}
+        </>)}
         {C.gloss.fill === "gradient" && (
           <Well label="Gloss bottom" value={C.gloss.tint2}
             onChange={(v) => update((c) => { c.candy.gloss.tint2 = v; })} />
@@ -643,7 +657,9 @@ export function Panel() {
           <Slider label="Size" value={C.specular.size} min={4} max={100} unit="px" onChange={(v) => update((c) => { c.candy.specular.size = v; })} />
           <Slider label="Shape" value={C.specular.stretch} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.stretch = v; })} />
           <Slider label="Intensity" value={C.specular.intensity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.intensity = v; })} />
-          <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
+          {C.specular.mode !== "anime" && (
+            <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
+          )}
           <label className="fieldbox" style={{ minWidth: 0 }}>
             <span className="fl">Specular blend mode</span>
             <select value={C.specular.blend ?? "normal"} aria-label="Specular blend mode" onChange={(e) => update((c) => { c.candy.specular.blend = e.target.value as BlendMode; })}>
@@ -754,6 +770,11 @@ export function Panel() {
           <Well label={T2.outline.color2 ? "Stroke top" : "Color"} value={T2.outline.color} onChange={(v) => update((c) => { c.type.outline.color = v; })} />
           <label className="check"><input type="checkbox" checked={T2.outline.color2 !== null}
             onChange={(e) => update((c) => { c.type.outline.color2 = e.target.checked ? darken(c.type.outline.color, 0.35) : null; })} /> Gradient stroke</label>
+          {T2.outline.color2 !== null && (
+            <button className="resetstate" onClick={() => update((c) => { const t = c.type.outline.color; c.type.outline.color = c.type.outline.color2!; c.type.outline.color2 = t; })}>
+              <ArrowUpDown size={13} strokeWidth={2} /> Swap stroke colors
+            </button>
+          )}
           {T2.outline.color2 !== null && (
             <Well label="Stroke bottom" value={T2.outline.color2} onChange={(v) => update((c) => { c.type.outline.color2 = v; })} />
           )}

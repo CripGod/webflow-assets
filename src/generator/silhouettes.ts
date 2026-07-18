@@ -36,7 +36,7 @@ export interface SilhouetteMeta {
 const BTN = ["button", "chip", "badge", "tab", "toggle", "progress", "slider", "input"];
 
 export const SILHOUETTES: SilhouetteMeta[] = [
-  { id: "round", name: "Round", category: "Buttons", source: "custom", license: "original", renderer: "procedural",
+  { id: "round", name: "Rounded", category: "Buttons", source: "custom", license: "original", renderer: "procedural",
     capScale: 0.3, content: { top: 0.14, right: 0.3, bottom: 0.14, left: 0.3 }, minWidth: 72, minHeight: 40,
     supports: BTN, character: "Soft rectangle — the neutral baseline." },
   { id: "pill", name: "Flat Pill", category: "Buttons", source: "custom", license: "original", renderer: "procedural",

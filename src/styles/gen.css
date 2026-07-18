@@ -553,3 +553,10 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 }
 .crashbar button { border: 1px solid rgba(255,255,255,.5); background: none; color: #fff; border-radius: 8px; padding: 4px 12px; cursor: pointer; font-weight: 700; }
 .crashbar .crashdetail { font-weight: 400; opacity: .75; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── v25: play lock, help hints, board frames ─────────────────── */
+.panel.playlock .sec, .panel.playlock .btnrow { opacity: .38; pointer-events: none; filter: grayscale(.6); }
+.playnote { margin: 4px 0 12px; padding: 10px 12px; border-radius: 11px; border: 1px solid var(--line2); background: var(--soft); font-size: 12.5px; color: var(--ink); line-height: 1.45; }
+.helphint { flex: 1; min-width: 0; text-align: center; font-size: 13px; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 12px; }
+.helphint.off { color: var(--ink3); font-size: 12px; }
+.board.stage169 { overflow: visible; box-shadow: 0 0 0 6px rgba(20,22,28,.65), 0 24px 60px rgba(0,0,0,.5); }
