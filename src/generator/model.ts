@@ -36,6 +36,7 @@ export type CanvasBg = (typeof CANVAS_BGS)[number]["id"];
 /** Editable per-state treatment — edits apply to the selected state only. */
 export interface StateAdjust {
   brightness: number; // -30..30
+  saturation: number; // -100..100 (negative drains, positive enriches)
   glow: number;       // 0..100 (outer aura)
   lift: number;       // -10..10 px (negative = raised, positive = depressed)
   opacity: number;    // 0..100
@@ -319,7 +320,7 @@ export interface Preset {
 export const PRESETS: Preset[] = [
   { id: "hard-candy", name: "Hard Candy", shape: "round", bevel: { width: 10, softness: 78 },
     effects: { Bevel: "#0E9CC9", Glow: "#8FF0FF", Highlight: "#FFFFFF", Shadow: "#0A4A62", "Inner Fill": "#2CC5F0" },
-    candy: { gloss: { height: 46, curve: 26, opacity: 72 }, specular: { on: true, mode: "hard" }, extrusion: { depth: 10 } } },
+    candy: { gloss: { height: 46, curve: 26, opacity: 72 }, specular: { on: true, mode: "anime" }, extrusion: { depth: 10 } } },
   { id: "grape-jelly", name: "Grape Jelly", shape: "pill", bevel: { width: 9, softness: 100 },
     effects: { Bevel: "#8B34D8", Glow: "#E29CFF", Highlight: "#FFFFFF", Shadow: "#4A1178", "Inner Fill": "#A855F7" },
     candy: { gloss: { height: 54, curve: 40, opacity: 62, softness: 46 }, specular: { mode: "dual", softness: 55 }, innerGlow: { opacity: 72, size: 66 }, bloom: { opacity: 60, size: 72 }, extrusion: { depth: 12 } } },
@@ -337,10 +338,10 @@ export function presetById(id: string): Preset {
 
 export function defaultStates(): Record<GenStateName, StateAdjust> {
   return {
-    default: { brightness: 5, glow: 0, lift: 0, opacity: 100 },
-    hover: { brightness: 8, glow: 38, lift: -3, opacity: 100 },
-    pressed: { brightness: -6, glow: 12, lift: 3, opacity: 100 },
-    disabled: { brightness: 0, glow: 0, lift: 0, opacity: 62 },
+    default: { brightness: 5, saturation: 0, glow: 0, lift: 0, opacity: 100 },
+    hover: { brightness: 8, saturation: 0, glow: 38, lift: -3, opacity: 100 },
+    pressed: { brightness: -6, saturation: 0, glow: 12, lift: 3, opacity: 100 },
+    disabled: { brightness: 0, saturation: 0, glow: 0, lift: 0, opacity: 62 },
   };
 }
 
@@ -405,6 +406,16 @@ export function desaturate(c: string, t: number): string {
   const gray = `#${((1 << 24) | (gr << 16) | (gr << 8) | gr).toString(16).slice(1)}`;
   return hexMix(c, gray, t);
 }
+/** Saturation shift: k in -1..1. Negative mixes toward gray, positive pushes
+ *  channels away from gray (clamped). */
+export function saturate(c: string, k: number): string {
+  const p = parseInt(c.slice(1), 16);
+  const r = (p >> 16) & 255, g = (p >> 8) & 255, b = p & 255;
+  const gr = 0.299 * r + 0.587 * g + 0.114 * b;
+  const ch = (v: number) => Math.max(0, Math.min(255, Math.round(gr + (v - gr) * (1 + k))));
+  return `#${((1 << 24) | (ch(r) << 16) | (ch(g) << 8) | ch(b)).toString(16).slice(1)}`;
+}
+
 export function hexRgba(c: string, alpha: number): string {
   const p = parseInt(c.slice(1), 16);
   return `rgba(${(p >> 16) & 255},${(p >> 8) & 255},${p & 255},${alpha.toFixed(2)})`;
@@ -442,9 +453,25 @@ export function randomizeConfig(c: GenConfig): GenConfig {
     h;
   const shellHue = (h + r(-8, 8) + 360) % 360;
   // lighting and speculars are intentionally untouched: a roll changes the
-  // palette, never the light rig or reflections the user has set up.
+  // palette + wrap, never the light rig or reflections the user has set up.
+  const patRoll = Math.random();
+  const patType: PatternType = patRoll < 0.38 ? "stripes" : patRoll < 0.56 ? "none" : patRoll < 0.72 ? "dots" : patRoll < 0.84 ? "halftone" : patRoll < 0.93 ? "stars" : "checker";
+  const candy = JSON.parse(JSON.stringify(c.candy)) as CandyTokens;
+  candy.pattern = {
+    type: patType,
+    scale: r(30, 100),
+    angle: r(0, 180),
+    opacity: patType === "none" ? c.candy.pattern.opacity : r(14, 65),
+    color: Math.random() < 0.5 ? null : hslHex(shellHue, r(55, 80), r(24, 40)),
+  };
+  candy.gloss = { ...candy.gloss, layer: Math.random() < 0.5 ? "above" : "below" };
+  const transparency = Math.random() < 0.25
+    ? { frame: 100, interior: r(72, 96), content: 100 }
+    : { frame: 100, interior: 100, content: 100 };
   return {
     ...c,
+    candy,
+    transparency,
     effects: {
       "Inner Fill": hslHex(h, r(80, 96), r(50, 60)),          // vivid mid-light face
       Bevel: hslHex(shellHue, r(70, 88), r(28, 38)),          // shell: clearly deeper than the face
@@ -456,12 +483,39 @@ export function randomizeConfig(c: GenConfig): GenConfig {
 }
 
 /* ── kit ───────────────────────────────────────────────────────── */
-export type KitComponentId = "primary" | "secondary" | "iconbtn" | "toggle" | "progress";
+export type KitComponentId =
+  | "primary" | "secondary" | "small" | "ghost" | "iconbtn"
+  | "chip" | "badge" | "tab" | "segment"
+  | "checkbox" | "radio" | "switchOn" | "switchOff" | "toggle"
+  | "slider" | "progress" | "input" | "dropdown" | "icondrop";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
   { id: "secondary", name: "Secondary button" },
+  { id: "small", name: "Button (small)" },
+  { id: "ghost", name: "Button (ghost)" },
   { id: "iconbtn", name: "Icon button" },
+  { id: "chip", name: "Pill / Chip" },
+  { id: "badge", name: "Badge" },
+  { id: "tab", name: "Small tab" },
+  { id: "segment", name: "Segmented control" },
+  { id: "checkbox", name: "Checkbox" },
+  { id: "radio", name: "Radio button" },
+  { id: "switchOn", name: "Switch (on)" },
+  { id: "switchOff", name: "Switch (off)" },
   { id: "toggle", name: "Toggle" },
+  { id: "slider", name: "Slider" },
   { id: "progress", name: "Progress bar" },
+  { id: "input", name: "Input field" },
+  { id: "dropdown", name: "Dropdown" },
+  { id: "icondrop", name: "Icon dropdown" },
 ];
+
+/* Stock glyphs for kit components — canonical Lucide paths, embedded so the
+   renderer stays pure. */
+export const STOCK_ICONS: Record<string, IconDef> = {
+  star: { lib: "lucide", name: "Star", viewBox: "0 0 24 24", inner: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', mode: "stroke" },
+  check: { lib: "lucide", name: "Check", viewBox: "0 0 24 24", inner: '<path d="M20 6 9 17l-5-5"/>', mode: "stroke" },
+  chevron: { lib: "lucide", name: "ChevronDown", viewBox: "0 0 24 24", inner: '<path d="m6 9 6 6 6-6"/>', mode: "stroke" },
+  dot: { lib: "lucide", name: "CircleDot", viewBox: "0 0 24 24", inner: '<circle cx="12" cy="12" r="5"/>', mode: "fill" },
+};

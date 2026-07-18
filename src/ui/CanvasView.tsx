@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, Hammer } from "lucide-react";
+import type { GenConfig, KitComponentId } from "@/generator/model";
+import { Hand, Minus, Plus, LayoutGrid, Download, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, Hammer, PenTool } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
 import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES } from "@/generator/model";
@@ -9,7 +10,7 @@ import { downloadSvg } from "@/generator/exportUtils";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, removeBoardItem, bgImage, setBgImage } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, kitSizes, setKitSize, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, addToLibrary } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -29,7 +30,10 @@ export function CanvasView() {
   // the hero live under the pointer.
   const playing = canvasMode === "play";
   const displayed: GenStateName = phase === "master" && playing && live && selectedState !== "disabled" ? live : selectedState;
-  const heroSvg = useMemo(() => renderBevel(cfg, displayed), [cfg, displayed]);
+  const heroSvg = useMemo(
+    () => (focus ? renderKit(cfg, focus, "m", displayed) : renderBevel(cfg, displayed)),
+    [cfg, displayed, focus]
+  );
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
     (s) => s === "default" || cfg.visible[s as Exclude<GenStateName, "default">]
@@ -78,6 +82,11 @@ export function CanvasView() {
       >
         {phase === "master" ? (
           <div className="stage" style={{ transform: `scale(${zoom})` }}>
+            {focus && (
+              <button className="focuschip" onClick={() => setFocus(null)} title="Back to the master button">
+                <PenTool size={13} strokeWidth={2} /> Editing: {KIT_COMPONENTS.find((c) => c.id === focus)?.name} — back to button
+              </button>
+            )}
             <div className="state-cap" style={{ color: capColor }}>
               {CAP[displayed]}{playing && live ? " · live" : ""}
             </div>
@@ -99,23 +108,18 @@ export function CanvasView() {
               const item = library.find((l) => l.id === b.libId);
               if (!item) return null;
               return (
-                <div className="board-item" key={b.id} style={{ left: b.x, top: b.y }}
-                  onPointerDown={(e) => {
+                <BoardPiece key={b.id} b={b} cfg={item.cfg} playing={playing}
+                  onDragStart={(e) => {
                     boardDrag.current = { id: b.id, dx: e.clientX, dy: e.clientY, ox: b.x, oy: b.y };
-                    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                   }}
-                  onPointerMove={(e) => {
+                  onDragMove={(e) => {
                     const d = boardDrag.current;
                     if (!d || d.id !== b.id) return;
                     moveBoardItem(b.id, d.ox + (e.clientX - d.dx) / zoom, d.oy + (e.clientY - d.dy) / zoom);
                   }}
-                  onPointerUp={() => { boardDrag.current = null; }}
-                  onPointerCancel={() => { boardDrag.current = null; }}>
-                  <button className="board-x" title="Remove from board" onClick={() => removeBoardItem(b.id)}>
-                    <X size={12} strokeWidth={2.4} />
-                  </button>
-                  <div dangerouslySetInnerHTML={{ __html: renderBevel(item.cfg, "default") }} />
-                </div>
+                  onDragEnd={() => { boardDrag.current = null; }}
+                  onScale={(dir) => scaleBoardItem(b.id, (b.scale ?? 1) + dir * 0.15)}
+                  onRemove={() => removeBoardItem(b.id)} />
               );
             })}
             {board.length === 0 && (
@@ -126,29 +130,27 @@ export function CanvasView() {
             <button className="makekit" onClick={() => setPhase("kit")} title="Arrange everything as an organized kit">
               <Hammer size={14} strokeWidth={2} /> Make kit
             </button>
+            <button className="makekit second" onClick={() => setPhase("master")} title="Back to the component editor">
+              <PenTool size={14} strokeWidth={2} /> Edit master
+            </button>
           </div>
         ) : (
           <div className="kitgrid" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
-            {KIT_COMPONENTS.map(({ id, name }) => {
-              const size: KitSize = kitSizes[id] ?? "m";
-              return (
-                <div className={`kitcard${dark ? " dark" : ""}`} key={id}>
-                  <div className="kitcard-head" style={{ color: capColor }}>
-                    <span>{name}</span>
-                    <span className="sizechips">
-                      {(["s", "m", "l"] as const).map((s) => (
-                        <button key={s} className={size === s ? "on" : ""} onClick={() => setKitSize(id, s)}>{s.toUpperCase()}</button>
-                      ))}
-                    </span>
-                    <button className="kitdl" title={`Export ${name} SVG`}
-                      onClick={() => downloadSvg(renderKit(cfg, id, size), `kit-${id}-${size}.svg`)}>
-                      <Download size={13} strokeWidth={2} />
-                    </button>
-                  </div>
-                  <div className="kitcard-body" dangerouslySetInnerHTML={{ __html: renderKit(cfg, id, size) }} />
-                </div>
-              );
-            })}
+            <button className="makekit kitback" onClick={() => setPhase("master")} title="Back to the component editor">
+              <PenTool size={14} strokeWidth={2} /> Edit master
+            </button>
+            {KIT_COMPONENTS.map(({ id, name }) => (
+              <KitPiece key={id} id={id} name={name} cfg={cfg} size={kitSizes[id] ?? "m"} dark={dark} capColor={capColor}
+                playing={playing}
+                onSize={(s) => setKitSize(id, s)}
+                onExport={() => downloadSvg(renderKit(cfg, id, kitSizes[id] ?? "m"), `kit-${id}-${kitSizes[id] ?? "m"}.svg`)}
+                onEdit={() => {
+                  if (window.confirm("Save the current master to your library before editing this component?")) {
+                    addToLibrary(cfg.content.label || "Component");
+                  }
+                  setFocus(id);
+                }} />
+            ))}
           </div>
         )}
 
@@ -229,6 +231,83 @@ export function CanvasView() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+
+/** One kit component card — chrome appears on hover; Play mode makes it live;
+ *  clicking the artwork opens it for focused editing. */
+function KitPiece({ id, name, cfg, size, dark, capColor, playing, onSize, onExport, onEdit }: {
+  id: KitComponentId; name: string; cfg: GenConfig; size: KitSize; dark: boolean; capColor?: string;
+  playing: boolean; onSize: (s: KitSize) => void; onExport: () => void; onEdit: () => void;
+}) {
+  const [live, setLive] = useState<GenStateName>("default");
+  const state: GenStateName = playing ? live : "default";
+  const svg = useMemo(() => renderKit(cfg, id, size, state), [cfg, id, size, state]);
+  return (
+    <div className={`kitcard quiet${dark ? " dark" : ""}`}>
+      <div className="kitcard-head" style={{ color: capColor }}>
+        <span>{name}</span>
+        <span className="sizechips">
+          {(["s", "m", "l"] as const).map((s) => (
+            <button key={s} className={size === s ? "on" : ""} onClick={() => onSize(s)}>{s.toUpperCase()}</button>
+          ))}
+        </span>
+        <button className="kitdl" title={`Export ${name} SVG`} onClick={onExport}>
+          <Download size={13} strokeWidth={2} />
+        </button>
+      </div>
+      <div className="kitcard-body" role="button" tabIndex={0}
+        title={playing ? name : `Edit ${name}`}
+        onClick={() => { if (!playing) onEdit(); }}
+        onKeyDown={(e) => { if (!playing && (e.key === "Enter" || e.key === " ")) onEdit(); }}
+        {...(playing ? {
+          onPointerEnter: () => setLive("hover"),
+          onPointerLeave: () => setLive("default"),
+          onPointerDown: () => setLive("pressed"),
+          onPointerUp: () => setLive("hover"),
+        } : {})}
+        dangerouslySetInnerHTML={{ __html: svg }} />
+    </div>
+  );
+}
+
+/** A component placed on the sketch board — draggable and scalable in design
+ *  mode, fully alive (hover / press) in Play mode. */
+function BoardPiece({ b, cfg, playing, onDragStart, onDragMove, onDragEnd, onScale, onRemove }: {
+  b: { id: string; x: number; y: number; scale?: number }; cfg: GenConfig; playing: boolean;
+  onDragStart: (e: React.PointerEvent) => void; onDragMove: (e: React.PointerEvent) => void; onDragEnd: () => void;
+  onScale: (dir: 1 | -1) => void; onRemove: () => void;
+}) {
+  const [live, setLive] = useState<GenStateName>("default");
+  const state: GenStateName = playing ? live : "default";
+  const svg = useMemo(() => renderBevel(cfg, state), [cfg, state]);
+  const sc = b.scale ?? 1;
+  return (
+    <div className={`board-item${playing ? " playing" : ""}`} style={{ left: b.x, top: b.y }}
+      {...(playing ? {
+        onPointerEnter: () => setLive("hover"),
+        onPointerLeave: () => setLive("default"),
+        onPointerDown: () => setLive("pressed"),
+        onPointerUp: () => setLive("hover"),
+      } : {
+        onPointerDown: (e: React.PointerEvent) => {
+          onDragStart(e);
+          (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        },
+        onPointerMove: onDragMove,
+        onPointerUp: onDragEnd,
+        onPointerCancel: onDragEnd,
+      })}>
+      {!playing && (
+        <div className="board-tools" onPointerDown={(e) => e.stopPropagation()}>
+          <button title="Smaller" onClick={() => onScale(-1)}><Minus size={12} strokeWidth={2.4} /></button>
+          <button title="Bigger" onClick={() => onScale(1)}><Plus size={12} strokeWidth={2.4} /></button>
+          <button title="Remove from stage" onClick={onRemove}><X size={12} strokeWidth={2.4} /></button>
+        </div>
+      )}
+      <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }} dangerouslySetInnerHTML={{ __html: svg }} />
     </div>
   );
 }

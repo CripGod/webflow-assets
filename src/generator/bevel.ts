@@ -1,5 +1,5 @@
 import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef, StateDesign } from "./model";
-import { lighten, darken, hexMix, desaturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED } from "./model";
+import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS } from "./model";
 import { iconGroup } from "./icons";
 
 // Candy engine v9 — a hard-candy shell built from ordered, independently
@@ -115,7 +115,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const id = "b" + UID++;
   const disabled = state === "disabled";
   const adj = cfg.states[state];
-  const P = (c: string) => (disabled ? lighten(desaturate(c, 0.82), 0.1) : bright(c, adj.brightness));
+  const P = (c: string) => {
+    if (disabled) return lighten(desaturate(c, 0.82), 0.1);
+    const sat = clamp(adj.saturation ?? 0, -100, 100);
+    return bright(sat ? saturate(c, sat / 100) : c, adj.brightness);
+  };
   const secondary = !!opts.secondary;
   const D = designFor(cfg, state);
   const shape = opts.shapeOverride ?? D.shape;
@@ -547,50 +551,119 @@ export function renderBevel(cfg: GenConfig, state: GenStateName): string {
 /* ── kit components ────────────────────────────────────────────── */
 const SIZE_K: Record<KitSize, number> = { s: 0.72, m: 1, l: 1.22 };
 
+/** Dimensional candy ball — knobs for toggles, switches and sliders. */
+function candyKnob(cx: number, cy: number, r: number, base: string, dot?: string): string {
+  const kid = "kn" + UID++;
+  return `<defs><radialGradient id="${kid}" cx="0.35" cy="0.3" r="0.9">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset="0.55" stop-color="${lighten(base, 0.78)}"/>
+    <stop offset="1" stop-color="${lighten(base, 0.3)}"/>
+  </radialGradient></defs>
+  <ellipse cx="${cx.toFixed(1)}" cy="${(cy + r * 0.6).toFixed(1)}" rx="${(r * 0.92).toFixed(1)}" ry="${(r * 0.3).toFixed(1)}" fill="rgba(0,0,0,0.38)"/>
+  <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="url(#${kid})" stroke="${darken(base, 0.38)}" stroke-width="1.5"/>
+  ${dot ? `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${Math.max(3, r * 0.3).toFixed(1)}" fill="${dot}"/>` : ""}
+  <ellipse cx="${(cx - r * 0.3).toFixed(1)}" cy="${(cy - r * 0.44).toFixed(1)}" rx="${(r * 0.34).toFixed(1)}" ry="${(r * 0.19).toFixed(1)}" fill="#FFFFFF" opacity="0.85"/>`;
+}
+
+function inject(track: string, extra: string): string {
+  return track.replace("</g>\n</svg>", extra + "</g>\n</svg>");
+}
+
 export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default"): string {
   const k = SIZE_K[size];
+  const bw = cfg.bevel.width;
+  const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
+  const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
+  const font = cfg.type.font;
+  const wellOf = (w: number, h: number, inset: number) =>
+    shapePath(cfg.shape, 39 + inset, 30 + inset, w - inset * 2, h - inset * 2, Math.max(0, cfg.bevel.softness - 10));
+
   switch (id) {
     case "primary":
       return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k });
     case "secondary":
       return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: "Secondary" });
+    case "small":
+      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: "GO", iconDef: null });
+    case "ghost":
+      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: "Ghost", iconDef: null });
     case "iconbtn":
       return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k });
+    case "chip":
+      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: "NEW", iconDef: STOCK_ICONS.star });
+    case "badge":
+      return build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: "12", iconDef: null, fixedW: 118 * k });
+    case "tab":
+      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: "TAB", iconDef: null });
+    case "segment": {
+      const w = 560 * k, h = 106 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const cy = 30 + h / 2 + 1;
+      const segW = (w - bw * 2) / 3;
+      const midX = 39 + bw + segW;
+      const well = `<path d="${roundRect(midX + 4, 30 + bw + 4, segW - 8, h - bw * 2 - 8, (h - bw * 2 - 8) * 0.3)}" fill="rgba(255,255,255,0.25)" stroke="rgba(255,255,255,0.35)" stroke-width="1"/>`;
+      const t = (label: string, cx: number, op: number) =>
+        `<text x="${cx.toFixed(1)}" y="${cy}" font-family="'${font}', Inter, sans-serif" font-size="${30 * k}" font-weight="800" fill="#FFFFFF" fill-opacity="${op}" text-anchor="middle" dominant-baseline="central">${label}</text>`;
+      return inject(track, well + t("ONE", 39 + bw + segW * 0.5, 0.55) + t("TWO", 39 + bw + segW * 1.5, 1) + t("THREE", 39 + bw + segW * 2.5, 0.55));
+    }
+    case "checkbox":
+      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 54 * k }, { iconDef: STOCK_ICONS.check, label: "", fixedW: 118 * k });
+    case "radio":
+      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k });
+    case "switchOn":
+    case "switchOff":
     case "toggle": {
-      // inherits the master silhouette; a dark well gives the knob negative space
+      const on = id !== "switchOff";
       const w = 210 * k, h = 108 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
-      const bw = cfg.bevel.width;
-      const wellInset = bw + 4;
-      const well = shapePath(cfg.shape, 39 + wellInset, 30 + wellInset, w - wellInset * 2, h - wellInset * 2, Math.max(0, cfg.bevel.softness - 10));
-      const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
+      const inset = bw + 4;
       const knobR = (h - bw * 2) / 2 - 12;
-      const kx = 39 + w - wellInset - 8 - knobR, ky = 30 + h / 2;
-      const glow = effect(cfg.effects, "Glow");
-      const knob = `<path d="${well}" fill="${wellFill}" opacity="0.92"/>
-        <circle cx="${kx}" cy="${ky}" r="${knobR}" fill="#FFFFFF" stroke="${darken(effect(cfg.effects, "Bevel"), 0.3)}" stroke-width="2"/>
-        <circle cx="${kx}" cy="${ky}" r="${Math.max(3, knobR * 0.28)}" fill="${state === "disabled" ? "#A7AAB4" : glow}"/>`;
-      return track.replace("</g>\n</svg>", knob + "</g>\n</svg>");
+      const kx = on ? 39 + w - inset - 8 - knobR : 39 + inset + 8 + knobR;
+      const ky = 30 + h / 2;
+      const dot = state === "disabled" ? "#A7AAB4" : on ? glow : "#9AA1AC";
+      return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="${on ? 0.92 : 0.96}"/>` + candyKnob(kx, ky, knobR, bevel, dot));
+    }
+    case "slider": {
+      const w = 460 * k, h = 64 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const inset = bw * 0.7 + 3;
+      const gapPad = 5 * k;
+      const bh = h - inset * 2 - gapPad * 2;
+      const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
+      const fillW = (w - inset * 2 - gapPad * 2) * 0.62;
+      const gid = "sl" + UID++;
+      const knobX = bx + fillW, knobY = 30 + h / 2;
+      return inject(track,
+        `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
+         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
+         <path d="${roundRect(bx, by, fillW, bh, bh / 2)}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>` +
+        candyKnob(knobX, knobY, h * 0.42, bevel));
     }
     case "progress": {
-      // inherits the master silhouette; the fill floats in a dark well with a
-      // clear gap all round, like classic HUD energy bars
       const w = 520 * k, h = 64 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
-      const bw = cfg.bevel.width;
-      const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
-      const wellInset = bw + 3;
+      const inset = bw + 3;
       const gapPad = 6 * k;
-      const well = shapePath(cfg.shape, 39 + wellInset, 30 + wellInset, w - wellInset * 2, h - wellInset * 2, Math.max(0, cfg.bevel.softness - 10));
-      const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
-      const bx = 39 + wellInset + gapPad, by = 30 + wellInset + gapPad;
-      const bh = h - wellInset * 2 - gapPad * 2;
-      const fw = (w - wellInset * 2 - gapPad * 2) * 0.62;
-      const bar = `<defs><linearGradient id="pg${UID}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
-        <path d="${well}" fill="${wellFill}" opacity="0.92"/>
-        <path d="${roundRect(bx, by, fw, bh, bh / 2)}" fill="url(#pg${UID})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
-        <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>`;
-      return track.replace("</g>\n</svg>", bar + "</g>\n</svg>");
+      const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
+      const bh = h - inset * 2 - gapPad * 2;
+      const fw = (w - inset * 2 - gapPad * 2) * 0.62;
+      const gid = "pg" + UID++;
+      return inject(track,
+        `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
+         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
+         <path d="${roundRect(bx, by, fw, bh, bh / 2)}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
+         <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>`);
     }
+    case "input": {
+      const w = 460 * k, h = 108 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const inset = bw + 4;
+      const ph = `<text x="${39 + inset + 18 * k}" y="${30 + h / 2 + 1}" font-family="'${font}', Inter, sans-serif" font-size="${30 * k}" font-style="italic" font-weight="500" fill="rgba(255,255,255,0.55)" dominant-baseline="central">Type something…</text>`;
+      return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.9"/>` + ph);
+    }
+    case "dropdown":
+      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: "Select option", iconDef: STOCK_ICONS.chevron });
+    case "icondrop":
+      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 44 * k }, { iconDef: STOCK_ICONS.chevron, label: "", fixedW: 122 * k });
   }
 }

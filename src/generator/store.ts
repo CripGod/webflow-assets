@@ -150,7 +150,10 @@ interface GenStore {
   board: BoardItem[];
   addToBoard: (libId: string) => void;
   moveBoardItem: (id: string, x: number, y: number) => void;
+  scaleBoardItem: (id: string, scale: number) => void;
   removeBoardItem: (id: string) => void;
+  focus: KitComponentId | null;
+  setFocus: (f: KitComponentId | null) => void;
   bgImage: string | null;
   setBgImage: (url: string | null) => void;
 
@@ -172,7 +175,7 @@ interface GenStore {
 }
 
 export interface LibItem { id: string; name: string; cfg: GenConfig }
-export interface BoardItem { id: string; libId: string; x: number; y: number }
+export interface BoardItem { id: string; libId: string; x: number; y: number; scale?: number }
 const LIB_KEY = "ui-generator-library";
 const BOARD_KEY = "ui-generator-board";
 function loadJson<T>(key: string, fallback: T): T {
@@ -250,11 +253,18 @@ export const useGen = create<GenStore>((set, get) => ({
     set({ board });
     saveJson(BOARD_KEY, board);
   },
+  scaleBoardItem: (id, scale) => {
+    const board = get().board.map((b) => (b.id === id ? { ...b, scale: Math.max(0.3, Math.min(2, scale)) } : b));
+    saveJson(BOARD_KEY, board);
+    set({ board });
+  },
   removeBoardItem: (id) => {
     const board = get().board.filter((b) => b.id !== id);
     saveJson(BOARD_KEY, board);
     set({ board });
   },
+  focus: null,
+  setFocus: (f) => set({ focus: f, phase: "master" }),
   bgImage: null,
   setBgImage: (url) => set({ bgImage: url }),
   inheritDefaults: () => {

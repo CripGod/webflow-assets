@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Send } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2 } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
@@ -226,10 +226,48 @@ export function Panel() {
     setFontDraft("");
   };
 
+  if (phase === "board") {
+    // Assemble mode: the design controls step aside; only the Library matters.
+    return (
+      <aside className="panel">
+        <div className="sec">
+          <div className="sec-head"><h3>Stage</h3></div>
+          <div className="sec-body">
+            <div className="helper">Assemble mode — add components with +, drag to arrange, use the +/− on a piece to scale it, × to remove. Hit Play (canvas toolbar) to make everything live.</div>
+          </div>
+        </div>
+        <section className="sec">
+          <div className="sec-head"><h3>Library</h3><span className="sum">{library.length} saved</span></div>
+          <div className="sec-body">
+            <div className="libgrid">
+              {library.map((item) => (
+                <div className="libcard" key={item.id}>
+                  <button className="libthumb" title={`Load ${item.name} into the editor`} onClick={() => loadFromLibrary(item.id)}
+                    dangerouslySetInnerHTML={{ __html: renderBevel(item.cfg, "default") }} />
+                  <div className="librow">
+                    <span className="libname">{item.name}</span>
+                    <button className="chipbtn" title="Add to stage" onClick={() => addToBoard(item.id)}><Plus size={14} strokeWidth={2.2} /></button>
+                    <button className="chipbtn" title="Delete" onClick={() => removeFromLibrary(item.id)}><Trash2 size={13} strokeWidth={2} /></button>
+                  </div>
+                </div>
+              ))}
+              {library.length === 0 && <div className="helper">Nothing saved yet — go back to the editor and hit “OK — add to library”.</div>}
+            </div>
+          </div>
+        </section>
+        <div className="btnrow">
+          <button className="randbtn kit on" onClick={() => setPhase("master")}>
+            <PenTool size={16} strokeWidth={1.9} /> Back to editor
+          </button>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="panel">
-      {/* ── State (which state the sliders shape) ─────────── */}
-      <Section id="state" title="State" right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
+      {/* ── Global — whole-component adjustments per state ── */}
+      <Section id="state" title="Global" right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
         <div className="segmini" role="radiogroup" aria-label="State being edited">
           {STATE_NAMES.map((s) => (
             <button key={s} className={selectedState === s ? "on" : ""} role="radio" aria-checked={selectedState === s}
@@ -238,6 +276,7 @@ export function Panel() {
         </div>
         <div className="helper">Hover or press the button on the canvas to feel the states live. These sliders shape only <b>{STATE_LABEL[selectedState]}</b>.</div>
         <Slider label="Brightness" value={adj.brightness} min={-30} max={30} unit="" onChange={(v) => update((c) => { c.states[selectedState].brightness = v; })} />
+        <Slider label="Saturation" value={adj.saturation ?? 0} min={-100} max={100} unit="" onChange={(v) => update((c) => { c.states[selectedState].saturation = v; })} />
         <Slider label="Glow" value={adj.glow} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.states[selectedState].glow = v; })} />
         <label className="check"><input type="checkbox" checked={C.aura.color === null}
           onChange={(e) => update((c) => { c.candy.aura.color = e.target.checked ? null : (c.effects.Glow ?? "#8FF0FF"); })} /> Glow color from Color map</label>
@@ -320,7 +359,9 @@ export function Panel() {
           </select>
           <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
         </label>
-        <Slider label="Corner softness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
+        {D.shape !== "pill" && (
+          <Slider label="Corner softness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
+        )}
         <Slider label="Wall width" value={D.bevel.width} min={4} max={26} unit="px" onChange={(v) => update((c) => { c.bevel.width = v; })} />
         <Slider label="Rim width" value={C.rim.width} min={0} max={10} unit="px" onChange={(v) => update((c) => { c.candy.rim.width = v; })} />
         <Slider label="Rim brightness" value={C.rim.brightness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.rim.brightness = v; })} />
@@ -367,7 +408,9 @@ export function Panel() {
 
         <div className="sublabel">Micro grain</div>
         <Slider label="Amount" value={C.texture.amount} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.amount = v; })} />
-        <Slider label="Grain size" value={C.texture.scale} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.scale = v; })} />
+        {C.texture.amount > 0 && (
+          <Slider label="Grain size" value={C.texture.scale} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.scale = v; })} />
+        )}
 
         <div className="sublabel">Transparency</div>
         <Slider label="Frame" value={D.transparency.frame} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.frame = v; })} />
@@ -396,6 +439,7 @@ export function Panel() {
               onChange={(e) => update((c) => { c.candy.gloss.on = e.target.checked; })} />
           </span>
         }>
+        {C.gloss.on && (<>
         <Slider label="Gloss height" value={C.gloss.height} min={10} max={90} unit="%" onChange={(v) => update((c) => { c.candy.gloss.height = v; })} />
         <Slider label="Curvature" value={C.gloss.curve} min={-40} max={60} unit="px" onChange={(v) => update((c) => { c.candy.gloss.curve = v; })} />
         <Slider label="Gloss opacity" value={C.gloss.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.gloss.opacity = v; })} />
@@ -427,6 +471,7 @@ export function Panel() {
           </div>
         </div>
         <div className="helper">Above text seals the label under the candy shell; below keeps it crisp and UI-like.</div>
+        </>)}
         <div className="sublabel">Specular</div>
         <label className="check"><input type="checkbox" checked={C.specular.on} onChange={(e) => update((c) => { c.candy.specular.on = e.target.checked; })} /> Specular reflections</label>
         {C.specular.on && (<>
@@ -652,7 +697,7 @@ export function Panel() {
 
       {/* ── Library — approved components ─────────────────── */}
       <Section id="library" title="Library" summary={<span>{library.length} saved</span>}>
-        {library.length === 0 && <div className="helper">Nothing saved yet. Dial in a component, then hit “OK — add to library” below.</div>}
+        {library.length === 0 && <div className="helper">The flow: design a component → “OK — add to library” saves it here → the + button places it on the stage (Board) → drag to arrange, Play to feel the states.</div>}
         <div className="libgrid">
           {library.map((item) => (
             <div className="libcard" key={item.id}>
@@ -660,8 +705,8 @@ export function Panel() {
                 dangerouslySetInnerHTML={{ __html: renderBevel(item.cfg, "default") }} />
               <div className="librow">
                 <span className="libname">{item.name}</span>
-                <button className="chipbtn" title="Send to board" aria-label={`Send ${item.name} to board`} onClick={() => addToBoard(item.id)}>
-                  <Send size={13} strokeWidth={2} />
+                <button className="chipbtn" title="Add to stage" aria-label={`Add ${item.name} to the stage`} onClick={() => addToBoard(item.id)}>
+                  <Plus size={14} strokeWidth={2.2} />
                 </button>
                 <button className="chipbtn" title="Delete" aria-label={`Delete ${item.name}`} onClick={() => removeFromLibrary(item.id)}>
                   <Trash2 size={13} strokeWidth={2} />
@@ -684,15 +729,13 @@ export function Panel() {
         ))}
       </Section>
 
-      {!sectionFilter && (
-        <div className="btnrow">
-          <button className="randbtn" title="Approve this component and save it to the library"
-            onClick={() => addToLibrary(cfg.content.label || "Component")}>
-            <CheckCircle2 size={16} strokeWidth={1.9} /> OK — add to library
-          </button>
-        </div>
-      )}
-      {!sectionFilter && (
+      <div className="btnrow">
+        <button className="randbtn" title="Approve this component and save it to the library"
+          onClick={() => addToLibrary(cfg.content.label || "Component")}>
+          <CheckCircle2 size={16} strokeWidth={1.9} /> OK — add to library
+        </button>
+      </div>
+      {(
         <div className="btnrow">
           <button className={`randbtn kit${phase === "kit" ? " on" : ""}`}
             onClick={() => setPhase(phase === "kit" ? "master" : "kit")}
@@ -700,11 +743,9 @@ export function Panel() {
             {phase === "kit" ? <PenTool size={16} strokeWidth={1.9} /> : <Hammer size={16} strokeWidth={1.9} />}
             {phase === "kit" ? "Edit master" : "Build kit"}
           </button>
-          <button className={`randbtn kit${phase === "board" ? " on" : ""}`}
-            onClick={() => setPhase(phase === "board" ? "master" : "board")}
+          <button className="randbtn kit" onClick={() => setPhase("board")}
             title="Free sketch area — drag saved components around">
-            <LayoutGrid size={16} strokeWidth={1.9} />
-            {phase === "board" ? "Edit master" : "Board"}
+            <LayoutGrid size={16} strokeWidth={1.9} /> Board
           </button>
         </div>
       )}

@@ -428,3 +428,29 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   height: 40px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line2);
   background: var(--card); color: var(--ink); font-size: 13.5px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-pop);
 }
+
+/* ── v16: quiet kit cards, board tools, focus chip ────────────── */
+.kitcard.quiet { border-color: transparent; background: transparent; transition: border-color .15s, background .15s; }
+.kitcard.quiet:hover { border-color: var(--line); background: var(--card); }
+.kitcard.quiet .kitcard-head { opacity: 0; transition: opacity .15s; }
+.kitcard.quiet:hover .kitcard-head { opacity: 1; }
+.kitcard.quiet .kitcard-body { cursor: pointer; }
+.board-tools {
+  position: absolute; top: 2px; right: 2px; z-index: 6; display: flex; gap: 4px;
+  opacity: 0; transition: opacity .15s;
+}
+.board-item:hover .board-tools { opacity: 1; }
+.board-tools button {
+  width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line2);
+  background: var(--card); color: var(--ink2); display: grid; place-items: center; cursor: pointer;
+}
+.board-tools button:hover { color: var(--ink); background: var(--soft); }
+.board-item.playing { cursor: pointer; }
+.makekit.second, .board .makekit.second { top: 74px; }
+.kitgrid { position: relative; }
+.kitgrid .makekit.kitback { display: flex; position: absolute; top: -8px; left: 0; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line2); background: var(--card); color: var(--ink); font-size: 13.5px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-pop); z-index: 10; }
+.focuschip {
+  display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px; height: 36px; padding: 0 14px;
+  border-radius: 11px; border: 1px solid var(--line2); background: var(--card); color: var(--ink);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-pop);
+}
