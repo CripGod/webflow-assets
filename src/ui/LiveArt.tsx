@@ -17,6 +17,12 @@ export interface LiveKit {
   baseState?: GenStateName;
   /** Per-component vertical text adjustment (explicit; 0 is valid). */
   textOy?: number;
+  /** Mobile-game piece slots: secondary label, /max value, add button,
+   *  stackable status overlay. */
+  sub?: string;
+  max?: string;
+  addBtn?: boolean;
+  overlay?: string;
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -55,24 +61,30 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
-  const value = id === "toggle" ? (playing ? (on ? 1 : 0) : kit?.value)
-    : id === "slider" ? (playing ? val : kit?.value)
-    : id === "progress" ? (playing ? pval : kit?.value)
-    : id === "segment" ? (playing ? sel : kit?.value)
+  // a piece resting in "disabled" is inert — it never reacts or changes
+  const disabled = kit?.baseState === "disabled";
+  const value = id === "toggle" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
+    : id === "slider" ? (playing && !disabled ? val : kit?.value)
+    : id === "progress" || id === "ring" ? (playing && !disabled ? pval : kit?.value)
+    : id === "segment" ? (playing && !disabled ? sel : kit?.value)
     : kit?.value;
 
-  // dropdown-open and badge-awarded override the pointer state
+  // dropdown-open and badge-awarded override the pointer state; a piece's
+  // authored baseState is its RESTING state even while the page is alive
   const held = (id === "dropdown" || id === "badge") && (playing ? open : kit?.baseState === "pressed");
-  const state: GenStateName = held ? "pressed" : playing ? live : (kit?.baseState ?? "default");
+  const state: GenStateName = disabled ? "disabled"
+    : held ? "pressed"
+    : playing ? (live === "default" ? (kit?.baseState ?? "default") : live)
+    : (kit?.baseState ?? "default");
 
   // hosts pass fresh kit literals every render — key on the fields, not the
   // object, so the (string-building) renderer only runs when something changed
   const kitKey = kit
-    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}`
+    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}`
     : "";
   const svg = useMemo(
     () => kit
-      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy })
+      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay })
       : renderBevel(cfg, state),
     [cfg, kitKey, state, value] // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -127,18 +139,33 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
     raf.current = requestAnimationFrame(step);
   };
 
-  // ambient progress: the bar quietly replays its own demo on its own beat
+  // ambient progress: the bar (or ring) quietly replays its demo on its own beat
   const beat = useRef(4600 + Math.random() * 2400);
   useEffect(() => {
-    if (!ambient || id !== "progress" || !playing) return;
+    if (!ambient || (id !== "progress" && id !== "ring") || !playing) return;
     const t = window.setInterval(playProgress, beat.current);
     return () => window.clearInterval(t);
   }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const playHandlers = {
+  /* Activation runs on pointerup, NOT on click. State changes swap the svg's
+     innerHTML between pointerdown and pointerup, which detaches the browser's
+     click target — a native `click` never fires. The wrapper div is stable,
+     so pointerup on it is the reliable activation signal. */
+  const pressedHere = useRef(false);
+  const activate = (e: React.PointerEvent) => {
+    if (id === "toggle") setOn((v) => !v);
+    else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
+    else if (id === "progress" || id === "ring") playProgress();
+    else if (id === "segment") {
+      const c = trackCoord(e);
+      if (c) setSel(c.thirds);
+    }
+  };
+  const playHandlers = disabled ? {} : {
     onPointerEnter: (e: React.PointerEvent) => setLive(e.buttons === 1 ? "pressed" : "hover"),
-    onPointerLeave: (e: React.PointerEvent) => { if (e.buttons !== 1) { setLive("default"); sliding.current = false; } },
+    onPointerLeave: (e: React.PointerEvent) => { if (e.buttons !== 1) { setLive("default"); sliding.current = false; } pressedHere.current = false; },
     onPointerDown: (e: React.PointerEvent) => {
+      pressedHere.current = true;
       setLive("pressed");
       if (id === "slider") {
         sliding.current = true;
@@ -153,19 +180,26 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
         if (c) setVal(c.u);
       }
     },
-    onPointerUp: () => { setLive("hover"); sliding.current = false; },
-    onPointerCancel: () => { setLive("default"); sliding.current = false; },
-    onClick: (e: React.MouseEvent) => {
-      if (id === "toggle") setOn((v) => !v);
-      else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
-      else if (id === "progress") playProgress();
-      else if (id === "segment") {
-        const c = trackCoord(e as unknown as React.PointerEvent);
-        if (c) setSel(c.thirds);
-      }
+    onPointerUp: (e: React.PointerEvent) => {
+      setLive("hover");
+      const wasDrag = sliding.current;
+      sliding.current = false;
+      if (pressedHere.current && !wasDrag) activate(e);
+      pressedHere.current = false;
     },
-    // the progress demo is keyboard-operable: Enter/Space replay it
-    ...(id === "progress" ? {
+    onPointerCancel: () => { setLive("default"); sliding.current = false; pressedHere.current = false; },
+    // focusing on mousedown can scroll a partially-visible element into view —
+    // suppress it; keyboard users still reach pieces through tab order
+    onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
+    // keyboard operation for the stateful pieces
+    ...(id === "toggle" ? {
+      role: "switch" as const,
+      "aria-checked": on,
+      tabIndex: 0,
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOn((v) => !v); }
+      },
+    } : id === "progress" || id === "ring" ? {
       role: "button" as const,
       tabIndex: 0,
       "aria-label": "Play progress demo",
@@ -176,9 +210,11 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
   };
 
   const anchorStyle = pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined;
+  // draggable pieces own their gestures — a slider drag must never pan the page
+  const gestureStyle = id === "slider" || id === "segment" ? { touchAction: "none" as const } : undefined;
   return (
     <div ref={ref} className={className} title={title}
-      style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle }}
+      style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle, ...gestureStyle }}
       {...(playing ? playHandlers
         : onDesignClick ? {
             onClick: onDesignClick, role: "button", tabIndex: 0,

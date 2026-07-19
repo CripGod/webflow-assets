@@ -563,7 +563,8 @@ export type KitComponentId =
   | "primary" | "secondary" | "small" | "ghost" | "iconbtn"
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
-  | "slider" | "progress" | "input" | "dropdown" | "panel";
+  | "slider" | "progress" | "input" | "dropdown" | "panel"
+  | "resource" | "datarow" | "slot" | "ring";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -584,6 +585,10 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "input", name: "Input field" },
   { id: "dropdown", name: "Dropdown" },
   { id: "panel", name: "Panel" },
+  { id: "resource", name: "HUD counter" },
+  { id: "datarow", name: "Data row" },
+  { id: "slot", name: "Item slot" },
+  { id: "ring", name: "Progress ring" },
 ];
 
 /* A locked component keeps a full design snapshot of its own — the master
@@ -612,6 +617,9 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   tab: "kenneyTag",
   badge: "shield",
   panel: "kenneyRect",
+  resource: "pill",
+  datarow: "kenneyRect",
+  slot: "kenneyRect",
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the
