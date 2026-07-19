@@ -19,8 +19,11 @@ function useCrashBanner() {
 }
 
 export function App() {
-  const { panelW, setPanelW, undo, redo, theme } = useGen();
+  const { panelW, setPanelW, undo, redo, theme, phase } = useGen();
   const dragFrom = useRef<{ x: number; w: number } | null>(null);
+  // The Kit is a reading surface — the inspector column steps aside entirely
+  // and the guideline sheet becomes the hero. The rail still navigates.
+  const slim = phase === "kit";
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
@@ -58,12 +61,14 @@ export function App() {
         </div>
       )}
       <TopBar />
-      <div className="body" style={{ gridTemplateColumns: `84px ${panelW}px 6px 1fr` }}>
+      <div className="body" style={{ gridTemplateColumns: slim ? "84px 1fr" : `84px ${panelW}px 6px 1fr` }}>
         <Rail />
-        <Panel />
-        <div className="panel-resize" role="separator" aria-orientation="vertical" aria-label="Resize panel"
-          onPointerDown={onHandleDown} onPointerMove={onHandleMove}
-          onPointerUp={onHandleUp} onPointerCancel={onHandleUp} />
+        {!slim && <Panel />}
+        {!slim && (
+          <div className="panel-resize" role="separator" aria-orientation="vertical" aria-label="Resize panel"
+            onPointerDown={onHandleDown} onPointerMove={onHandleMove}
+            onPointerUp={onHandleUp} onPointerCancel={onHandleUp} />
+        )}
         <CanvasView />
       </div>
     </div>

@@ -611,7 +611,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-patterns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 12px; }
 .gp-card {
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 0; padding: 38px 12px 12px; height: 424px; overflow: hidden;
+  gap: 0; padding: 36px 12px 12px; height: 396px; overflow: hidden;
   border-radius: 18px; border: 1px solid rgba(235,238,255,.14);
   background: linear-gradient(168deg, #191b26, #0d0e16 68%); box-shadow: 0 14px 34px rgba(0,0,0,.32);
 }
@@ -687,8 +687,9 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-icon svg { display: block; }
 .kp-icon figcaption { font-size: 10.5px; font-weight: 600; color: var(--kp-ink3); }
 
-.kp-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
-.kp-meta span { font-size: 10.5px; font-weight: 600; letter-spacing: .03em; color: var(--kp-ink3); border: 1px dashed var(--kp-line); border-radius: 999px; padding: 4px 10px; }
+.kp-meta { display: flex; flex-wrap: wrap; gap: 2px 0; margin-top: 6px; font-size: 11px; font-weight: 500; letter-spacing: .02em; color: var(--kp-ink3); }
+.kp-meta span { white-space: nowrap; }
+.kp-meta span + span::before { content: "·"; margin: 0 7px; color: var(--kp-line); }
 
 .kp-slices { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 24px; margin-top: 8px; }
 .kp-slice { position: relative; display: inline-block; max-width: 100%; }
@@ -801,3 +802,59 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 /* pattern-card pieces reclaim more of their glow pad — no clipped headers */
 .kp-patterns .gp-piece { margin: -15px -6px; }
 .gp-col { gap: 0; }
+
+/* ── v31: editorial documentation voice ───────────────────────── */
+/* structured spec rows — the replacement for metadata pills */
+.kp-spec { margin: 12px 0 0; max-width: 560px; }
+.kp-specline { display: grid; grid-template-columns: 120px 1fr; gap: 14px; padding: 5px 0; border-bottom: 1px solid var(--kp-line); }
+.kp-specline:first-child { border-top: 1px solid var(--kp-line); }
+.kp-specline dt { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--kp-ink3); align-self: baseline; padding-top: 1px; }
+.kp-specline dd { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--kp-ink); font-variant-numeric: tabular-nums; }
+.kp-links { display: flex; gap: 18px; margin-top: 8px; }
+.kp-links a { font-size: 12px; font-weight: 600; color: var(--kp-ink2); text-decoration: none; border-bottom: 1px solid var(--kp-line); padding-bottom: 1px; }
+.kp-links a:hover { color: var(--kp-ink); border-color: var(--kp-ink3); }
+
+/* pills that remain (sizes, chapters, splash choices) — optically centered */
+.kp-sizes button, .kp-chapnav button { line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.kp-chapnav button { height: 30px; padding: 0 14px; }
+
+/* slot family + ring family — strict grids, no drifting */
+.kp-slotgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-top: 10px; }
+.kp-slotgrid .kp-piece { border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); padding: 4px 4px 7px; }
+.kp-slotgrid .kp-live { margin: -12px -6px; }
+.kp-ringrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; margin-top: 10px; align-items: end; }
+.kp-ringrow .kp-piece { border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); padding: 4px 4px 7px; }
+.kp-ringrow .kp-live { margin: -6px 0; }
+
+/* reward track — nodes on one rhythm with stateful connectors */
+.kp-track2 { display: flex; align-items: flex-start; gap: 0; margin-top: 10px; padding: 12px 8px 6px; border: 1px dashed var(--kp-line); border-radius: 16px; overflow-x: auto; }
+.kp-tstop { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 108px; flex: 1; }
+.kp-tnode { position: relative; z-index: 1; }
+.kp-tnode .gp-piece, .kp-tnode .kp-live { margin: -10px -6px; }
+.kp-tcap { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--kp-ink3); }
+.kp-tstop .kp-tconn { position: absolute; top: 34px; left: calc(50% + 34px); width: calc(100% - 68px); border-top: 3px solid rgba(160,240,255,.65); }
+.kp-tstop .kp-tconn.pending { border-top-style: dashed; border-top-color: var(--kp-line); }
+.kp-tnode.current::after { content: ""; position: absolute; inset: 4px 0 12px; border: 2px solid rgba(160,240,255,.8); border-radius: 999px; animation: kp-pulse 1.6s ease-out infinite; pointer-events: none; }
+
+/* spotlight is the treatment itself — no component nested inside */
+.kp-spot.pure { width: 74px; height: 74px; align-items: center; justify-content: center; }
+.kp-spothole { width: 54px; height: 54px; border-radius: 999px; background: rgba(235,238,255,.08); box-shadow: inset 0 0 0 1.5px rgba(235,238,255,.35); }
+.kp-locpin { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 46px; }
+.kp-locdot { width: 14px; height: 14px; border-radius: 999px; background: rgba(160,240,255,.95); box-shadow: 0 0 12px rgba(160,240,255,.8); }
+
+/* download row + accessibility disclosure */
+.kp-dlrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.kp-dlrow button {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px; line-height: 1;
+  border: 1px solid var(--kp-line); border-radius: 9px; background: var(--kp-card); color: var(--kp-ink);
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.kp-dlrow button:hover { border-color: var(--kp-ink3); }
+.kp-a11ybtn { display: inline-flex; align-items: center; gap: 6px; }
+.kp-a11y { margin-top: 12px; max-width: 640px; border: 1px solid var(--kp-line); border-left-width: 3px; border-radius: 10px; padding: 10px 14px; background: var(--kp-card); font-size: 12.5px; color: var(--kp-ink2); }
+.kp-a11y b { color: var(--kp-ink); }
+.kp-a11y.strong { border-left-color: #35c98e; }
+.kp-a11y.fair { border-left-color: #e3b341; }
+.kp-a11y.risky { border-left-color: #e5534b; }
+.kp-a11y ul { margin: 6px 0 0; padding-left: 18px; }
+.kp-a11y li { margin: 2px 0; line-height: 1.5; }

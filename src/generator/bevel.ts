@@ -440,7 +440,35 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const safeGap = Math.max(12, fs * 0.35);
   const padL = iconOnly || !met ? basePad : Math.max(basePad, met.content.left * h + safeGap);
   const padR = iconOnly || !met ? basePad : Math.max(basePad, met.content.right * h + safeGap);
-  const minW = opts.fixedW ?? (iconOnly ? Math.max(h, contentW + basePad * 2) : Math.max(g0.minW ?? 230 * K, contentW + padL + padR));
+
+  /* Bounds rule: the canvas is sized to the LARGEST state of the component.
+     Per-state forks may carry wider type or deeper shells — every state must
+     live inside one shared footprint so hover never reflows the layout. */
+  const stateWidth = (Dx: StateDesign): number => {
+    const Tx = Dx.type;
+    const shx = opts.shapeOverride ?? Dx.shape;
+    const fsx = g0.fs * (Tx.size / 52);
+    const casedX = Tx.case === "upper" ? rawLabel.toUpperCase()
+      : Tx.case === "lower" ? rawLabel.toLowerCase()
+      : Tx.case === "title" ? rawLabel.replace(/\b\w/g, (m) => m.toUpperCase())
+      : rawLabel;
+    const capsX = fontByName(Tx.font).caps;
+    const wdX = capsX?.wdth && Tx.width !== undefined ? clamp(Tx.width, capsX.wdth[0], capsX.wdth[1]) / 100 : 1;
+    const wkX = 1 + Math.max(0, Tx.weight - 700) * 0.0004;
+    const itX = Tx.italic ? fsx * 0.3 : 0;
+    const twX = (showText ? casedX.length * fsx * fontByName(Tx.font).factor * wdX * (1 + Tx.spacing / 100) * wkX * 1.06 : 0) + itX;
+    const cwX = twX + (iconDef ? iconSize : 0) + gap;
+    const metX = silhouetteMeta(shx);
+    const erX = shx === "pill" ? h * 0.16 : 0;
+    const bpX = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + erX;
+    const sgX = Math.max(12, fsx * 0.35);
+    const pLX = iconOnly || !metX ? bpX : Math.max(bpX, metX.content.left * h + sgX);
+    const pRX = iconOnly || !metX ? bpX : Math.max(bpX, metX.content.right * h + sgX);
+    return iconOnly ? Math.max(h, cwX + bpX * 2) : Math.max(g0.minW ?? 230 * K, cwX + pLX + pRX);
+  };
+  const forks = (["hover", "pressed", "disabled"] as const)
+    .map((s) => cfg.stateDesigns?.[s]).filter(Boolean) as StateDesign[];
+  const minW = opts.fixedW ?? Math.max(stateWidth(cfg), ...forks.map(stateWidth));
   const w = opts.fixedW ?? Math.min(g0.maxW ?? 980, minW);
 
   /* ── extrusion & lift ─────────────────────────────────────────── */
@@ -448,7 +476,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const visDepth = Math.max(0, depth);
   const lift = adj.lift;
 
-  const vw = x * 2 + w, vh = y * 2 + h + Math.ceil(depth) + 40; // generous room so big shadows never clip
+  // the canvas height also follows the deepest state — a pressed or hover
+  // fork with more extrusion must not change the element's footprint
+  const maxDepth = Math.max(depth, ...forks.map((f) => f.candy.extrusion.depth * K * (secondary ? 0.55 : 1)));
+  const vw = x * 2 + w, vh = y * 2 + h + Math.ceil(maxDepth) + 40; // generous room so big shadows never clip
 
   /* The state aura blurs far past the shell (σ up to 30 → ~2.5σ visible reach),
      and pointed silhouettes like the Fighting HUD carry it to the very edge of
@@ -819,17 +850,17 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   ${noise ? `<filter id="${id}nz" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="2.6" intercept="-0.8"/><feFuncG type="linear" slope="2.6" intercept="-0.8"/><feFuncB type="linear" slope="2.6" intercept="-0.8"/></feComponentTransfer></filter>` : ""}
 </defs>
 <g opacity="${(adj.opacity / 100).toFixed(2)}">
-  ${castShadow}
-  ${contact}
-  ${aura}
+  ${castShadow ? `<g id="${id}_cast-shadow">${castShadow}</g>` : ""}
+  ${contact ? `<g id="${id}_contact-shadow">${contact}</g>` : ""}
+  ${aura ? `<g id="${id}_outer-glow">${aura}</g>` : ""}
   <g transform="translate(0 ${lift})">
-    ${extrusion}
-    <g opacity="${(T.frame / 100).toFixed(2)}">
+    ${extrusion ? `<g id="${id}_extrusion">${extrusion}</g>` : ""}
+    <g id="${id}_shell" opacity="${(T.frame / 100).toFixed(2)}">
       <path d="${outer}" fill="url(#${id}band)" stroke="${darken(bevelC, disabled ? 0.25 : 0.5)}" stroke-width="1.5"/>
       ${rimW > 0.2 ? `<path d="${rimP}" fill="none" stroke="url(#${id}rim)" stroke-width="${rimW.toFixed(1)}" opacity="${((C.rim.brightness / 100) * (disabled ? 0.5 : 1)).toFixed(2)}"/>` : ""}
       ${shape === "handdrawn" && !disabled ? roughInk(outer, darken(bevelC, 0.58), 1.4 * K) : ""}
     </g>
-    <g opacity="${(T.interior / 100).toFixed(2)}">
+    <g id="${id}_face" opacity="${(T.interior / 100).toFixed(2)}">
       <path d="${faceP}" fill="url(#${id}face)"/>
       <g clip-path="url(#${id}fc)">
         ${patternUse}
@@ -840,7 +871,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       </g>
       ${innerEdge}
     </g>
-    <g opacity="${(T.content / 100).toFixed(2)}">
+    <g id="${id}_content" opacity="${(T.content / 100).toFixed(2)}">
       ${showText ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${textInner}</text>` : ""}
       ${showText && T2.stripes?.on ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tst)" opacity="${clamp((T2.stripes.opacity ?? 30) / 100, 0, 1).toFixed(2)}" text-anchor="middle" dominant-baseline="central">${label}</text>` : ""}
       ${showText && T2.inflate?.on ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle("mix-blend-mode:screen")} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tif)" text-anchor="middle" dominant-baseline="central">${label}</text>` : ""}
@@ -853,8 +884,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
             filter: iconFilter,
           })) : ""}
     </g>
-    ${C.gloss.layer === "above" ? `<g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${C.gloss.blend && C.gloss.blend !== "normal" ? ` style="mix-blend-mode:${C.gloss.blend}"` : ""}>${gloss}</g>` : ""}
-    <g opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${SP.blend && SP.blend !== "normal" ? ` style="mix-blend-mode:${SP.blend}"` : ""}>${specular}</g>
+    ${C.gloss.layer === "above" ? `<g id="${id}_gloss" opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${C.gloss.blend && C.gloss.blend !== "normal" ? ` style="mix-blend-mode:${C.gloss.blend}"` : ""}>${gloss}</g>` : ""}
+    ${specular ? `<g id="${id}_specular" opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${SP.blend && SP.blend !== "normal" ? ` style="mix-blend-mode:${SP.blend}"` : ""}>${specular}</g>` : ""}
   </g>
 </g>
 </svg>`;
@@ -942,6 +973,14 @@ function stampTrack(svg: string, x: number, w: number): string {
 export interface KitOpts {
   label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string;
+  /** Data-row content model — independent size/tracking/placement per text
+   *  group and slot toggles. Explicit label/sub/value still win per instance. */
+  row?: {
+    title?: string; sub?: string;
+    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number;
+    titleTrack?: number; subTrack?: number;
+    avatar?: boolean; progress?: boolean; action?: boolean; value?: number;
+  };
 }
 
 export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default", value?: number, shapeOv?: Shape, opts: KitOpts = {}): string {
@@ -997,11 +1036,13 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k, shapeOverride: sov });
     case "toggle": {
       const on = (value ?? 1) > 0.5;
-      const w = 210 * k, h = 108 * k;
+      // compact premium proportion: shell ≈ 2–2.5× the knob diameter, with the
+      // knob filling most of the inner height like a hardware switch
+      const w = 148 * k, h = 102 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
       const inset = bw + 4;
-      const knobR = (h - bw * 2) / 2 - 12;
-      const kx = on ? 39 + w - inset - 8 - knobR : 39 + inset + 8 + knobR;
+      const knobR = (h - bw * 2) / 2 - 8;
+      const kx = on ? 39 + w - inset - 5 - knobR : 39 + inset + 5 + knobR;
       const ky = 30 + h / 2;
       const dot = state === "disabled" ? "#A7AAB4" : on ? glow : "#9AA1AC";
       return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="${on ? 0.92 : 0.96}"/>` + candyKnob(kx, ky, knobR, bevel, dot));
@@ -1091,37 +1132,54 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       return inject(track, parts);
     }
     case "datarow": {
-      /* Data row — portrait slot, labels, mini progress, trailing action.
-         Characters, missions, inventory, shop rows. */
+      /* Data row — portrait slot, two independent text groups, mini progress,
+         trailing action. Characters, missions, inventory, shop rows. */
+      const R2 = opts.row ?? {};
       const w = 620 * k, h = 128 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 128 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw + 6;
+      const showAvatar = R2.avatar ?? true;
+      const showBar = R2.progress ?? true;
+      const showAction = R2.action ?? true;
       const slotS = h - inset * 2 - 8;
       const sx = 39 + inset + 6, sy2 = 30 + inset + 4 + 2;
       const icon = opts.icon ?? STOCK_ICONS.user;
-      const tx = sx + slotS + 16 * k;
+      const tx = showAvatar ? sx + slotS + 16 * k : 39 + inset + 12 * k;
       const dim = state === "disabled" ? 0.45 : 1;
-      const title = opts.label ?? "Shadow Knight";
-      const sub = opts.sub ?? "Level 12 · Warrior";
-      const barY = 30 + h - inset - 16 * k, barW = w - (tx - 39) - 90 * k;
-      const fillW2 = barW * clamp(value ?? 0.4, 0, 1);
+      const title = opts.label ?? R2.title ?? "Shadow Knight";
+      const sub = opts.sub ?? R2.sub ?? "Level 12 · Warrior";
+      const fsT = 26 * k * ((R2.titleSize ?? 100) / 100);
+      const fsS = 17 * k * ((R2.subSize ?? 100) / 100);
+      const barY = 30 + h - inset - 16 * k;
+      const barW = w - (tx - 39) - (showAction ? 90 * k : 34 * k);
+      const fillW2 = barW * clamp(value ?? (R2.value !== undefined ? R2.value / 100 : 0.4), 0, 1);
       const gid2 = "dr" + UID++;
       const ov = opts.overlay ?? "";
+      // safe text bounds — long labels clip inside the row, never break layout
+      const clipW = w - (tx - 39) - (showAction ? 74 * k : 22 * k);
       const parts =
-        `<path d="${roundRect(sx, sy2, slotS, slotS, 10 * k)}" fill="${wellFill}" opacity="0.92"/>` +
-        iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 }) +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${26 * k}" font-weight="800" fill="#FFFFFF" opacity="${dim}">${esc(title)}</text>` +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${17 * k}" font-weight="600" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
-        `<defs><linearGradient id="${gid2}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>` +
-        `<path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
-        (fillW2 > 1 ? `<path d="${roundRect(tx, barY, fillW2, 10 * k, 5 * k)}" fill="url(#${gid2})" opacity="${dim}"/>` : "") +
-        (ov === "locked"
-          ? iconGroup(STOCK_ICONS.lock, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, "rgba(255,255,255,0.75)", { strokeWidth: 2.2 })
-          : ov === "check"
-            ? iconGroup(STOCK_ICONS.check, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, glow, { strokeWidth: 2.6 })
-            : ov === "alert"
-              ? iconGroup(STOCK_ICONS.warning, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2.2 })
-              : iconGroup(STOCK_ICONS.forward, 39 + w - 48 * k, 30 + h / 2 - 12 * k, 24 * k, "rgba(255,255,255,0.6)", { strokeWidth: 2.4 }));
+        `<defs><clipPath id="${gid2}c"><rect x="${tx.toFixed(1)}" y="${30 + 2}" width="${clipW.toFixed(1)}" height="${h - 4}"/></clipPath>
+         <linearGradient id="${gid2}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>` +
+        (showAvatar
+          ? `<path d="${roundRect(sx, sy2, slotS, slotS, 10 * k)}" fill="${wellFill}" opacity="0.92"/>` +
+            iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 })
+          : "") +
+        `<g clip-path="url(#${gid2}c)">` +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + (R2.titleDy ?? 0) * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsT.toFixed(1)}" font-weight="800" letter-spacing="${((R2.titleTrack ?? 0) / 100).toFixed(3)}em" fill="#FFFFFF" opacity="${dim}">${esc(title)}</text>` +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + (R2.subDy ?? 0) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
+        `</g>` +
+        (showBar
+          ? `<path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
+            (fillW2 > 1 ? `<path d="${roundRect(tx, barY, fillW2, 10 * k, 5 * k)}" fill="url(#${gid2})" opacity="${dim}"/>` : "")
+          : "") +
+        (!showAction ? ""
+          : ov === "locked"
+            ? iconGroup(STOCK_ICONS.lock, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, "rgba(255,255,255,0.75)", { strokeWidth: 2.2 })
+            : ov === "check"
+              ? iconGroup(STOCK_ICONS.check, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, glow, { strokeWidth: 2.6 })
+              : ov === "alert"
+                ? iconGroup(STOCK_ICONS.warning, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2.2 })
+                : iconGroup(STOCK_ICONS.forward, 39 + w - 48 * k, 30 + h / 2 - 12 * k, 24 * k, "rgba(255,255,255,0.6)", { strokeWidth: 2.4 }));
       return inject(track, parts);
     }
     case "slot": {

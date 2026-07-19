@@ -198,6 +198,11 @@ interface GenStore {
    *  the theme's value applies only to components never adjusted. */
   kitTextOy: Partial<Record<string, number>>;
   setKitTextOy: (key: string, v: number | null) => void;
+  /** Data rows (and objectives built from them) carry their own two-text-group
+   *  content model — independent size, tracking and vertical placement per
+   *  group, plus slot toggles. Too intricate for the generic text controls. */
+  kitRow: RowCfg;
+  setKitRow: (patch: Partial<RowCfg>) => void;
   styleLib: StyleItem[];
   saveStyle: (name: string) => void;
   applyStyle: (id: string) => void;
@@ -239,6 +244,22 @@ export interface StyleItem {
   thumb?: string;
 }
 export interface BoardItem { id: string; libId: string; x: number; y: number; scale?: number }
+/** Two independent text groups + slot toggles for the Data Row family. */
+export interface RowCfg {
+  title: string; sub: string;
+  titleSize: number; subSize: number;     // % of the base row type
+  titleDy: number; subDy: number;         // vertical placement, px
+  titleTrack: number; subTrack: number;   // letter-spacing, em/100
+  avatar: boolean; progress: boolean; action: boolean;
+  value: number;                          // progress fill %
+}
+export function defaultRow(): RowCfg {
+  return {
+    title: "Shadow Knight", sub: "Level 12 · Warrior",
+    titleSize: 100, subSize: 100, titleDy: 0, subDy: 0, titleTrack: 0, subTrack: 0,
+    avatar: true, progress: true, action: true, value: 40,
+  };
+}
 const LIB_KEY = "ui-generator-library";
 const BOARD_KEY = "ui-generator-board";
 function loadJson<T>(key: string, fallback: T): T {
@@ -383,6 +404,13 @@ export const useGen = create<GenStore>((set, get) => ({
     if (d) kitDesigns[id] = d; else delete kitDesigns[id];
     saveJson("ui-generator-kitdesigns", kitDesigns);
     set({ kitDesigns });
+  },
+  kitRow: { ...defaultRow(), ...loadJson<Partial<RowCfg>>("ui-generator-kitrow", {}) },
+  setKitRow: (patch) => {
+    markTouched();
+    const kitRow = { ...get().kitRow, ...patch };
+    saveJson("ui-generator-kitrow", kitRow);
+    set({ kitRow });
   },
   kitTextOy: loadJson<Partial<Record<string, number>>>("ui-generator-kittextoy", {}),
   setKitTextOy: (key, v) => {

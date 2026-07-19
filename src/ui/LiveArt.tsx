@@ -23,6 +23,8 @@ export interface LiveKit {
   max?: string;
   addBtn?: boolean;
   overlay?: string;
+  /** Data-row content model (see KitOpts.row). */
+  row?: Record<string, string | number | boolean | undefined>;
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -80,11 +82,11 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
   // hosts pass fresh kit literals every render — key on the fields, not the
   // object, so the (string-building) renderer only runs when something changed
   const kitKey = kit
-    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}`
+    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}`
     : "";
   const svg = useMemo(
     () => kit
-      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay })
+      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, row: kit.row })
       : renderBevel(cfg, state),
     [cfg, kitKey, state, value] // eslint-disable-line react-hooks/exhaustive-deps
   );

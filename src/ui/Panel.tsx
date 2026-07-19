@@ -239,7 +239,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, styleLib, saveStyle, applyStyle, removeStyle, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -296,25 +296,8 @@ export function Panel() {
     setFontDraft("");
   };
 
-  if (phase === "kit") {
-    // The Kit is a place you go to read and pick — not a control surface.
-    return (
-      <aside className="panel">
-        <div className="sec">
-          <div className="sec-head"><h3>The Kit</h3></div>
-          <div className="sec-body">
-            <div className="helper">The kit works at five scales: foundations, finished components, assemblies, Build Parts for constructing new assets, and complete screen patterns. Every piece uses the same material recipe and remains editable.</div>
-            <div className="helper">The page is permanently alive: press the buttons, drag the sliders, flip the switches, open the dropdown — progress bars replay their fill on click. To restyle a piece, hit the ✎ next to its name; a 🔒 means it's locked to its own look.</div>
-          </div>
-        </div>
-        <div className="btnrow">
-          <button className="randbtn kit on" onClick={() => setPhase("master")}>
-            <PenTool size={16} strokeWidth={1.9} /> Back to editor
-          </button>
-        </div>
-      </aside>
-    );
-  }
+  // (the Kit phase renders no inspector at all — the guideline sheet is the
+  // hero and the whole panel column steps aside; see App.tsx)
 
   if (phase === "board") {
     // Assemble mode: the design controls step aside; only the Library matters.
@@ -760,6 +743,33 @@ export function Panel() {
         <Slider label="Darkness" value={C.extrusion.darkness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.extrusion.darkness = v; })} />
         <div className="helper">The body is lit by the key light — its flanks brighten and darken as you spin the angle. Pressing compresses it.</div>
       </Section>
+
+      {/* ── Data row — its own control model: two independent text groups,
+            slot toggles, safe bounds. Objectives share this editor. ── */}
+      {(focus === "datarow") && (
+        <Section id="datarowsec" title="Data row">
+          <div className="sublabel">Text group A — title</div>
+          <input className="tinput" value={kitRow.title} maxLength={32} aria-label="Row title"
+            onChange={(e) => setKitRow({ title: e.target.value })} />
+          <Slider label="Size" value={kitRow.titleSize} min={60} max={160} unit="%" onChange={(v) => setKitRow({ titleSize: v })} />
+          <Slider label="Tracking" value={kitRow.titleTrack} min={-5} max={20} unit="" onChange={(v) => setKitRow({ titleTrack: v })} />
+          <Slider label="Vertical" value={kitRow.titleDy} min={-20} max={20} unit="px" onChange={(v) => setKitRow({ titleDy: v })} />
+          <div className="sublabel">Text group B — subtitle</div>
+          <input className="tinput" value={kitRow.sub} maxLength={40} aria-label="Row subtitle"
+            onChange={(e) => setKitRow({ sub: e.target.value })} />
+          <Slider label="Size" value={kitRow.subSize} min={60} max={160} unit="%" onChange={(v) => setKitRow({ subSize: v })} />
+          <Slider label="Tracking" value={kitRow.subTrack} min={-5} max={20} unit="" onChange={(v) => setKitRow({ subTrack: v })} />
+          <Slider label="Vertical" value={kitRow.subDy} min={-20} max={20} unit="px" onChange={(v) => setKitRow({ subDy: v })} />
+          <div className="sublabel">Slots</div>
+          <label className="check"><input type="checkbox" checked={kitRow.avatar} onChange={(e) => setKitRow({ avatar: e.target.checked })} /> Portrait / icon slot</label>
+          <label className="check"><input type="checkbox" checked={kitRow.progress} onChange={(e) => setKitRow({ progress: e.target.checked })} /> Progress bar</label>
+          <label className="check"><input type="checkbox" checked={kitRow.action} onChange={(e) => setKitRow({ action: e.target.checked })} /> Trailing action / status</label>
+          {kitRow.progress && (
+            <Slider label="Progress" value={kitRow.value} min={0} max={100} unit="%" onChange={(v) => setKitRow({ value: v })} />
+          )}
+          <div className="helper">Long titles clip inside the row's safe text bounds — they never push the layout. Objective rows use this same model.</div>
+        </Section>
+      )}
 
       {/* ── H · Typography (content lives here too) ───────── */}
       <Section id="typography" title="Typography" summary={<span>{cfg.content.label || T2.font}</span>}>

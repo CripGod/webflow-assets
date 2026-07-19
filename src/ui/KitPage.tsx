@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import { Download, Lock, PenTool, SquarePen } from "lucide-react";
+import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName } from "@/generator/model";
+import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix } from "@/generator/model";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize } from "@/generator/model";
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
-import { silhouetteMeta } from "@/generator/silhouettes";
+import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
 import { previewSvg } from "@/generator/icons";
-import { downloadSvg } from "@/generator/exportUtils";
+import { downloadSvg, downloadZip } from "@/generator/exportUtils";
 import { LiveArt } from "./LiveArt";
 
 /* The Kit — a living guideline sheet in five levels: Foundations, Components,
@@ -132,9 +132,53 @@ function Chapter({ id, label, blurb }: { id: string; label: string; blurb: strin
   );
 }
 
-/** Small metadata chips under a Build Part. */
+/** Small annotation line under a Build Part — plain editorial text, not pills. */
 function Meta({ items }: { items: string[] }) {
   return <div className="kp-meta">{items.map((m) => <span key={m}>{m}</span>)}</div>;
+}
+
+/** Structured spec rows — the documentation voice for property readouts.
+ *  Key/value lines with one shared left edge; pills stay reserved for real
+ *  selections and states. */
+function SpecList({ rows }: { rows: [string, string][] }) {
+  return (
+    <dl className="kp-spec">
+      {rows.map(([k, v]) => (
+        <div className="kp-specline" key={k}><dt>{k}</dt><dd>{v}</dd></div>
+      ))}
+    </dl>
+  );
+}
+
+/* relative luminance + WCAG-ish contrast for the accessibility read */
+function lum(hex: string): number {
+  const p = parseInt(hex.slice(1), 16);
+  const f = (v: number) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * f((p >> 16) & 255) + 0.7152 * f((p >> 8) & 255) + 0.0722 * f(p & 255);
+}
+function contrast(a: string, b: string): number {
+  const l1 = lum(a), l2 = lum(b);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+function assess(cfg: GenConfig): { level: "Strong" | "Fair" | "Risky"; notes: string[] } {
+  const T = cfg.type;
+  const face = cfg.face.mode === "dark" ? hexMix(cfg.effects.Bevel ?? "#0E9CC9", "#0B0714", 0.72) : (cfg.effects["Inner Fill"] ?? "#2CC5F0");
+  const label = T.fillMode === "auto"
+    ? (cfg.face.mode === "dark" ? "#EAF6FF" : "#FFFFFF")
+    : T.fillMode === "gradient" ? hexMix(T.fill, T.fill2, 0.5) : T.fill;
+  const ratio = contrast(label, face);
+  const notes: string[] = [];
+  let hard = false;
+  if (ratio < 3) { hard = true; notes.push(`Label vs. face contrast is about ${ratio.toFixed(1)}:1 — hard to read for a lot of players. A darker face or brighter fill would help.`); }
+  else if (ratio < 4.5) notes.push(`Label contrast is around ${ratio.toFixed(1)}:1 — fine for big display text, but small labels may get murky.`);
+  if (T.outline.on && ratio < 4.5) notes.push("The outline is doing real legibility work here — keep it on.");
+  if (T.glow.on && T.glow.size > 16 && T.glow.opacity > 85) notes.push("That much glow can halo the letterforms at small sizes — consider easing size or opacity.");
+  if (T.spacing < -2) notes.push("Tight negative tracking crowds the glyphs — small text will smudge.");
+  if ((T.outline.on && T.outline.width < 1)) notes.push("A sub-1px outline tends to disappear on low-DPI screens.");
+  if (cfg.candy.pattern.type !== "none" && cfg.candy.pattern.opacity > 60) notes.push("The face pattern is strong enough to compete with the label — lower its opacity for text-heavy pieces.");
+  const level = hard ? "Risky" : notes.length > 1 ? "Fair" : "Strong";
+  if (!notes.length) notes.push("Contrast, tracking and effects all look comfortable. Nice.");
+  return { level, notes };
 }
 
 /** A live piece row shown at several states, tiny captions underneath. */
@@ -250,6 +294,10 @@ export function KitPage() {
   const [splashHi, setSplashHi] = useState("VICTORY");
   const splashArt = useMemo(() => renderTypeSpecimen(cfg, splash, { highlight: splashHi }), [cfg, splash, splashHi]);
 
+  // accessibility read — friendly, hidden behind a disclosure
+  const [a11yOpen, setA11yOpen] = useState(false);
+  const audit = useMemo(() => assess(cfg), [cfg]);
+
   const specimen = useMemo(() => renderTypeSpecimen(cfg, label), [cfg, label]);
   const loadingArt = useMemo(() => renderTypeSpecimen(cfg, "LOADING"), [cfg]);
   const alphaUp = useMemo(() => renderTypeSpecimen(cfg, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", { keepCase: true }), [cfg]);
@@ -330,7 +378,16 @@ export function KitPage() {
           {[["foundations", "Foundations"], ["components", "Components"], ["assemblies", "Assemblies"], ["parts", "Build Parts"], ["patterns", "Screen Patterns"]].map(([id, name]) => (
             <button key={id} onClick={() => document.getElementById(`chap-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{name}</button>
           ))}
+          <button className="kp-a11ybtn" aria-expanded={a11yOpen} onClick={() => setA11yOpen((v) => !v)}>
+            <ShieldCheck size={13} strokeWidth={2.2} /> Accessibility · {audit.level}
+          </button>
         </nav>
+        {a11yOpen && (
+          <div className={`kp-a11y ${audit.level.toLowerCase()}`} role="status">
+            <b>{audit.level === "Strong" ? "Strong — reads clearly." : audit.level === "Fair" ? "Fair — solid, with a couple of watch-outs." : "Risky — worth a tweak before shipping."}</b>
+            <ul>{audit.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+          </div>
+        )}
       </header>
 
       <Chapter id="foundations" label="Foundations" blurb="the tokens and type everything else inherits" />
@@ -347,15 +404,15 @@ export function KitPage() {
             </div>
           ))}
         </div>
-        <div className="kp-specrow">
-          <span>Face <b>{cfg.face.mode === "dark" ? "Dark" : "Light"}</b></span>
-          <span>Wall <b>{cfg.bevel.width}px</b></span>
-          <span>Extrusion <b>{cfg.candy.extrusion.depth}px</b></span>
-          <span>Key light <b>{cfg.lighting.angle}°</b></span>
-          <span>Gloss <b>{cfg.candy.gloss.on ? `${cfg.candy.gloss.opacity}%` : "Off"}</b></span>
-          <span>Specular <b>{cfg.candy.specular.on ? specularName : "Off"}</b></span>
-          <span>Pattern <b>{patternName}</b></span>
-        </div>
+        <SpecList rows={[
+          ["Face", cfg.face.mode === "dark" ? "Dark" : "Light"],
+          ["Wall", `${cfg.bevel.width}px`],
+          ["Extrusion", `${cfg.candy.extrusion.depth}px`],
+          ["Key light", `${cfg.lighting.angle}°`],
+          ["Gloss", cfg.candy.gloss.on ? `${cfg.candy.gloss.opacity}%` : "Off"],
+          ["Specular", cfg.candy.specular.on ? specularName : "Off"],
+          ["Pattern", patternName],
+        ]} />
       </Sec>
 
       {/* ── 02 · typography ── */}
@@ -366,22 +423,22 @@ export function KitPage() {
           <Art svg={alphaLo} scale={0.4} />
           <Art svg={digits} scale={0.4} />
         </div>
-        <div className="kp-specrow">
-          <span>Font <b>{T.font}</b></span>
-          <span>Weight <b>{caps?.wght ? `${T.weight} (var ${caps.wght[0]}–${caps.wght[1]})` : (caps?.weights ?? [T.weight]).join(" · ")}{T.italic ? " Italic" : ""}</b></span>
-          {caps?.wdth && <span>Width <b>{T.width ?? caps.wdth[2]}% (var {caps.wdth[0]}–{caps.wdth[1]})</b></span>}
-          <span>Size <b>{T.size}px</b></span>
-          <span>Case <b>{caseName}</b></span>
-          <span>Tracking <b>{T.spacing}</b></span>
-          <span>Fill <b>{T.fillMode === "auto" ? "Auto" : T.fillMode === "solid" ? "Solid" : "Gradient"}</b></span>
-          <span>Treatment <b>{typeFx.length ? typeFx.join(" + ") : "Plain"}</b></span>
-        </div>
-        <div className="kp-specrow">
-          <a className="kp-link" target="_blank" rel="noreferrer"
+        <SpecList rows={[
+          ["Font", T.font + (T.italic ? " Italic" : "")],
+          ["Weight", caps?.wght ? `${T.weight} · variable ${caps.wght[0]}–${caps.wght[1]}` : (caps?.weights ?? [T.weight]).join(" / ")],
+          ...(caps?.wdth ? [["Width", `${T.width ?? caps.wdth[2]}% · variable ${caps.wdth[0]}–${caps.wdth[1]}`] as [string, string]] : []),
+          ["Size", `${T.size}px`],
+          ["Case", caseName],
+          ["Tracking", String(T.spacing)],
+          ["Fill", T.fillMode === "auto" ? "Auto" : T.fillMode === "solid" ? "Solid" : "Gradient"],
+          ["Treatment", typeFx.length ? typeFx.join(" + ") : "Plain"],
+        ]} />
+        <div className="kp-links">
+          <a target="_blank" rel="noreferrer"
             href={`https://github.com/google/fonts/tree/main/ofl/${T.font.toLowerCase().replace(/[^a-z0-9]/g, "")}`}>
             {T.font} on GitHub ↗
           </a>
-          <a className="kp-link" target="_blank" rel="noreferrer"
+          <a target="_blank" rel="noreferrer"
             href={`https://fonts.google.com/specimen/${encodeURIComponent(T.font).replace(/%20/g, "+")}`}>
             Google Fonts ↗
           </a>
@@ -557,23 +614,25 @@ export function KitPage() {
           <Piece id="datarow" caption="Locked" overlay="locked" baseState="disabled" label="???" sub="Reach level 20" value={0} scale={0.42} />
           <Piece id="datarow" caption="Completed" overlay="check" label="Daily Login" sub="Reward ready" value={1} scale={0.42} />
         </div>
-        <div className="kp-subhead">Item slots — stackable status overlays</div>
-        <div className="kp-tray">
-          <Piece id="slot" caption="Empty" icon={null} scale={0.4} />
-          <Piece id="slot" caption="Filled" icon={STOCK_ICONS.gem} scale={0.4} />
-          <Piece id="slot" caption="Count" icon={STOCK_ICONS.gem} overlay="count:14" scale={0.4} />
-          <Piece id="slot" caption="Level" icon={STOCK_ICONS.user} overlay="level:12" scale={0.4} />
-          <Piece id="slot" caption="Locked" icon={STOCK_ICONS.gem} overlay="locked" scale={0.4} />
-          <Piece id="slot" caption="New" icon={STOCK_ICONS.bag} overlay="new" scale={0.4} />
-          <Piece id="slot" caption="Equipped" icon={STOCK_ICONS.gem} overlay="equipped" scale={0.4} />
-          <Piece id="slot" caption="Cooldown" icon={STOCK_ICONS.gem} overlay="cooldown:12s" scale={0.4} />
-          <Piece id="slot" caption="Claimable" icon={STOCK_ICONS.gem} overlay="claimable" baseState="hover" scale={0.4} />
+        <div className="kp-subhead">Item slots — one family, stackable status overlays</div>
+        <div className="kp-slotgrid">
+          <Piece id="slot" caption="Empty" icon={null} scale={0.38} />
+          <Piece id="slot" caption="Filled" icon={STOCK_ICONS.gem} scale={0.38} />
+          <Piece id="slot" caption="Count" icon={STOCK_ICONS.gem} overlay="count:14" scale={0.38} />
+          <Piece id="slot" caption="Level" icon={STOCK_ICONS.user} overlay="level:12" scale={0.38} />
+          <Piece id="slot" caption="Equipped" icon={STOCK_ICONS.gem} overlay="equipped" scale={0.38} />
+          <Piece id="slot" caption="New" icon={STOCK_ICONS.bag} overlay="new" scale={0.38} />
+          <Piece id="slot" caption="Claimable" icon={STOCK_ICONS.gem} overlay="claimable" baseState="hover" scale={0.38} />
+          <Piece id="slot" caption="Cooldown" icon={STOCK_ICONS.gem} overlay="cooldown:12s" scale={0.38} />
+          <Piece id="slot" caption="Locked" icon={STOCK_ICONS.gem} overlay="locked" scale={0.38} />
         </div>
+        <Meta items={["Same footprint per size", "icon centered at 60%", "badges pin to corners", "veil states dim the well only", "captions always below"]} />
         <div className="kp-subhead">Progress rings & timers — click one to replay it</div>
-        <div className="kp-tray">
+        <div className="kp-ringrow">
           <Piece id="ring" size="s" caption="Small" value={0.3} scale={0.5} />
-          <Piece id="ring" size="m" caption="Countdown" value={0.72} label="0:42" scale={0.5} ambient />
+          <Piece id="ring" size="m" caption="Standard" value={0.62} scale={0.5} />
           <Piece id="ring" size="l" caption="Large" value={0.62} scale={0.5} />
+          <Piece id="ring" size="m" caption="Countdown" value={0.72} label="0:42" scale={0.5} ambient />
           <Piece id="ring" size="m" caption="Nearly done" value={0.94} scale={0.5} />
           <Piece id="ring" size="m" caption="Complete" value={1} label="✓" scale={0.5} />
           <Piece id="ring" size="m" caption="Expired" value={0} label="0:00" baseState="disabled" scale={0.5} />
@@ -690,16 +749,22 @@ export function KitPage() {
       {/* ── 12 · reward & objectives ── */}
       <Sec n="12" title="Reward Track & Objectives" note="Progression assemblies — the track scrolls horizontally when it outgrows the row; every milestone is a registered slot.">
         <div className="kp-subhead">Reward track</div>
-        <div className="kp-track">
-          <div className="kp-rail"><span className="kp-railfill" style={{ width: "46%" }} /></div>
-          <div className="kp-milestones">
-            <div className="kp-mile"><PPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="check" scale={0.34} /><span>Claimed</span></div>
-            <div className="kp-mile"><PPiece id="slot" size="s" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.34} /><span>Claimable</span></div>
-            <div className="kp-mile current"><PPiece id="ring" size="s" value={0.46} scale={0.4} /><span>Current</span></div>
-            <div className="kp-mile"><PPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="locked" scale={0.34} /><span>Locked</span></div>
-            <div className="kp-mile"><PPiece id="slot" size="s" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.34} /><span>Final</span></div>
-          </div>
+        <div className="kp-track2">
+          {([
+            ["Claimed", <PPiece key="a" id="slot" size="s" icon={STOCK_ICONS.gem} overlay="check" scale={0.34} />, "done"],
+            ["Claimable", <PPiece key="b" id="slot" size="s" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.34} />, "done"],
+            ["Current", <PPiece key="c" id="ring" size="s" value={0.46} scale={0.4} />, "pending"],
+            ["Upcoming", <PPiece key="d" id="slot" size="s" icon={STOCK_ICONS.gem} overlay="locked" scale={0.34} />, "pending"],
+            ["Final", <PPiece key="e" id="slot" size="s" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.34} />, null],
+          ] as [string, React.ReactNode, string | null][]).map(([capn, node, conn], i) => (
+            <div className="kp-tstop" key={capn}>
+              <div className={`kp-tnode${capn === "Current" ? " current" : ""}`}>{node}</div>
+              <span className="kp-tcap">{capn}</span>
+              {conn && <span className={`kp-tconn ${conn}`} data-i={i} />}
+            </div>
+          ))}
         </div>
+        <Meta items={["Rail states: done · pending", "milestones on one rhythm", "scrolls horizontally when it outgrows the row"]} />
         <div className="kp-subhead">Objective list</div>
         <div className="kp-tray">
           <Piece id="datarow" caption="In progress" label="Win 3 matches" sub="2 of 3 · +250 gems" value={0.66} scale={0.42} />
@@ -728,12 +793,18 @@ export function KitPage() {
           <div className="gp-card">
             <div className="gp-title">Spotlight · target ring</div>
             <div className="kp-dim">
-              <span className="kp-spot">
+              {/* the ring IS the treatment — it points at any registered
+                  component without wrapping or altering it */}
+              <span className="kp-spot pure">
                 <span className="kp-ringpulse" />
-                <PPiece id="small" label="CLAIM" baseState="hover" scale={0.3} />
+                <span className="kp-spothole" />
               </span>
               <span className="kp-pointer">▲</span>
-              <span className="gp-label">Rewards land here</span>
+              <span className="gp-label">The ring targets any component — nothing is nested inside it</span>
+            </div>
+            <div className="kp-dim">
+              <span className="kp-locpin"><span className="kp-ringpulse" /><span className="kp-locdot" /></span>
+              <span className="gp-label">Current-location marker</span>
             </div>
           </div>
           <div className="gp-card">
@@ -758,7 +829,47 @@ export function KitPage() {
       <Chapter id="parts" label="Build Parts" blurb="the construction vocabulary — build what the kit doesn’t have yet without breaking the language" />
 
       {/* ── 14 · build parts ── */}
-      <Sec n="14" title="Build Parts" note="Everything above is built from these. Click any part to open the layer that produces it in the editor.">
+      <Sec n="14" title="Build Parts" note="Everything above is built from these. Click any part to open the layer that produces it in the editor. Download the whole inventory, or one taxonomy at a time — layered SVGs with named groups (shell, face, content…), plus nine-slice metadata for stretchable pieces.">
+        <div className="kp-dlrow">
+          {([["all", "Full pack"], ["components", "Components"], ["layers", "Material layers"], ["controls", "Control pieces"], ["type", "Typography recipe"]] as const).map(([which, capn]) => (
+            <button key={which} onClick={() => {
+              const st = useGen.getState();
+              const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+              const files: { path: string; data: string }[] = [];
+              if (which === "all" || which === "layers") layerCards.forEach((lc) => files.push({ path: `build-parts/material-layers/${slug(lc.name)}.svg`, data: lc.svg }));
+              if (which === "all" || which === "type") recipe.forEach((r) => files.push({ path: `build-parts/typography-recipe/${slug(r.name)}.svg`, data: r.svg }));
+              if (which === "all" || which === "controls") (["slider", "toggle", "progress", "badge", "ring", "slot", "resource", "datarow"] as KitComponentId[]).forEach((cid) =>
+                files.push({ path: `build-parts/control-pieces/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, "m", "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
+              if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) =>
+                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, st.kitSizes[cid] ?? "m", "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${st.kitSizes[cid] ?? "m"}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
+              if (which === "all") {
+                files.push({
+                  path: "9slice.json",
+                  data: JSON.stringify({
+                    note: "Fixed-cap insets for stretchable pieces. Values are fractions of the piece's shell height H: the caps are capScale×H px wide and must not stretch; only the center region stretches. content gives the text-safe insets.",
+                    silhouettes: SILHOUETTES.map((s) => ({ id: s.id, name: s.name, capScale: s.capScale, content: s.content })),
+                  }, null, 2),
+                });
+                files.push({
+                  path: "README.md",
+                  data: [
+                    "# UI Kit asset pack", "",
+                    "Layered SVGs from The UI Generator. Every component keeps named groups —",
+                    "cast-shadow, extrusion, shell, face, content, gloss, specular — so Figma", "imports them as a readable layer tree.", "",
+                    "## Figma", "Drag any SVG onto the canvas. Ungroup once to reach the named layers.", "",
+                    "## Illustrator", "Open directly. You may see 'Clipping will be lost on roundtrip to Tiny' —",
+                    "that warning concerns re-SAVING to the SVG Tiny profile; the artwork imports",
+                    "completely. The candy face requires one clip group (gloss, pattern and",
+                    "speculars must stay inside the face), which is what triggers the notice.", "",
+                    "## Nine-slice scaling", "See 9slice.json: caps are fixed (capScale × shell height), centers stretch.",
+                    "The `content` insets are the text-safe area used by the generator itself.",
+                  ].join("\n"),
+                });
+              }
+              downloadZip(`ui-kit-${which}.zip`, files);
+            }}><Download size={12} strokeWidth={2.2} /> {capn}</button>
+          ))}
+        </div>
         <div className="kp-subhead">Stretch systems</div>
         <p className="kp-note">Every silhouette is procedural three-slice geometry: caps are sized by height and never distort; only the middle stretches. Magenta dashes mark the fixed caps, green marks the text-safe area.</p>
         <div className="kp-slices">
