@@ -57,6 +57,7 @@ export function CanvasView() {
 
   return (
     <div className={`canvas-wrap${phase !== "master" ? " kitmode" : ""}`}>
+      <div className="canvas-col">
       <div
         ref={scroller}
         className={`canvas${panMode ? " pan" : ""}`}
@@ -141,7 +142,13 @@ export function CanvasView() {
           </div>
         )}
 
+        {/* the toolbar lives OUTSIDE the scroller so it floats over the canvas
+            instead of scrolling away with a long page (the Kit sheet) */}
+      </div>
         <div className="zoolbar" role="toolbar" aria-label="Canvas tools">
+          {/* the Kit page is permanently alive — Design/Play only applies to
+              the editor hero and the board */}
+          {phase !== "kit" && (<>
           <button className={!playing ? "on" : ""} title="Design mode — canvas stays on the state you're editing"
             aria-pressed={!playing} onClick={() => setCanvasMode("design")}>
             <SquarePen size={17} strokeWidth={1.8} />
@@ -151,6 +158,7 @@ export function CanvasView() {
             <Play size={17} strokeWidth={1.8} />
           </button>
           <span className="zdiv" />
+          </>)}
           <button className={panMode ? "on" : ""} title="Pan" aria-pressed={panMode} onClick={() => setPanMode(!panMode)}>
             <Hand size={18} strokeWidth={1.8} />
           </button>

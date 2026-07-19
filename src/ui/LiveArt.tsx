@@ -23,7 +23,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
  *  host wires it). Play mode: hover/press states, toggles flip, sliders drag,
  *  segments switch, progress animates, dropdowns open, badges award — every
  *  interaction the component implies, all through the same pure renderer. */
-export function LiveArt({ cfg, kit, playing, scale, anchorContent, className, style, title, onDesignClick }: {
+export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, className, style, title, onDesignClick }: {
   cfg: GenConfig;
   kit?: LiveKit;
   playing: boolean;
@@ -32,6 +32,8 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, className, st
   /** Anchor the shell, not the glow pad: pulls the art up-left by the pad so
    *  top-left-positioned hosts (the board) keep their saved layouts. */
   anchorContent?: boolean;
+  /** Progress bars quietly re-fill on their own — the page breathes. */
+  ambient?: boolean;
   className?: string;
   style?: React.CSSProperties;
   title?: string;
@@ -114,6 +116,14 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, className, st
     };
     raf.current = requestAnimationFrame(step);
   };
+
+  // ambient progress: each bar drifts to a fresh value on its own beat
+  const beat = useRef(3800 + Math.random() * 2200);
+  useEffect(() => {
+    if (!ambient || id !== "progress" || !playing) return;
+    const t = window.setInterval(() => animateProgress(0.1 + Math.random() * 0.88), beat.current);
+    return () => window.clearInterval(t);
+  }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const playHandlers = {
     onPointerEnter: (e: React.PointerEvent) => setLive(e.buttons === 1 ? "pressed" : "hover"),

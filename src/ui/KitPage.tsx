@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { Download, PenTool } from "lucide-react";
+import { Download, Lock, PenTool, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES } from "@/generator/model";
+import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign } from "@/generator/model";
 import type { GenStateName, IconDef, KitComponentId, KitSize } from "@/generator/model";
 import { renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { downloadSvg } from "@/generator/exportUtils";
@@ -9,7 +9,8 @@ import { LiveArt } from "./LiveArt";
 
 /* The Kit — a vertically scrolling guideline sheet: tokens, type, every
    component in true relative scale, and five little screens built from them.
-   Everything is drawn by the one renderer; Play makes the whole page live. */
+   Everything is drawn by the one renderer, and the whole page is permanently
+   alive — press, drag, flip, open. Editing goes through the ✎ buttons. */
 
 const PIECE_SCALE = 0.5;
 const PATTERN_SCALE = 0.34;
@@ -28,14 +29,18 @@ interface PieceOpts {
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
 }
 
-/** Shared plumbing for every live piece on this page. */
+/** Shared plumbing for every live piece on this page. The page is always
+ *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, canvasMode, setFocus, setKitSize } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, setFocus, setKitSize } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   const size = p.size ?? kitSizes[p.id] ?? "m";
   return {
-    cfg, playing: canvasMode === "play", size, setKitSize,
+    // a locked component renders its own snapshot, not the master's style
+    cfg: applyKitDesign(cfg, kitDesigns[p.id]),
+    locked: !!kitDesigns[p.id],
+    size, setKitSize,
     sizable: p.size === undefined,
     name: KIT_COMPONENTS.find((c) => c.id === p.id)?.name ?? p.id,
     kit: { id: p.id, size, shape: kitShapes[p.id], label: p.label, segments: p.segments, icon: p.icon, value: p.value, baseState: p.baseState },
@@ -43,15 +48,20 @@ function usePiece(p: PieceOpts) {
   };
 }
 
-/** One specced piece: live art + a caption rail with sizes and an SVG export. */
-function Piece(p: PieceOpts & { caption: string }) {
-  const { cfg, playing, size, setKitSize, sizable, name, kit, onEdit } = usePiece(p);
+/** One specced piece: live art + a caption rail with edit, sizes and export. */
+function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
+  const { cfg, locked, size, setKitSize, sizable, name, kit, onEdit } = usePiece(p);
   return (
     <figure className="kp-piece">
-      <LiveArt cfg={cfg} playing={playing} scale={p.scale ?? PIECE_SCALE} className="kp-live"
-        kit={kit} title={playing ? p.caption : `Edit ${name}`} onDesignClick={onEdit} />
+      <LiveArt cfg={cfg} playing scale={p.scale ?? PIECE_SCALE} className="kp-live"
+        kit={kit} title={p.caption} ambient={p.ambient} />
       <figcaption className="kp-cap">
+        {locked && <Lock className="kp-lockic" size={11} strokeWidth={2.4} aria-label="Locked to its own look" />}
         <span>{p.caption}</span>
+        <button className="kp-edit" title={`Edit ${name} in the editor`} aria-label={`Edit ${name}`}
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}>
+          <SquarePen size={12} strokeWidth={2.2} />
+        </button>
         {sizable && (
           <span className="kp-sizes">
             {(["s", "m", "l"] as const).map((s) => (
@@ -63,10 +73,10 @@ function Piece(p: PieceOpts & { caption: string }) {
         <button className="kp-dl" title={`Export ${p.caption} SVG`} aria-label={`Export ${p.caption} SVG`}
           onClick={(e) => {
             e.stopPropagation();
-            const { cfg: c, kitShapes: ks } = useGen.getState();
+            const { cfg: c, kitShapes: ks, kitDesigns: kd } = useGen.getState();
             const variant = p.caption.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
             downloadSvg(
-              renderKit(c, p.id, size, p.baseState ?? "default", p.value, ks[p.id], { label: p.label, segments: p.segments, icon: p.icon, expand: true }),
+              renderKit(applyKitDesign(c, kd[p.id]), p.id, size, p.baseState ?? "default", p.value, ks[p.id], { label: p.label, segments: p.segments, icon: p.icon, expand: true }),
               `kit-${variant}-${size}.svg`
             );
           }}>
@@ -78,11 +88,11 @@ function Piece(p: PieceOpts & { caption: string }) {
 }
 
 /** A piece inside a pattern mock — no caption rail, tighter scale. */
-function PPiece(p: PieceOpts) {
-  const { cfg, playing, name, kit, onEdit } = usePiece({ ...p, size: p.size ?? "m" });
+function PPiece(p: PieceOpts & { ambient?: boolean }) {
+  const { cfg, name, kit } = usePiece({ ...p, size: p.size ?? "m" });
   return (
-    <LiveArt cfg={cfg} playing={playing} scale={p.scale ?? PATTERN_SCALE} className="gp-piece"
-      kit={kit} title={playing ? name : `Edit ${name}`} onDesignClick={onEdit} />
+    <LiveArt cfg={cfg} playing scale={p.scale ?? PATTERN_SCALE} className="gp-piece"
+      kit={kit} title={name} ambient={p.ambient} />
   );
 }
 
@@ -101,8 +111,7 @@ function Sec({ n, title, note, children }: { n: string; title: string; note?: st
 }
 
 export function KitPage() {
-  const { cfg, canvasMode, setPhase } = useGen();
-  const playing = canvasMode === "play";
+  const { cfg, setPhase } = useGen();
   const dark = cfg.canvas === "#1C1D22" || cfg.canvas === "#000000";
   const preset = PRESETS.find((p) => p.id === cfg.presetId);
   const sil = SHAPES.find((s) => s.id === cfg.shape)?.name.split(" — ")[0] ?? "Custom";
@@ -121,7 +130,7 @@ export function KitPage() {
   const alphabet = useMemo(() => renderTypeSpecimen(cfg, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789"), [cfg]);
 
   return (
-    <div className={`kitpage${dark ? " dark" : ""}${playing ? " playing" : ""}`}>
+    <div className={`kitpage${dark ? " dark" : ""}`}>
       <button className="makekit kitback" onClick={() => setPhase("master")} title="Back to the component editor">
         <PenTool size={14} strokeWidth={2} /> Edit master
       </button>
@@ -132,8 +141,7 @@ export function KitPage() {
         <h1 className="kp-title">The {preset?.name ?? "Custom"} Kit</h1>
         <p className="kp-sub">
           {sil} silhouette · {T.font} · {KIT_COMPONENTS.length} components dressed in one material recipe.
-          {playing ? " Play is on — press, drag, flip and open everything below."
-            : " Click any piece to open it in the editor, or hit Play (▶ in the canvas toolbar) and this whole page comes alive."}
+          {" Everything on this page is alive — press the buttons, drag the sliders, flip the switches, open the dropdown. To restyle a piece, hit the ✎ next to its name."}
         </p>
         <div className="kp-dots" aria-hidden="true">
           {roles.map((r) => <span key={r} style={{ background: cfg.effects[r] }} />)}
@@ -178,6 +186,16 @@ export function KitPage() {
           <span>Fill <b>{T.fillMode === "auto" ? "Auto" : T.fillMode === "solid" ? "Solid" : "Gradient"}</b></span>
           <span>Treatment <b>{typeFx.length ? typeFx.join(" + ") : "Plain"}</b></span>
         </div>
+        <div className="kp-specrow">
+          <a className="kp-link" target="_blank" rel="noreferrer"
+            href={`https://github.com/google/fonts/tree/main/ofl/${T.font.toLowerCase().replace(/[^a-z0-9]/g, "")}`}>
+            {T.font} on GitHub ↗
+          </a>
+          <a className="kp-link" target="_blank" rel="noreferrer"
+            href={`https://fonts.google.com/specimen/${encodeURIComponent(T.font).replace(/%20/g, "+")}`}>
+            Google Fonts ↗
+          </a>
+        </div>
       </Sec>
 
       {/* ── 03 · buttons ── */}
@@ -196,7 +214,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 04 · choice controls ── */}
-      <Sec n="04" title="Choice" note="Checks, radios and switches share the shell. In Play, they really flip.">
+      <Sec n="04" title="Choice" note="Checks, radios and switches share the shell — click a toggle and it really flips.">
         <div className="kp-tray">
           <Piece id="checkbox" caption="Checkbox" />
           <Piece id="radio" caption="Radio" />
@@ -206,7 +224,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 05 · fields ── */}
-      <Sec n="05" title="Fields" note="Wells sunk into the same candy. The dropdown opens on click in Play.">
+      <Sec n="05" title="Fields" note="Wells sunk into the same candy. Click the dropdown and it opens.">
         <div className="kp-tray">
           <Piece id="input" caption="Input" />
           <Piece id="dropdown" caption="Dropdown" />
@@ -216,15 +234,15 @@ export function KitPage() {
       </Sec>
 
       {/* ── 06 · sliders & progress ── */}
-      <Sec n="06" title="Sliders & Progress" note="In Play: drag the slider, click the bar and watch it fill.">
+      <Sec n="06" title="Sliders & Progress" note="Drag the slider. The progress bar fills on its own — click it to send it somewhere new.">
         <div className="kp-tray">
           <Piece id="slider" caption="Slider" value={0.62} />
-          <Piece id="progress" caption="Progress" value={0.62} />
+          <Piece id="progress" caption="Progress" value={0.62} ambient />
         </div>
       </Sec>
 
       {/* ── 07 · feedback ── */}
-      <Sec n="07" title="Feedback" note="Counts, awards and callouts. Click a badge in Play to award it.">
+      <Sec n="07" title="Feedback" note="Counts, awards and callouts. Click a badge to award it.">
         <div className="kp-tray">
           <Piece id="badge" caption="Badge · Count" label="12" />
           <Piece id="badge" caption="Badge · Awarded" baseState="pressed" />
@@ -246,7 +264,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 09 · patterns ── */}
-      <Sec n="09" title="Patterns" note="The kit at work — five little screens built from nothing but the pieces above. All of it stays live in Play.">
+      <Sec n="09" title="Patterns" note="The kit at work — five little screens built from nothing but the pieces above, all of them live.">
         <div className="kp-patterns">
           <div className="gp-card">
             <div className="gp-title">Sign in</div>
@@ -259,10 +277,9 @@ export function KitPage() {
           <div className="gp-card">
             <div className="gp-title">Settings</div>
             <PPiece id="header" label="SETTINGS" scale={0.3} />
-            <div className="gp-row"><span className="gp-label">Music</span><PPiece id="toggle" value={1} /></div>
-            <div className="gp-row"><span className="gp-label">Sound FX</span><PPiece id="toggle" value={1} /></div>
+            <div className="gp-col"><span className="gp-label">Music</span><PPiece id="slider" value={0.8} /></div>
+            <div className="gp-col"><span className="gp-label">Sound FX</span><PPiece id="slider" value={0.55} /></div>
             <div className="gp-row"><span className="gp-label">Haptics</span><PPiece id="toggle" value={0} /></div>
-            <div className="gp-col"><span className="gp-label">Master volume</span><PPiece id="slider" value={0.7} /></div>
             <PPiece id="small" label="DONE" />
           </div>
           <div className="gp-card">
@@ -275,7 +292,7 @@ export function KitPage() {
                 <PPiece id="chip" label="LV 12" icon={STOCK_ICONS.star} scale={0.3} />
               </div>
             </div>
-            <div className="gp-col"><span className="gp-label">XP · 620 / 1000</span><PPiece id="progress" value={0.62} /></div>
+            <div className="gp-col"><span className="gp-label">XP · 620 / 1000</span><PPiece id="progress" value={0.62} ambient /></div>
             <PPiece id="small" label="EDIT" scale={0.3} />
           </div>
           <div className="gp-card">

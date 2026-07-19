@@ -548,6 +548,23 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "dropdown", name: "Dropdown" },
 ];
 
+/* A locked component keeps a full design snapshot of its own — the master
+   keeps evolving, the locked piece doesn't move. State forks ride along so
+   hover/pressed render exactly as they looked when locked. */
+export interface KitDesign extends StateDesign { stateDesigns?: GenConfig["stateDesigns"] }
+
+/** Render-time merge: a locked component's snapshot replaces every design
+ *  field of the master config. Content, states-adjustments and canvas stay
+ *  shared — the lock is about the look, not the words. */
+export function applyKitDesign(cfg: GenConfig, kd?: KitDesign | null): GenConfig {
+  if (!kd) return cfg;
+  return {
+    ...cfg, shape: kd.shape, effects: kd.effects, face: kd.face, bevel: kd.bevel, candy: kd.candy,
+    lighting: kd.lighting, shadow: kd.shadow, transparency: kd.transparency, type: kd.type,
+    stateDesigns: kd.stateDesigns ?? {},
+  };
+}
+
 /* Style is global; silhouettes are per-component. These are the curated
    defaults — the master's silhouette everywhere else, and each component
    can be overridden individually while focused. */

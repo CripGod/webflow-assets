@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS, KIT_SHAPE } from "./model";
+import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS, KIT_SHAPE, applyKitDesign } from "./model";
+import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
 import siteDefaultJson from "./site-default.json";
 import bubblePopJson from "./preset-bubble-pop.json";
@@ -190,6 +191,8 @@ interface GenStore {
   setFocus: (f: KitComponentId | null) => void;
   kitShapes: Partial<Record<KitComponentId, Shape>>;
   setKitShape: (id: KitComponentId, shape: Shape) => void;
+  kitDesigns: Partial<Record<KitComponentId, KitDesign>>;
+  setKitDesign: (id: KitComponentId, d: KitDesign | null) => void;
   styleLib: StyleItem[];
   saveStyle: (name: string) => void;
   applyStyle: (id: string) => void;
@@ -227,6 +230,8 @@ export interface LibItem { id: string; name: string; cfg: GenConfig; kit?: LibKi
 export interface StyleItem {
   id: string; name: string;
   style: Pick<GenConfig, "effects" | "face" | "bevel" | "candy" | "lighting" | "shadow" | "transparency" | "type" | "states" | "stateDesigns">;
+  /** Rendered at save time by the same engine — the style's face in the list. */
+  thumb?: string;
 }
 export interface BoardItem { id: string; libId: string; x: number; y: number; scale?: number }
 const LIB_KEY = "ui-generator-library";
@@ -277,8 +282,10 @@ export const useGen = create<GenStore>((set, get) => ({
   setCanvasMode: (m) => set({ canvasMode: m }),
   library: loadJson<LibItem[]>(LIB_KEY, []),
   addToLibrary: (name) => {
-    const { focus, kitSizes, kitShapes } = get();
-    const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
+    const { focus, kitSizes, kitShapes, kitDesigns } = get();
+    let cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
+    // a locked component saves with its locked look — the snapshot IS the piece
+    if (focus && kitDesigns[focus]) cfg = applyKitDesign(cfg, kitDesigns[focus]);
     const kit: LibKit | undefined = focus
       ? { id: focus, size: kitSizes[focus] ?? "m", shape: kitShapes[focus] ?? KIT_SHAPE[focus] }
       : undefined;
@@ -326,11 +333,17 @@ export const useGen = create<GenStore>((set, get) => ({
   saveStyle: (name) => {
     markTouched();
     const c = get().cfg;
-    const style = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)))({
+    const clone = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)));
+    const style = clone({
       effects: c.effects, face: c.face, bevel: c.bevel, candy: c.candy, lighting: c.lighting,
       shadow: c.shadow, transparency: c.transparency, type: c.type, states: c.states, stateDesigns: c.stateDesigns,
     }) as StyleItem["style"];
-    const styleLib = [...get().styleLib, { id: String(Date.now()), name, style }];
+    // thumbnail: the current look, rendered tight (no glow pad) with a short label
+    const tc = clone(c) as GenConfig;
+    for (const s of Object.values(tc.states)) s.glow = 0;
+    tc.content.label = c.content.label || "Aa";
+    const thumb = renderBevel(tc, "default");
+    const styleLib = [...get().styleLib, { id: String(Date.now()), name, style, thumb }];
     saveJson("ui-generator-styles", styleLib);
     set({ styleLib });
   },
@@ -352,6 +365,14 @@ export const useGen = create<GenStore>((set, get) => ({
     const kitShapes = { ...get().kitShapes, [id]: shape };
     saveJson("ui-generator-kitshapes", kitShapes);
     set({ kitShapes });
+  },
+  kitDesigns: loadJson<Partial<Record<KitComponentId, KitDesign>>>("ui-generator-kitdesigns", {}),
+  setKitDesign: (id, d) => {
+    markTouched();
+    const kitDesigns = { ...get().kitDesigns };
+    if (d) kitDesigns[id] = d; else delete kitDesigns[id];
+    saveJson("ui-generator-kitdesigns", kitDesigns);
+    set({ kitDesigns });
   },
   bgImage: null,
   setBgImage: (url) => set({ bgImage: url }),

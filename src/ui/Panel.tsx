@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign } from "@/generator/model";
 import type { GenStateName, BlendMode } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -239,7 +239,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, styleLib, saveStyle, applyStyle, removeStyle, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, styleLib, saveStyle, applyStyle, removeStyle, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -304,7 +304,7 @@ export function Panel() {
           <div className="sec-head"><h3>The Kit</h3></div>
           <div className="sec-body">
             <div className="helper">Your whole kit as a living guideline sheet — style tokens, the type spec, every component in true relative scale, and five little screens built from nothing but those pieces. Scroll through it like a brand book.</div>
-            <div className="helper">Click any piece to open it in the editor — its silhouette is its own; the style stays global. Hit Play (canvas toolbar) and the entire page comes alive: buttons press, toggles flip, sliders drag, the dropdown opens.</div>
+            <div className="helper">The page is permanently alive: press the buttons, drag the sliders, flip the switches, open the dropdown — the progress bars even fill on their own. To restyle a piece, hit the ✎ next to its name; a 🔒 means it's locked to its own look.</div>
           </div>
         </div>
         <div className="btnrow">
@@ -372,6 +372,28 @@ export function Panel() {
         <div className="focusnote">
           Editing <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — every control below shapes it live.
           <button onClick={() => setFocus(null)}>Back to button</button>
+          {/* per-component lock: freeze this exact look on this piece only.
+              The master keeps evolving; the locked piece doesn't move. */}
+          {kitDesigns[focus] ? (
+            <div className="lockrow">
+              <span className="lockstate"><Lock size={12} strokeWidth={2.2} /> Locked to its own look — master edits won't move it on the Kit or Board.</span>
+              <button title="Re-freeze this component with the design currently in the editor"
+                onClick={() => setKitDesign(focus, { ...pickDesign(cfg), stateDesigns: structuredClone(cfg.stateDesigns) })}>
+                <Lock size={12} strokeWidth={2.2} /> Update lock
+              </button>
+              <button title="Drop the lock — this component follows the master again"
+                onClick={() => setKitDesign(focus, null)}>
+                <LockOpen size={12} strokeWidth={2.2} /> Unlock
+              </button>
+            </div>
+          ) : (
+            <div className="lockrow">
+              <button title="Freeze the current look onto this component only — tweak here, lock it, then take the master anywhere else"
+                onClick={() => setKitDesign(focus, { ...pickDesign(cfg), stateDesigns: structuredClone(cfg.stateDesigns) })}>
+                <Lock size={12} strokeWidth={2.2} /> Lock this look to {KIT_COMPONENTS.find((c) => c.id === focus)?.name}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {/* ── Global — whole-component adjustments per state ── */}
@@ -422,12 +444,20 @@ export function Panel() {
         </button>
         <div className="sublabel">My styles</div>
         {styleLib.length > 0 && (
-          <div className="stylerow">
+          <div className="stylegrid">
             {styleLib.map((st) => (
-              <span key={st.id} className="stylechip">
-                <button onClick={() => applyStyle(st.id)} title={`Apply ${st.name} to the whole kit`}>{st.name}</button>
-                <button className="x" title="Delete style" onClick={() => removeStyle(st.id)}><Trash2 size={11} strokeWidth={2} /></button>
-              </span>
+              <div key={st.id} className="stylecard">
+                {st.thumb ? (
+                  <button className="stylethumb" title={`Apply ${st.name} to the whole kit`} onClick={() => applyStyle(st.id)}
+                    dangerouslySetInnerHTML={{ __html: st.thumb }} />
+                ) : (
+                  <button className="stylethumb blank" title={`Apply ${st.name} to the whole kit`} onClick={() => applyStyle(st.id)}>Aa</button>
+                )}
+                <div className="stylecard-row">
+                  <span className="stylecard-name">{st.name}</span>
+                  <button className="x" title="Delete style" aria-label={`Delete ${st.name}`} onClick={() => removeStyle(st.id)}><Trash2 size={11} strokeWidth={2} /></button>
+                </div>
+              </div>
             ))}
           </div>
         )}
