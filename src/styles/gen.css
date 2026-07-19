@@ -154,9 +154,12 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 
 /* ── canvas + right state stack ─────────────────────────── */
 .canvas-wrap { padding: 24px 28px 28px; min-width: 0; display: grid; grid-template-columns: 1fr 264px; gap: 18px; min-height: 0; }
+/* the canvas column wraps the scroller AND the floating toolbar, so the
+   toolbar stays put while a long page (the Kit sheet) scrolls under it */
+.canvas-col { position: relative; min-width: 0; min-height: 0; display: flex; }
 .canvas {
   position: relative; border: 1px solid var(--line); border-radius: var(--r-card);
-  overflow: auto; background: #FBFBFD; min-width: 0;
+  overflow: auto; background: #FBFBFD; min-width: 0; flex: 1;
 }
 .canvas.pan { cursor: grab; }
 .canvas.pan:active { cursor: grabbing; }
@@ -513,11 +516,17 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   width: 1152px; height: 648px; border: 1px solid rgba(255,255,255,.22); border-radius: 10px;
   background-size: cover; background-position: center; overflow: hidden; margin: 40px;
 }
-.stylerow { display: flex; flex-wrap: wrap; gap: 6px; }
-.stylechip { display: inline-flex; align-items: center; border: 1px solid var(--line2); border-radius: 9px; overflow: hidden; }
-.stylechip button { border: 0; background: var(--card); color: var(--ink); font-size: 12px; font-weight: 600; padding: 6px 10px; cursor: pointer; }
-.stylechip button:hover { background: var(--soft); }
-.stylechip .x { padding: 6px 7px; color: var(--ink3); border-left: 1px solid var(--line); }
+/* saved styles carry their own rendered thumbnail — picking one is visual */
+.stylegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stylecard { border: 1px solid var(--line2); border-radius: 12px; background: var(--card); overflow: hidden; }
+.stylethumb { display: block; width: 100%; border: 0; background: var(--soft); cursor: pointer; padding: 6px 8px 2px; }
+.stylethumb svg { width: 100%; height: auto; max-height: 64px; display: block; margin: 0 auto; }
+.stylethumb.blank { font-size: 22px; font-weight: 800; color: var(--ink2); padding: 14px 0 10px; }
+.stylethumb:hover { background: var(--line); }
+.stylecard-row { display: flex; align-items: center; gap: 4px; padding: 5px 6px 5px 9px; }
+.stylecard-name { flex: 1; min-width: 0; font-size: 11.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stylecard-row .x { border: 0; background: none; color: var(--ink3); cursor: pointer; display: grid; place-items: center; padding: 3px; border-radius: 6px; }
+.stylecard-row .x:hover { color: var(--ink); background: var(--soft); }
 .crashbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
   background: #7A1B2D; color: #fff; font-size: 13px; font-weight: 600; padding: 9px 18px;
@@ -624,3 +633,80 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .gp-piece { margin: -12px 0; }
 .gp-row .gp-piece, .gp-col .gp-piece { margin: -10px 0; }
 .gp-label { position: relative; z-index: 1; }
+
+/* ── v28: alive kit, locks, floating toolbar ──────────────────── */
+.lockrow { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 8px; margin-top: 4px; border-top: 1px dashed var(--line2); }
+.lockrow .lockstate { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--ink2); flex-basis: 100%; }
+.lockrow button {
+  margin-left: 0; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px;
+  border-radius: 9px; border: 1px solid var(--line2); background: var(--card); color: var(--ink);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.lockrow button:hover { background: var(--soft); }
+.kp-edit { display: grid; place-items: center; border: 0; background: none; padding: 3px; border-radius: 6px; color: var(--kp-ink3); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.kp-piece:hover .kp-edit { opacity: 1; }
+.kp-edit:hover { color: var(--kp-ink); background: var(--kp-card); }
+.kp-lockic { color: var(--kp-ink2); flex: none; }
+.kp-link { font-size: 12px; font-weight: 600; color: var(--kp-ink); text-decoration: none; border: 1px solid var(--kp-line); border-radius: 999px; padding: 6px 12px; background: var(--kp-card); }
+.kp-link:hover { border-color: var(--kp-ink3); }
+
+/* ── v29: five-level kit — chapters, splash, icons, parts ─────── */
+.kp-chapnav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.kp-chapnav button {
+  border: 1px solid var(--kp-line); background: var(--kp-card); color: var(--kp-ink);
+  font-size: 12px; font-weight: 700; letter-spacing: .04em; border-radius: 999px;
+  padding: 7px 14px; cursor: pointer;
+}
+.kp-chapnav button:hover { border-color: var(--kp-ink3); }
+.kp-chapter { display: flex; align-items: baseline; gap: 12px; margin-top: 84px; }
+.kp-chapline { width: 26px; height: 3px; border-radius: 2px; background: var(--kp-ink); align-self: center; }
+.kp-chapname { font-size: 13px; font-weight: 800; letter-spacing: .26em; text-transform: uppercase; color: var(--kp-ink); }
+.kp-chapblurb { font-size: 12px; color: var(--kp-ink3); }
+.kp-subhead { margin-top: 26px; font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--kp-ink2); }
+
+.kp-splashedit { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.kp-splashedit label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--kp-ink3); }
+.kp-splashedit input {
+  width: 250px; height: 38px; border: 1px solid var(--kp-line); border-radius: 10px; background: var(--kp-card);
+  color: var(--kp-ink); font: inherit; font-weight: 600; padding: 0 12px; outline: none;
+}
+.kp-splashedit input:focus { border-color: var(--kp-ink3); }
+.kp-splashmain { margin-top: 4px; }
+.kp-splashrow { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 6px; }
+.kp-splashchip { border: 1px solid transparent; background: none; padding: 4px 8px; border-radius: 12px; cursor: pointer; }
+.kp-splashchip:hover { border-color: var(--kp-line); background: var(--kp-card); }
+.kp-splashchip.on { border-color: var(--kp-ink3); }
+
+.kp-states { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 22px; margin-top: 14px; padding: 14px 18px 8px; border-radius: 16px; background: var(--kp-card); }
+.kp-state { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 0; }
+.kp-state figcaption { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--kp-ink3); }
+
+.kp-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 10px; margin-top: 18px; }
+.kp-icon { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px 9px; border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); color: var(--kp-ink); }
+.kp-icon svg { display: block; }
+.kp-icon figcaption { font-size: 10.5px; font-weight: 600; color: var(--kp-ink3); }
+
+.kp-meta { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 10px; }
+.kp-meta span { font-size: 10.5px; font-weight: 600; letter-spacing: .03em; color: var(--kp-ink3); border: 1px dashed var(--kp-line); border-radius: 999px; padding: 4px 10px; }
+
+.kp-slices { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.kp-slice { position: relative; display: inline-block; max-width: 100%; }
+.kp-guide { position: absolute; top: 12%; bottom: 12%; width: 0; border-left: 1.5px dashed; pointer-events: none; }
+.kp-guide.cap { border-color: rgba(217, 70, 190, .75); }
+.kp-guide.safe { border-color: rgba(74, 222, 128, .7); top: 22%; bottom: 22%; }
+.kp-banners { align-items: flex-start; }
+.kp-banners > div { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+
+.kp-parts, .kp-recipe { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+.kp-recipe { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.kp-part {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px 12px;
+  border: 1px solid var(--kp-line); border-radius: 14px; background: var(--kp-card); cursor: pointer;
+  color: var(--kp-ink); font: inherit; text-align: center;
+}
+.kp-part:hover { border-color: var(--kp-ink3); }
+.kp-part .kp-art { pointer-events: none; }
+.kp-partname { font-size: 12px; font-weight: 700; }
+.kp-part .kp-meta { justify-content: center; margin-top: 2px; }
+.kp-objective { max-width: 380px; }
+.gp-label.dim { opacity: .55; font-size: 11px; }

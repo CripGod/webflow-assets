@@ -1,6 +1,7 @@
 import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef, StateDesign } from "./model";
 import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE } from "./model";
 import { iconGroup } from "./icons";
+import { silhouetteMeta } from "./silhouettes";
 import rough from "roughjs";
 
 /* Rough.js draws the hand-drawn *line character* over the approved outline —
@@ -358,11 +359,18 @@ function designFor(cfg: GenConfig, state: GenStateName): StateDesign {
   };
 }
 
-interface Geom { x: number; y: number; h: number; fs: number; iconSize: number; minW?: number; maxW?: number }
+interface Geom {
+  x: number; y: number; h: number; fs: number; iconSize: number; minW?: number; maxW?: number;
+  /** Token scale reference — big containers (panels) pass a smaller value so
+   *  walls, rims and depth stay component-scaled instead of ballooning. */
+  tokenH?: number;
+}
 
 /** Core builder — the candy stack. Width grows with the content. */
 function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   label?: string; iconDef?: IconDef | null; secondary?: boolean; shapeOverride?: Shape; fixedW?: number;
+  /** Explicit per-component vertical text adjustment — overrides the theme's. */
+  textOy?: number;
 } = {}): string {
   const id = "b" + UID++;
   const disabled = state === "disabled";
@@ -376,7 +384,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const D = designFor(cfg, state);
   const shape = opts.shapeOverride ?? D.shape;
   const C = D.candy;
-  const K = g0.h / 168; // token px scale for kit sizes
+  const K = (g0.tokenH ?? g0.h) / 168; // token px scale for kit sizes
 
   const bevelC = P(effect(D.effects, "Bevel"));
   const glowC = disabled ? "#B9BEC6" : P(effect(D.effects, "Glow"));
@@ -413,12 +421,26 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const gap = showText && iconDef ? cfg.icon.gap * K : 0;
   const spacingEm = T2.spacing / 100;
   const weightK = 1 + Math.max(0, T2.weight - 700) * 0.0004;
+  // width (`wdth`) axis — honored only for faces that really expose it; the
+  // glyph advance estimate follows so auto-width stays truthful
+  const capsF = fontDef.caps;
+  const wdthV = capsF?.wdth && T2.width !== undefined
+    ? clamp(T2.width, capsF.wdth[0], capsF.wdth[1]) : undefined;
+  const widthK = wdthV !== undefined ? wdthV / 100 : 1;
   const italicPad = T2.italic ? fs * 0.3 : 0; // slanted glyphs overhang their advance
-  const textW = (showText ? label.length * fs * fontDef.factor * (1 + spacingEm) * weightK * 1.06 : 0) + italicPad;
+  const textW = (showText ? label.length * fs * fontDef.factor * widthK * (1 + spacingEm) * weightK * 1.06 : 0) + italicPad;
   const contentW = textW + (iconDef ? iconSize : 0) + gap;
+
+  /* text-safe area — the silhouette's authored content insets keep labels out
+     of caps, tails and bevels, with breathing room that scales with the label
+     size. The old padding stands as a floor so compact shapes don't change. */
+  const met = silhouetteMeta(shape);
   const endRoom = shape === "pill" ? h * 0.16 : 0; // rounded ends eat width
-  const padX = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + endRoom;
-  const minW = opts.fixedW ?? (iconOnly ? Math.max(h, contentW + padX * 2) : Math.max(g0.minW ?? 230 * K, contentW + padX * 2));
+  const basePad = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + endRoom;
+  const safeGap = Math.max(12, fs * 0.35);
+  const padL = iconOnly || !met ? basePad : Math.max(basePad, met.content.left * h + safeGap);
+  const padR = iconOnly || !met ? basePad : Math.max(basePad, met.content.right * h + safeGap);
+  const minW = opts.fixedW ?? (iconOnly ? Math.max(h, contentW + basePad * 2) : Math.max(g0.minW ?? 230 * K, contentW + padL + padR));
   const w = opts.fixedW ?? Math.min(g0.maxW ?? 980, minW);
 
   /* ── extrusion & lift ─────────────────────────────────────────── */
@@ -683,17 +705,36 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     : cfg.icon.color ? P(cfg.icon.color) : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
 
 
-  /* layout */
+  /* layout — content centers inside the text-safe area, not against the full
+     outer silhouette, so asymmetric caps (pointer tags) balance correctly */
   const cx = x + w / 2, cy = y + h / 2;
-  const startX = cx - contentW / 2;
+  const startX = (x + padL + (x + w - padR)) / 2 - contentW / 2;
   const placeLeft = opts.iconDef === undefined && cfg.icon.placement === "left" && !iconOnly;
   const italicShift = T2.italic ? italicPad * 0.35 : 0; // rebalance the lean
   const textX = (placeLeft ? startX + (iconDef ? iconSize + gap : 0) + textW / 2 : startX + textW / 2) - italicShift;
   const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K;
   const iconY = cy - iconSize / 2 + cfg.icon.oy * K;
+  const textOy = opts.textOy ?? T2.oy ?? 0;
 
   const T = D.transparency;
   const fontStyle = T2.italic ? ` font-style="italic"` : "";
+  // style attr builder — carries the width axis plus any per-layer extras
+  const tStyle = (extra = "") => (wdthV !== undefined || extra)
+    ? ` style="${wdthV !== undefined ? `font-stretch:${wdthV}%;` : ""}${extra}"` : "";
+
+  /* partial phrase highlight — the first match renders as a brighter,
+     illuminated portion of the same material: same font, metrics, outline
+     and effects, only the fill lifts toward the highlight/glow tokens */
+  const hiRaw = (T2.highlight ?? "").trim();
+  const caseFn = (s: string) => T2.case === "upper" ? s.toUpperCase()
+    : T2.case === "lower" ? s.toLowerCase()
+    : T2.case === "title" ? s.replace(/\b\w/g, (m) => m.toUpperCase())
+    : s;
+  const hiIdx = hiRaw ? cased.indexOf(caseFn(hiRaw)) : -1;
+  const hiLen = hiIdx >= 0 ? caseFn(hiRaw).length : 0;
+  const textInner = hiIdx >= 0
+    ? `${esc(cased.slice(0, hiIdx))}<tspan fill="url(#${id}thl)">${esc(cased.slice(hiIdx, hiIdx + hiLen))}</tspan>${esc(cased.slice(hiIdx + hiLen))}`
+    : label;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw + pad * 2}" height="${vh + pad * 2}" viewBox="${-pad} ${-pad} ${vw + pad * 2} ${vh + pad * 2}" font-family="'${T2.font}', Inter, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
 <defs>
@@ -760,6 +801,16 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   </radialGradient>
   ${T2.fillMode === "gradient" ? `<linearGradient id="${id}tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.fill)}"/><stop offset="1" stop-color="${P(T2.fill2)}"/></linearGradient>` : ""}
   ${T2.outline.on && T2.outline.color2 ? `<linearGradient id="${id}og" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.outline.color)}"/><stop offset="1" stop-color="${P(T2.outline.color2)}"/></linearGradient>` : ""}
+  ${hiIdx >= 0 ? `<linearGradient id="${id}thl" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="${hexMix(hiC, "#FFFFFF", 0.7)}"/>
+    <stop offset="1" stop-color="${hexMix(glowC, "#FFFFFF", 0.3)}"/>
+  </linearGradient>` : ""}
+  ${showText && T2.stripes?.on ? `<pattern id="${id}tst" width="${(fs * 0.3).toFixed(1)}" height="${(fs * 0.3).toFixed(1)}" patternUnits="userSpaceOnUse" patternTransform="rotate(${T2.stripes.angle})"><rect width="${(fs * 0.15).toFixed(1)}" height="${(fs * 0.3).toFixed(1)}" fill="${darken(bevelC, 0.25)}"/></pattern>` : ""}
+  ${showText && T2.inflate?.on ? `<linearGradient id="${id}tif" ${axis}>
+    <stop offset="0" stop-color="${hiC}" stop-opacity="0"/>
+    <stop offset="0.45" stop-color="${hiC}" stop-opacity="0"/>
+    <stop offset="1" stop-color="${hiC}" stop-opacity="${clamp((T2.inflate.strength ?? 50) / 100, 0, 1).toFixed(2)}"/>
+  </linearGradient>` : ""}
   ${textFxDef}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
@@ -790,7 +841,9 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${innerEdge}
     </g>
     <g opacity="${(T.content / 100).toFixed(2)}">
-      ${showText ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + (T2.oy ?? 0) * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${label}</text>` : ""}
+      ${showText ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${textInner}</text>` : ""}
+      ${showText && T2.stripes?.on ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tst)" opacity="${clamp((T2.stripes.opacity ?? 30) / 100, 0, 1).toFixed(2)}" text-anchor="middle" dominant-baseline="central">${label}</text>` : ""}
+      ${showText && T2.inflate?.on ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle("mix-blend-mode:screen")} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tif)" text-anchor="middle" dominant-baseline="central">${label}</text>` : ""}
       ${iconDef ? (inheritTypo && prims.length
         ? `<g filter="url(#${id}tf)">${iconGroup(iconDef, iconX, iconY, iconSize, iconColor, { strokeWidth: cfg.icon.strokeWidth / 10 })}</g>`
         : iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
@@ -823,8 +876,17 @@ export function renderBevel(cfg: GenConfig, state: GenStateName): string {
 
 /** Just the typography — the complete text treatment rendered by the same
  *  engine, with the shell, depth, shadows and auras switched off. Drives the
- *  Kit guideline page's type specimen. */
-export function renderTypeSpecimen(cfg: GenConfig, text: string): string {
+ *  Kit guideline page's type specimens and splash text. */
+export interface SpecimenOpts {
+  /** Render the string exactly as typed (case treatment off) — for the a–z line. */
+  keepCase?: boolean;
+  /** Highlight phrase for this specimen (overrides the config's). */
+  highlight?: string;
+  /** Mutate the cloned type treatment before rendering — the Build Parts
+   *  typography recipe uses this to switch layers on and off. */
+  mutate?: (c: GenConfig) => void;
+}
+export function renderTypeSpecimen(cfg: GenConfig, text: string, opts: SpecimenOpts = {}): string {
   const c = JSON.parse(JSON.stringify(cfg)) as GenConfig;
   c.transparency = { frame: 0, interior: 0, content: 100 };
   c.shadow.opacity = 0;
@@ -832,6 +894,9 @@ export function renderTypeSpecimen(cfg: GenConfig, text: string): string {
   c.candy.extrusion.depth = 0;
   c.stateDesigns = {};
   for (const s of Object.values(c.states)) { s.glow = 0; s.lift = 0; s.opacity = 100; }
+  if (opts.keepCase) c.type.case = "none";
+  if (opts.highlight !== undefined) c.type.highlight = opts.highlight;
+  opts.mutate?.(c);
   // maxW lifted far above the button default — a full alphabet line must
   // never clip against the auto-width cap
   return build(c, "default", { x: 26, y: 20, h: 130, fs: 52, iconSize: 0, maxW: 4200 }, { iconDef: null, label: text });
@@ -868,8 +933,10 @@ function stampTrack(svg: string, x: number, w: number): string {
 /** Per-piece overrides for the Kit page and its pattern mocks — labels,
  *  segment captions and stock-icon swaps. All optional; defaults unchanged.
  *  `expand` grows the canvas around overflow content (the open dropdown's
- *  menu) — needed when the SVG will be consumed as an image file. */
-export interface KitOpts { label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean }
+ *  menu) — needed when the SVG will be consumed as an image file.
+ *  `textOy` is the per-component vertical text adjustment (explicit values
+ *  win over the theme's; 0 is a valid explicit value). */
+export interface KitOpts { label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number }
 
 export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default", value?: number, shapeOv?: Shape, opts: KitOpts = {}): string {
   const k = SIZE_K[size];
@@ -885,24 +952,24 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
 
   switch (id) {
     case "primary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { label: opts.label, shapeOverride: sov });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { label: opts.label, shapeOverride: sov, textOy: opts.textOy });
     case "secondary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: opts.label ?? "Secondary", shapeOverride: sov });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: opts.label ?? "Secondary", shapeOverride: sov, textOy: opts.textOy });
     case "small":
-      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: opts.label ?? "GO", iconDef: null, shapeOverride: sov });
+      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: opts.label ?? "GO", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
     case "ghost":
-      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: opts.label ?? "Ghost", iconDef: null, shapeOverride: sov });
+      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: opts.label ?? "Ghost", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
     case "iconbtn":
       return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: opts.icon ?? cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, shapeOverride: sov });
     case "chip":
-      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: opts.label ?? "NEW", iconDef: opts.icon === undefined ? STOCK_ICONS.star : opts.icon, shapeOverride: sov });
+      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: opts.label ?? "NEW", iconDef: opts.icon === undefined ? STOCK_ICONS.star : opts.icon, shapeOverride: sov, textOy: opts.textOy });
     case "badge":
       // presented (count) → awarded (star) → disabled
       return state === "pressed"
         ? build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 0, iconSize: 52 * k }, { label: "", iconDef: opts.icon ?? STOCK_ICONS.star, fixedW: 118 * k, shapeOverride: sov })
-        : build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: opts.label ?? "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov });
+        : build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: opts.label ?? "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy });
     case "tab":
-      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: opts.label ?? "TAB", iconDef: null, shapeOverride: sov });
+      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: opts.label ?? "TAB", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
     case "segment": {
       const w = 560 * k, h = 106 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
@@ -941,14 +1008,20 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const bh = h - inset * 2 - gapPad * 2;
       const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
       const trackW = w - inset * 2 - gapPad * 2;
-      const fillW = trackW * clamp(value ?? 0.62, 0, 1);
       const gid = "sl" + UID++;
-      const knobX = bx + fillW, knobY = 30 + h / 2;
+      /* endpoint clamp — the shared range behavior: the thumb stays inside
+         the component's outer boundary at 0% and 100% (it may overlap the
+         inner track), and the fill ends at the thumb's center */
+      const kr = h * 0.42;
+      const v01 = clamp(value ?? 0.62, 0, 1);
+      const knobX = 39 + Math.max(kr + 1.5, Math.min(w - kr - 1.5, inset + gapPad + trackW * v01));
+      const fillW = Math.max(0, knobX - bx);
+      const knobY = 30 + h / 2;
       return stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
-         <path d="${roundRect(bx, by, fillW, bh, bh / 2)}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>` +
-        candyKnob(knobX, knobY, h * 0.42, bevel)), bx, trackW);
+         ${fillW > 1 ? `<path d="${roundRect(bx, by, fillW, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>` : ""}` +
+        candyKnob(knobX, knobY, kr, bevel)), bx, trackW);
     }
     case "progress": {
       const w = 520 * k, h = 64 * k;
@@ -970,15 +1043,25 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const w = 460 * k, h = 108 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
       const inset = bw + 4;
-      const ph = `<text x="${39 + inset + 18 * k}" y="${30 + h / 2 + 1}" font-family="'${font}', Inter, sans-serif" font-size="${30 * k}" font-style="italic" font-weight="500" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(opts.label ?? "Type something…")}</text>`;
+      const ph = `<text x="${39 + inset + 18 * k}" y="${(30 + h / 2 + 1 + (opts.textOy ?? cfg.type.oy ?? 0) * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${30 * k}" font-style="italic" font-weight="500" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(opts.label ?? "Type something…")}</text>`;
       return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.9"/>` + ph);
     }
     case "header":
       // resolve the label explicitly: build() treats a missing label with an
-      // explicit iconDef as icon-only, which would blank the banner
-      return build(cfg, state, { x: 52, y: 34, h: 158 * k, fs: 46 * k, iconSize: 0 }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov });
+      // explicit iconDef as icon-only, which would blank the banner.
+      // maxW is lifted well past the button cap — Banner/Stretch must carry a
+      // 28-character uppercase label without clipping; the center stretches,
+      // the swallowtail caps stay fixed (procedural three-slice).
+      return build(cfg, state, { x: 52, y: 34, h: 158 * k, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy });
+    case "panel": {
+      // container shell — same recipe, bigger canvas. tokenH keeps walls,
+      // rim and depth at component scale instead of scaling with the height.
+      const dims: Record<KitSize, [number, number]> = { s: [430, 290], m: [580, 380], l: [780, 470] };
+      const [pw, ph2] = dims[size];
+      return build(cfg, state, { x: 42, y: 33, h: ph2, fs: 0, iconSize: 0, tokenH: 150 }, { iconDef: null, label: "", fixedW: pw, shapeOverride: sov });
+    }
     case "dropdown": {
-      const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov });
+      const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy });
       if (state !== "pressed") return btn;
       // pressed = open: the menu drops beneath, drawn from the same palette.
       // The viewBox origin is -glowPad, so the content width is the total
