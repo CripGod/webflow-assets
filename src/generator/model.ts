@@ -150,11 +150,20 @@ export interface TypeCfg {
   font: string;
   customFonts: string[];  // user-added Google Font family names
   size: number;        // px at master scale
-  weight: number;      // 400..900
+  weight: number;      // clamped to the face's real capabilities at edit time
+  width?: number;      // `wdth` axis %, only honored when the face has the axis
   italic: boolean;
   spacing: number;     // letter-spacing, em/100 (-5..20)
   case: TextCase;
   oy?: number;         // vertical nudge px — visually center against the shell
+  /** First matching phrase inside the label renders as a brighter, illuminated
+   *  portion of the same material — same font, metrics, outline, everything. */
+  highlight?: string;
+  /** Candy-wrap stripes inside the letterforms (off by default). */
+  stripes?: { on: boolean; angle: number; opacity: number };
+  /** Balloon highlight following the key light — the closest the shell gets
+   *  to an inflate effect without touching the glyph geometry. */
+  inflate?: { on: boolean; strength: number };
   fillMode: "auto" | "solid" | "gradient";
   fill: string;
   fill2: string;       // gradient bottom
@@ -260,40 +269,59 @@ export function defaultIconCfg(): IconCfg {
   };
 }
 
+/** What a face can actually do — the single source of truth the editor's
+ *  weight/width controls read. Variable axes carry real min/max/default;
+ *  static families list only the weights the stylesheet actually loads. */
+export interface FontCaps {
+  /** Static weights that are really loaded (absent for variable faces). */
+  weights?: number[];
+  /** Variable `wght` axis: [min, max, default]. */
+  wght?: [number, number, number];
+  /** Variable `wdth` axis: [min, max, default] (percent). */
+  wdth?: [number, number, number];
+  /** True italic files exist (synthetic slant is still allowed — it is part
+   *  of the approved treatment). */
+  italic?: boolean;
+}
+
 /** Popular game-UI faces from Google Fonts. `factor` ≈ average glyph advance
- *  (em) used for auto-width; `css` is the families query for fonts.googleapis. */
-export const GAME_FONTS: { name: string; css: string | null; factor: number }[] = [
-  { name: "Inter", css: null, factor: 0.6 },
-  { name: "Bangers", css: "Bangers", factor: 0.5 },
-  { name: "Luckiest Guy", css: "Luckiest+Guy", factor: 0.58 },
-  { name: "Press Start 2P", css: "Press+Start+2P", factor: 1.05 },
-  { name: "Bungee", css: "Bungee", factor: 0.72 },
-  { name: "Righteous", css: "Righteous", factor: 0.58 },
-  { name: "Russo One", css: "Russo+One", factor: 0.64 },
-  { name: "Black Ops One", css: "Black+Ops+One", factor: 0.7 },
-  { name: "Orbitron", css: "Orbitron:wght@700", factor: 0.74 },
-  { name: "Cinzel", css: "Cinzel:wght@700", factor: 0.62 },
-  { name: "Creepster", css: "Creepster", factor: 0.48 },
-  { name: "Titan One", css: "Titan+One", factor: 0.6 },
-  { name: "Lilita One", css: "Lilita+One", factor: 0.55 },
-  { name: "Chewy", css: "Chewy", factor: 0.52 },
-  { name: "Baloo 2", css: "Baloo+2:wght@700", factor: 0.58 },
-  { name: "Fredoka", css: "Fredoka:wght@600", factor: 0.6 },
-  { name: "Passion One", css: "Passion+One:wght@700", factor: 0.5 },
-  { name: "Sigmar One", css: "Sigmar+One", factor: 0.66 },
-  { name: "Rubik Mono One", css: "Rubik+Mono+One", factor: 0.85 },
-  { name: "Audiowide", css: "Audiowide", factor: 0.68 },
-  { name: "Silkscreen", css: "Silkscreen:wght@700", factor: 0.72 },
-  { name: "Pixelify Sans", css: "Pixelify+Sans:wght@600", factor: 0.58 },
+ *  (em) used for auto-width; `css` is the families query for fonts.googleapis
+ *  — variable faces request their full real axis range. */
+export const GAME_FONTS: { name: string; css: string | null; factor: number; caps: FontCaps }[] = [
+  { name: "Inter", css: null, factor: 0.6, caps: { wght: [100, 900, 400], italic: true } },
+  { name: "Bangers", css: "Bangers", factor: 0.5, caps: { weights: [400] } },
+  { name: "Luckiest Guy", css: "Luckiest+Guy", factor: 0.58, caps: { weights: [400] } },
+  { name: "Press Start 2P", css: "Press+Start+2P", factor: 1.05, caps: { weights: [400] } },
+  { name: "Bungee", css: "Bungee", factor: 0.72, caps: { weights: [400] } },
+  { name: "Righteous", css: "Righteous", factor: 0.58, caps: { weights: [400] } },
+  { name: "Russo One", css: "Russo+One", factor: 0.64, caps: { weights: [400] } },
+  { name: "Black Ops One", css: "Black+Ops+One", factor: 0.7, caps: { weights: [400] } },
+  { name: "Orbitron", css: "Orbitron:wght@400..900", factor: 0.74, caps: { wght: [400, 900, 700] } },
+  { name: "Cinzel", css: "Cinzel:wght@400..900", factor: 0.62, caps: { wght: [400, 900, 700] } },
+  { name: "Creepster", css: "Creepster", factor: 0.48, caps: { weights: [400] } },
+  { name: "Titan One", css: "Titan+One", factor: 0.6, caps: { weights: [400] } },
+  { name: "Lilita One", css: "Lilita+One", factor: 0.55, caps: { weights: [400] } },
+  { name: "Chewy", css: "Chewy", factor: 0.52, caps: { weights: [400] } },
+  { name: "Baloo 2", css: "Baloo+2:wght@400..800", factor: 0.58, caps: { wght: [400, 800, 700] } },
+  { name: "Fredoka", css: "Fredoka:wdth,wght@75..125,300..700", factor: 0.6, caps: { wght: [300, 700, 600], wdth: [75, 125, 100] } },
+  { name: "Passion One", css: "Passion+One:wght@400;700;900", factor: 0.5, caps: { weights: [400, 700, 900] } },
+  { name: "Sigmar One", css: "Sigmar+One", factor: 0.66, caps: { weights: [400] } },
+  { name: "Rubik Mono One", css: "Rubik+Mono+One", factor: 0.85, caps: { weights: [400] } },
+  { name: "Audiowide", css: "Audiowide", factor: 0.68, caps: { weights: [400] } },
+  { name: "Silkscreen", css: "Silkscreen:wght@400;700", factor: 0.72, caps: { weights: [400, 700] } },
+  { name: "Pixelify Sans", css: "Pixelify+Sans:wght@400..700", factor: 0.58, caps: { wght: [400, 700, 600] } },
 ];
 /* User-added Google Fonts — registered at runtime, names persisted in the
-   config. Any family from fonts.google.com works; we request the full weight
-   range and estimate width with a neutral factor. */
-const customFontRegistry = new Map<string, { css: string; factor: number }>();
+   config. Any family from fonts.google.com works; we request a broad weight
+   set and expose those as a static list (no axis data is known for them). */
+const customFontRegistry = new Map<string, { css: string; factor: number; caps: FontCaps }>();
 export function registerCustomFont(name: string) {
   const clean = name.trim();
   if (!clean || GAME_FONTS.some((f) => f.name === clean)) return;
-  customFontRegistry.set(clean, { css: clean.replace(/ /g, "+") + ":wght@400;500;600;700;800;900", factor: 0.62 });
+  customFontRegistry.set(clean, {
+    css: clean.replace(/ /g, "+") + ":wght@400;500;600;700;800;900", factor: 0.62,
+    caps: { weights: [400, 500, 600, 700, 800, 900] },
+  });
 }
 export function customFontNames(): string[] { return [...customFontRegistry.keys()]; }
 
@@ -301,6 +329,15 @@ export function fontByName(name: string) {
   const custom = customFontRegistry.get(name);
   if (custom) return { name, ...custom };
   return GAME_FONTS.find((f) => f.name === name) ?? GAME_FONTS[0];
+}
+
+/** Clamp a requested weight into what the face can actually show. */
+export function clampWeight(caps: FontCaps, w: number): number {
+  if (caps.wght) return Math.max(caps.wght[0], Math.min(caps.wght[1], w));
+  if (caps.weights?.length) {
+    return caps.weights.reduce((best, cand) => (Math.abs(cand - w) < Math.abs(best - w) ? cand : best), caps.weights[0]);
+  }
+  return w;
 }
 
 export type GridStyle = "dots" | "lines" | "both" | "off";
@@ -526,7 +563,7 @@ export type KitComponentId =
   | "primary" | "secondary" | "small" | "ghost" | "iconbtn"
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
-  | "slider" | "progress" | "input" | "dropdown";
+  | "slider" | "progress" | "input" | "dropdown" | "panel";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -546,6 +583,7 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "progress", name: "Progress bar" },
   { id: "input", name: "Input field" },
   { id: "dropdown", name: "Dropdown" },
+  { id: "panel", name: "Panel" },
 ];
 
 /* A locked component keeps a full design snapshot of its own — the master
@@ -573,6 +611,7 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   chip: "doboBracket",
   tab: "kenneyTag",
   badge: "shield",
+  panel: "kenneyRect",
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the
@@ -582,7 +621,22 @@ export const STOCK_ICONS: Record<string, IconDef> = {
   check: { lib: "lucide", name: "Check", viewBox: "0 0 24 24", inner: '<path d="M20 6 9 17l-5-5"/>', mode: "stroke" },
   chevron: { lib: "lucide", name: "ChevronDown", viewBox: "0 0 24 24", inner: '<path d="m6 9 6 6 6-6"/>', mode: "stroke" },
   dot: { lib: "lucide", name: "CircleDot", viewBox: "0 0 24 24", inner: '<circle cx="12" cy="12" r="5"/>', mode: "fill" },
-  // pattern-mock glyphs — canonical Lucide paths, same embedding rules
+  // functional glyph set — canonical Lucide paths, same embedding rules
+  play: { lib: "lucide", name: "Play", viewBox: "0 0 24 24", inner: '<polygon points="6 3 20 12 6 21 6 3"/>', mode: "stroke" },
+  pause: { lib: "lucide", name: "Pause", viewBox: "0 0 24 24", inner: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>', mode: "stroke" },
+  close: { lib: "lucide", name: "X", viewBox: "0 0 24 24", inner: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', mode: "stroke" },
+  back: { lib: "lucide", name: "ArrowLeft", viewBox: "0 0 24 24", inner: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', mode: "stroke" },
+  forward: { lib: "lucide", name: "ArrowRight", viewBox: "0 0 24 24", inner: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>', mode: "stroke" },
+  lock: { lib: "lucide", name: "Lock", viewBox: "0 0 24 24", inner: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', mode: "stroke" },
+  unlock: { lib: "lucide", name: "LockOpen", viewBox: "0 0 24 24", inner: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>', mode: "stroke" },
+  bag: { lib: "lucide", name: "ShoppingBag", viewBox: "0 0 24 24", inner: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>', mode: "stroke" },
+  volume: { lib: "lucide", name: "Volume2", viewBox: "0 0 24 24", inner: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>', mode: "stroke" },
+  volumeOff: { lib: "lucide", name: "VolumeX", viewBox: "0 0 24 24", inner: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/>', mode: "stroke" },
+  info: { lib: "lucide", name: "Info", viewBox: "0 0 24 24", inner: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>', mode: "stroke" },
+  warning: { lib: "lucide", name: "TriangleAlert", viewBox: "0 0 24 24", inner: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>', mode: "stroke" },
+  refresh: { lib: "lucide", name: "RotateCw", viewBox: "0 0 24 24", inner: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>', mode: "stroke" },
+  home: { lib: "lucide", name: "Home", viewBox: "0 0 24 24", inner: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>', mode: "stroke" },
+  search: { lib: "lucide", name: "Search", viewBox: "0 0 24 24", inner: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', mode: "stroke" },
   user: { lib: "lucide", name: "User", viewBox: "0 0 24 24", inner: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>', mode: "stroke" },
   gear: { lib: "lucide", name: "Settings", viewBox: "0 0 24 24", inner: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', mode: "stroke" },
   trophy: { lib: "lucide", name: "Trophy", viewBox: "0 0 24 24", inner: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>', mode: "stroke" },

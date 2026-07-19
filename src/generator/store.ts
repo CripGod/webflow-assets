@@ -193,6 +193,11 @@ interface GenStore {
   setKitShape: (id: KitComponentId, shape: Shape) => void;
   kitDesigns: Partial<Record<KitComponentId, KitDesign>>;
   setKitDesign: (id: KitComponentId, d: KitDesign | null) => void;
+  /** Per-component vertical text adjustment, keyed `${id}:${size}` so Primary
+   *  L/M/S adjust independently. Explicit values (including 0) always win;
+   *  the theme's value applies only to components never adjusted. */
+  kitTextOy: Partial<Record<string, number>>;
+  setKitTextOy: (key: string, v: number | null) => void;
   styleLib: StyleItem[];
   saveStyle: (name: string) => void;
   applyStyle: (id: string) => void;
@@ -282,10 +287,15 @@ export const useGen = create<GenStore>((set, get) => ({
   setCanvasMode: (m) => set({ canvasMode: m }),
   library: loadJson<LibItem[]>(LIB_KEY, []),
   addToLibrary: (name) => {
-    const { focus, kitSizes, kitShapes, kitDesigns } = get();
+    const { focus, kitSizes, kitShapes, kitDesigns, kitTextOy } = get();
     let cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
     // a locked component saves with its locked look — the snapshot IS the piece
     if (focus && kitDesigns[focus]) cfg = applyKitDesign(cfg, kitDesigns[focus]);
+    // a component-specific text adjustment bakes into the snapshot
+    if (focus) {
+      const oy = kitTextOy[`${focus}:${kitSizes[focus] ?? "m"}`];
+      if (oy !== undefined) cfg.type.oy = oy;
+    }
     const kit: LibKit | undefined = focus
       ? { id: focus, size: kitSizes[focus] ?? "m", shape: kitShapes[focus] ?? KIT_SHAPE[focus] }
       : undefined;
@@ -373,6 +383,15 @@ export const useGen = create<GenStore>((set, get) => ({
     if (d) kitDesigns[id] = d; else delete kitDesigns[id];
     saveJson("ui-generator-kitdesigns", kitDesigns);
     set({ kitDesigns });
+  },
+  kitTextOy: loadJson<Partial<Record<string, number>>>("ui-generator-kittextoy", {}),
+  setKitTextOy: (key, v) => {
+    markTouched();
+    const kitTextOy = { ...get().kitTextOy };
+    // null clears the override (back to the theme); 0 is a valid explicit value
+    if (v === null) delete kitTextOy[key]; else kitTextOy[key] = v;
+    saveJson("ui-generator-kittextoy", kitTextOy);
+    set({ kitTextOy });
   },
   bgImage: null,
   setBgImage: (url) => set({ bgImage: url }),

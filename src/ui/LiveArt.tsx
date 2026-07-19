@@ -15,6 +15,8 @@ export interface LiveKit {
   value?: number;
   /** Resting state when idle — e.g. an awarded badge or an open dropdown. */
   baseState?: GenStateName;
+  /** Per-component vertical text adjustment (explicit; 0 is valid). */
+  textOy?: number;
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -66,11 +68,11 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
   // hosts pass fresh kit literals every render — key on the fields, not the
   // object, so the (string-building) renderer only runs when something changed
   const kitKey = kit
-    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}`
+    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}`
     : "";
   const svg = useMemo(
     () => kit
-      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon })
+      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy })
       : renderBevel(cfg, state),
     [cfg, kitKey, state, value] // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -104,24 +106,32 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
     return { u: clamp01(t), thirds: Math.max(0, Math.min(2, Math.floor(t * 3))) };
   };
 
-  const animateProgress = (to: number) => {
+  /* Progress demo playback — resets to 0, then fills to the component's own
+     configured value over ~1.2s. Clicking mid-animation restarts cleanly;
+     reduced-motion users jump straight to the target. */
+  const target = clamp01(kit?.value ?? 0.62);
+  const playProgress = () => {
     cancelAnimationFrame(raf.current);
-    const from = pvalRef.current;
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPval(target);
+      return;
+    }
+    setPval(0);
     const t0 = performance.now();
     const step = (t: number) => {
-      const u = Math.min(1, (t - t0) / 650);
+      const u = Math.min(1, (t - t0) / 1200);
       const e = 1 - (1 - u) ** 3;
-      setPval(from + (to - from) * e);
+      setPval(target * e);
       if (u < 1) raf.current = requestAnimationFrame(step);
     };
     raf.current = requestAnimationFrame(step);
   };
 
-  // ambient progress: each bar drifts to a fresh value on its own beat
-  const beat = useRef(3800 + Math.random() * 2200);
+  // ambient progress: the bar quietly replays its own demo on its own beat
+  const beat = useRef(4600 + Math.random() * 2400);
   useEffect(() => {
     if (!ambient || id !== "progress" || !playing) return;
-    const t = window.setInterval(() => animateProgress(0.1 + Math.random() * 0.88), beat.current);
+    const t = window.setInterval(playProgress, beat.current);
     return () => window.clearInterval(t);
   }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -148,12 +158,21 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
     onClick: (e: React.MouseEvent) => {
       if (id === "toggle") setOn((v) => !v);
       else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
-      else if (id === "progress") animateProgress(0.12 + Math.random() * 0.86);
+      else if (id === "progress") playProgress();
       else if (id === "segment") {
         const c = trackCoord(e as unknown as React.PointerEvent);
         if (c) setSel(c.thirds);
       }
     },
+    // the progress demo is keyboard-operable: Enter/Space replay it
+    ...(id === "progress" ? {
+      role: "button" as const,
+      tabIndex: 0,
+      "aria-label": "Play progress demo",
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); playProgress(); }
+      },
+    } : {}),
   };
 
   const anchorStyle = pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined;

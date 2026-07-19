@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight } from "@/generator/model";
 import type { GenStateName, BlendMode } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -239,7 +239,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, styleLib, saveStyle, applyStyle, removeStyle, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, styleLib, saveStyle, applyStyle, removeStyle, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -303,8 +303,8 @@ export function Panel() {
         <div className="sec">
           <div className="sec-head"><h3>The Kit</h3></div>
           <div className="sec-body">
-            <div className="helper">Your whole kit as a living guideline sheet — style tokens, the type spec, every component in true relative scale, and five little screens built from nothing but those pieces. Scroll through it like a brand book.</div>
-            <div className="helper">The page is permanently alive: press the buttons, drag the sliders, flip the switches, open the dropdown — the progress bars even fill on their own. To restyle a piece, hit the ✎ next to its name; a 🔒 means it's locked to its own look.</div>
+            <div className="helper">The kit works at five scales: foundations, finished components, assemblies, Build Parts for constructing new assets, and complete screen patterns. Every piece uses the same material recipe and remains editable.</div>
+            <div className="helper">The page is permanently alive: press the buttons, drag the sliders, flip the switches, open the dropdown — progress bars replay their fill on click. To restyle a piece, hit the ✎ next to its name; a 🔒 means it's locked to its own look.</div>
           </div>
         </div>
         <div className="btnrow">
@@ -763,10 +763,23 @@ export function Panel() {
 
       {/* ── H · Typography (content lives here too) ───────── */}
       <Section id="typography" title="Typography" summary={<span>{cfg.content.label || T2.font}</span>}>
-        <input className="tinput" value={cfg.content.label} maxLength={18} aria-label="Label text"
+        <input className="tinput" value={cfg.content.label} maxLength={32} aria-label="Label text"
           onChange={(e) => update((c) => { c.content.label = e.target.value; })} />
+        <input className="tinput" value={T2.highlight ?? ""} maxLength={32} placeholder="Highlight phrase — e.g. VICTORY" aria-label="Highlight phrase"
+          onChange={(e) => update((c) => { c.type.highlight = e.target.value; })} />
+        <div className="helper">The first matching word or phrase inside the label renders as a brighter, illuminated portion of the same material. Leave empty for none.</div>
         <FontPicker value={T2.font} customFonts={T2.customFonts ?? []}
-          onPick={(f) => { ensureFont(f); update((c) => { c.type.font = f; }); }} />
+          onPick={(f) => {
+            ensureFont(f);
+            update((c) => {
+              c.type.font = f;
+              // the face's real capabilities bound the weight; width resets
+              // to the axis default (or clears for faces without the axis)
+              const caps = fontByName(f).caps;
+              c.type.weight = clampWeight(caps, c.type.weight);
+              c.type.width = caps?.wdth ? caps.wdth[2] : undefined;
+            });
+          }} />
         <div className="addfont">
           <input className="tinput" value={fontDraft} placeholder="Add Google Font — exact family name" aria-label="Add Google Font"
             onChange={(e) => setFontDraft(e.target.value)}
@@ -777,8 +790,50 @@ export function Panel() {
         </div>
         <div className="helper">Paste the family name exactly as it appears on fonts.google.com (e.g. “Titan One”).</div>
         <Slider label="Size" value={T2.size} min={28} max={76} unit="px" onChange={(v) => update((c) => { c.type.size = v; })} />
-        <Slider label="Vertical nudge" value={T2.oy ?? 0} min={-20} max={20} unit="px" onChange={(v) => update((c) => { c.type.oy = v; })} />
-        <Slider label="Weight" value={T2.weight} min={400} max={900} step={100} unit="" onChange={(v) => update((c) => { c.type.weight = v; })} />
+        {focus ? (
+          <>
+            <Slider label="Vertical nudge" value={kitTextOy[`${focus}:${kitSizes[focus] ?? "m"}`] ?? T2.oy ?? 0} min={-20} max={20} unit="px"
+              onChange={(v) => setKitTextOy(`${focus}:${kitSizes[focus] ?? "m"}`, v)} />
+            <div className="helper">
+              Component-specific — this nudge belongs to <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> at its current size and never moves anything else.
+              {kitTextOy[`${focus}:${kitSizes[focus] ?? "m"}`] !== undefined && (
+                <button className="chipbtn" style={{ marginLeft: 8 }} title="Clear this component's nudge — follow the theme again"
+                  onClick={() => setKitTextOy(`${focus}:${kitSizes[focus] ?? "m"}`, null)}>
+                  <RotateCcw size={12} strokeWidth={2} />
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <Slider label="Vertical nudge" value={T2.oy ?? 0} min={-20} max={20} unit="px" onChange={(v) => update((c) => { c.type.oy = v; })} />
+        )}
+        {/* weight follows the face's real capabilities — variable axes get a
+            correctly bounded slider, static faces a list of real weights */}
+        {(() => {
+          const caps = fontByName(T2.font).caps;
+          if (caps?.wght) {
+            return <Slider label="Weight" value={T2.weight} min={caps.wght[0]} max={caps.wght[1]} step={10} unit="" onChange={(v) => update((c) => { c.type.weight = v; })} />;
+          }
+          const ws = caps?.weights ?? [T2.weight];
+          if (ws.length <= 1) {
+            return <div className="ctl"><label>Weight</label><span className="mr-hint">{ws[0] ?? 400} — single-weight face</span></div>;
+          }
+          return (
+            <label className="fieldbox" style={{ minWidth: 0 }}>
+              <span className="fl">Weight</span>
+              <select value={clampWeight(caps ?? {}, T2.weight)} aria-label="Font weight"
+                onChange={(e) => update((c) => { c.type.weight = +e.target.value; })}>
+                {ws.map((w) => <option key={w} value={w}>{w}</option>)}
+              </select>
+              <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+            </label>
+          );
+        })()}
+        {(() => {
+          const caps = fontByName(T2.font).caps;
+          if (!caps?.wdth) return null;
+          return <Slider label="Width" value={T2.width ?? caps.wdth[2]} min={caps.wdth[0]} max={caps.wdth[1]} unit="%" onChange={(v) => update((c) => { c.type.width = v; })} />;
+        })()}
         <Slider label="Spacing" value={T2.spacing} min={-5} max={20} unit="" onChange={(v) => update((c) => { c.type.spacing = v; })} />
         <div className="ctl">
           <label>Case</label>
@@ -857,6 +912,17 @@ export function Panel() {
           <Well label="Color" value={T2.glow.color} onChange={(v) => update((c) => { c.type.glow.color = v; })} />
           <Slider label="Size" value={T2.glow.size} min={2} max={24} unit="px" onChange={(v) => update((c) => { c.type.glow.size = v; })} />
           <Slider label="Opacity" value={T2.glow.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.glow.opacity = v; })} />
+        </FxToggle>
+        <FxToggle label="Stripes" on={T2.stripes?.on ?? false}
+          onToggle={(v) => update((c) => { c.type.stripes = { on: v, angle: c.type.stripes?.angle ?? 45, opacity: c.type.stripes?.opacity ?? 30 }; })}>
+          <Slider label="Angle" value={T2.stripes?.angle ?? 45} min={0} max={180} unit="°" onChange={(v) => update((c) => { c.type.stripes = { on: c.type.stripes?.on ?? true, angle: v, opacity: c.type.stripes?.opacity ?? 30 }; })} />
+          <Slider label="Opacity" value={T2.stripes?.opacity ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.stripes = { on: c.type.stripes?.on ?? true, angle: c.type.stripes?.angle ?? 45, opacity: v }; })} />
+          <div className="helper">Candy-wrap stripes inside the letterforms — tone-on-tone from the shell color.</div>
+        </FxToggle>
+        <FxToggle label="Inflate" on={T2.inflate?.on ?? false}
+          onToggle={(v) => update((c) => { c.type.inflate = { on: v, strength: c.type.inflate?.strength ?? 55 }; })}>
+          <Slider label="Strength" value={T2.inflate?.strength ?? 55} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.inflate = { on: c.type.inflate?.on ?? true, strength: v }; })} />
+          <div className="helper">A balloon highlight across the glyphs that follows the key light — spin the Lighting angle and it travels.</div>
         </FxToggle>
       </Section>
 
