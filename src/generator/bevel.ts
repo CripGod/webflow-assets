@@ -935,8 +935,14 @@ function stampTrack(svg: string, x: number, w: number): string {
  *  `expand` grows the canvas around overflow content (the open dropdown's
  *  menu) — needed when the SVG will be consumed as an image file.
  *  `textOy` is the per-component vertical text adjustment (explicit values
- *  win over the theme's; 0 is a valid explicit value). */
-export interface KitOpts { label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number }
+ *  win over the theme's; 0 is a valid explicit value).
+ *  `sub`/`max`/`addBtn` feed the mobile-game pieces (data row, HUD counter);
+ *  `overlay` is a stackable status layer: "locked" | "new" | "check" |
+ *  "equipped" | "count:N" | "level:N" | "cooldown:N" | "claimable" | "empty". */
+export interface KitOpts {
+  label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number;
+  sub?: string; max?: string; addBtn?: boolean; overlay?: string;
+}
 
 export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default", value?: number, shapeOv?: Shape, opts: KitOpts = {}): string {
   const k = SIZE_K[size];
@@ -1059,6 +1065,131 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const dims: Record<KitSize, [number, number]> = { s: [430, 290], m: [580, 380], l: [780, 470] };
       const [pw, ph2] = dims[size];
       return build(cfg, state, { x: 42, y: 33, h: ph2, fs: 0, iconSize: 0, tokenH: 150 }, { iconDef: null, label: "", fixedW: pw, shapeOverride: sov });
+    }
+    case "resource": {
+      /* HUD counter — icon medallion, numeric value, optional /max, optional
+         add button. Currency, lives, energy, tickets, materials. */
+      const h = 78 * k;
+      const val = opts.label ?? "1 250";
+      const maxTxt = opts.max ? ` / ${opts.max}` : "";
+      const fsV = 30 * k;
+      const textW = (val.length + maxTxt.length) * fsV * 0.62;
+      const addW = opts.addBtn ? 46 * k : 0;
+      const w = Math.max(150 * k, 62 * k + textW + addW + 46 * k);
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const cy = 30 + h / 2;
+      const medR = h * 0.44;
+      const icon = opts.icon ?? STOCK_ICONS.gem;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const parts =
+        candyKnob(39 + 6 * k + medR, cy, medR, bevel) +
+        iconGroup(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), { strokeWidth: 2.4 }) +
+        `<text x="${(39 + 20 * k + medR * 2).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsV}" font-weight="800" fill="#FFFFFF" opacity="${dim}" dominant-baseline="central">${esc(val)}</text>` +
+        (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * 0.62).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsV * 0.8}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(maxTxt)}</text>` : "") +
+        (opts.addBtn ? candyKnob(39 + w - 8 * k - h * 0.32, cy, h * 0.32, glow) +
+          `<text x="${(39 + w - 8 * k - h * 0.32).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="Inter, sans-serif" font-size="${26 * k}" font-weight="800" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">+</text>` : "");
+      return inject(track, parts);
+    }
+    case "datarow": {
+      /* Data row — portrait slot, labels, mini progress, trailing action.
+         Characters, missions, inventory, shop rows. */
+      const w = 620 * k, h = 128 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 128 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const inset = bw + 6;
+      const slotS = h - inset * 2 - 8;
+      const sx = 39 + inset + 6, sy2 = 30 + inset + 4 + 2;
+      const icon = opts.icon ?? STOCK_ICONS.user;
+      const tx = sx + slotS + 16 * k;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const title = opts.label ?? "Shadow Knight";
+      const sub = opts.sub ?? "Level 12 · Warrior";
+      const barY = 30 + h - inset - 16 * k, barW = w - (tx - 39) - 90 * k;
+      const fillW2 = barW * clamp(value ?? 0.4, 0, 1);
+      const gid2 = "dr" + UID++;
+      const ov = opts.overlay ?? "";
+      const parts =
+        `<path d="${roundRect(sx, sy2, slotS, slotS, 10 * k)}" fill="${wellFill}" opacity="0.92"/>` +
+        iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 }) +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${26 * k}" font-weight="800" fill="#FFFFFF" opacity="${dim}">${esc(title)}</text>` +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${17 * k}" font-weight="600" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
+        `<defs><linearGradient id="${gid2}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>` +
+        `<path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
+        (fillW2 > 1 ? `<path d="${roundRect(tx, barY, fillW2, 10 * k, 5 * k)}" fill="url(#${gid2})" opacity="${dim}"/>` : "") +
+        (ov === "locked"
+          ? iconGroup(STOCK_ICONS.lock, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, "rgba(255,255,255,0.75)", { strokeWidth: 2.2 })
+          : ov === "check"
+            ? iconGroup(STOCK_ICONS.check, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, glow, { strokeWidth: 2.6 })
+            : ov === "alert"
+              ? iconGroup(STOCK_ICONS.warning, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2.2 })
+              : iconGroup(STOCK_ICONS.forward, 39 + w - 48 * k, 30 + h / 2 - 12 * k, 24 * k, "rgba(255,255,255,0.6)", { strokeWidth: 2.4 }));
+      return inject(track, parts);
+    }
+    case "slot": {
+      /* Portrait / item slot — square frame with stackable status overlays.
+         The icon is the replaceable media slot. */
+      const s2 = ({ s: 104, m: 128, l: 168 } as Record<KitSize, number>)[size] * k;
+      const track = build(cfg, state, { x: 33, y: 27, h: s2, fs: 0, iconSize: 0, tokenH: 132 }, { iconDef: null, label: "", fixedW: s2, shapeOverride: sov });
+      const inset = bw + 5;
+      const cx2 = 33 + s2 / 2, cy2 = 27 + s2 / 2;
+      const inner = s2 - inset * 2;
+      const ov = opts.overlay ?? (opts.icon === null ? "empty" : "");
+      const dimmed = ov === "locked" || ov.startsWith("cooldown");
+      const parts: string[] = [];
+      parts.push(`<path d="${roundRect(33 + inset, 27 + inset, inner, inner, 9)}" fill="${wellFill}" opacity="0.9"/>`);
+      if (ov === "empty") {
+        parts.push(`<path d="${roundRect(33 + inset + 8, 27 + inset + 8, inner - 16, inner - 16, 7)}" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="2" stroke-dasharray="6 5"/>`);
+      } else if (opts.icon) {
+        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3, cy2 - inner * 0.3, inner * 0.6, glow, { strokeWidth: 2 }));
+      }
+      if (dimmed) parts.push(`<path d="${roundRect(33 + inset, 27 + inset, inner, inner, 9)}" fill="rgba(6,8,16,0.62)"/>`);
+      if (ov === "locked") parts.push(iconGroup(STOCK_ICONS.lock, cx2 - 13, cy2 - 13, 26, "rgba(255,255,255,0.85)", { strokeWidth: 2.2 }));
+      if (ov.startsWith("cooldown")) {
+        parts.push(`<text x="${cx2.toFixed(1)}" y="${(cy2 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${inner * 0.32}" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(ov.split(":")[1] ?? "12s")}</text>`);
+      }
+      if (ov.startsWith("count")) {
+        const n = ov.split(":")[1] ?? "1";
+        const bx2 = 33 + s2 - inset - 4, by2 = 27 + s2 - inset - 4;
+        parts.push(`<circle cx="${bx2}" cy="${by2}" r="15" fill="${bevel}" stroke="${darken(bevel, 0.4)}" stroke-width="1.5"/><text x="${bx2}" y="${by2 + 1}" font-family="Inter, sans-serif" font-size="15" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(n)}</text>`);
+      }
+      if (ov.startsWith("level")) {
+        const n = ov.split(":")[1] ?? "1";
+        parts.push(`<path d="${roundRect(33 + inset + 4, 27 + s2 - inset - 22, inner - 8, 18, 6)}" fill="rgba(6,8,16,0.72)"/><text x="${cx2}" y="${(27 + s2 - inset - 12.5).toFixed(1)}" font-family="Inter, sans-serif" font-size="12.5" font-weight="800" letter-spacing=".08em" fill="${glow}" text-anchor="middle" dominant-baseline="central">LV ${esc(n)}</text>`);
+      }
+      if (ov === "new") {
+        parts.push(`<circle cx="${33 + s2 - inset - 2}" cy="${27 + inset + 2}" r="13" fill="${glow}" stroke="${darken(bevel, 0.45)}" stroke-width="1.5"/><text x="${33 + s2 - inset - 2}" y="${27 + inset + 3}" font-family="Inter, sans-serif" font-size="15" font-weight="900" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">!</text>`);
+      }
+      if (ov === "check" || ov === "equipped" || ov === "claimable") {
+        parts.push(`<circle cx="${33 + s2 - inset - 2}" cy="${27 + inset + 2}" r="13" fill="${ov === "claimable" ? glow : bevel}" stroke="${darken(bevel, 0.45)}" stroke-width="1.5"/>` +
+          iconGroup(STOCK_ICONS.check, 33 + s2 - inset - 10, 27 + inset - 6, 16, ov === "claimable" ? darken(bevel, 0.6) : "#FFFFFF", { strokeWidth: 3 }));
+      }
+      return inject(track, parts.join(""));
+    }
+    case "ring": {
+      /* Circular progress / countdown ring — the one piece not built on a
+         silhouette. Same wells, same glow language; value drives the arc. */
+      const d2 = ({ s: 96, m: 136, l: 184 } as Record<KitSize, number>)[size] * k;
+      const stroke2 = Math.max(8, d2 * 0.1);
+      const pad2 = 26;
+      const cx3 = d2 / 2 + pad2, cy3 = d2 / 2 + pad2;
+      const r2 = d2 / 2 - stroke2 / 2;
+      const v2 = clamp(value ?? 0.62, 0, 1);
+      const circ = 2 * Math.PI * r2;
+      const gid3 = "rg" + UID++;
+      const label2 = opts.label ?? `${Math.round(v2 * 100)}%`;
+      const dim = state === "disabled" ? 0.4 : 1;
+      const total2 = d2 + pad2 * 2;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${total2}" height="${total2}" viewBox="0 0 ${total2} ${total2}" role="img" aria-label="progress ring">
+<defs>
+  <linearGradient id="${gid3}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>
+  <filter id="${gid3}g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
+</defs>
+<g opacity="${dim}">
+  <circle cx="${cx3}" cy="${cy3}" r="${r2}" fill="none" stroke="${wellFill}" stroke-width="${stroke2}"/>
+  ${v2 > 0.005 ? `<circle cx="${cx3}" cy="${cy3}" r="${r2}" fill="none" stroke="${glow}" stroke-width="${stroke2}" stroke-linecap="round" stroke-dasharray="${(circ * v2).toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${cx3} ${cy3})" filter="url(#${gid3}g)" opacity="0.55"/>
+  <circle cx="${cx3}" cy="${cy3}" r="${r2}" fill="none" stroke="url(#${gid3})" stroke-width="${stroke2}" stroke-linecap="round" stroke-dasharray="${(circ * v2).toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${cx3} ${cy3})"/>` : ""}
+  <text x="${cx3}" y="${cy3 + 1}" font-family="'${font}', Inter, sans-serif" font-size="${(d2 * 0.22).toFixed(1)}" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(label2)}</text>
+</g>
+</svg>`;
     }
     case "dropdown": {
       const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy });

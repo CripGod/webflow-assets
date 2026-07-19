@@ -14,7 +14,7 @@ import { LiveArt } from "./LiveArt";
    every example is live, and every piece opens in the editor. */
 
 const PIECE_SCALE = 0.5;
-const PATTERN_SCALE = 0.34;
+const PATTERN_SCALE = 0.31;
 
 const clone = (c: GenConfig) => JSON.parse(JSON.stringify(c)) as GenConfig;
 
@@ -30,6 +30,7 @@ function Art({ svg, scale, className }: { svg: string; scale: number; className?
 interface PieceOpts {
   id: KitComponentId; size?: KitSize; label?: string; segments?: string[];
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
+  sub?: string; max?: string; addBtn?: boolean; overlay?: string;
 }
 
 /** Shared plumbing for every live piece on this page. The page is always
@@ -49,6 +50,7 @@ function usePiece(p: PieceOpts) {
     kit: {
       id: p.id, size, shape: kitShapes[p.id], label: p.label, segments: p.segments,
       icon: p.icon, value: p.value, baseState: p.baseState,
+      sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay,
       // explicit per-component vertical text adjustment (0 is a valid value)
       textOy: kitTextOy[`${p.id}:${size}`],
     },
@@ -151,6 +153,19 @@ function StateStrip({ variants }: {
   );
 }
 
+/** One motion behavior demo — click replays the behavior on a real piece. */
+function MotionDemo({ name, cls, piece }: { name: string; cls: string; piece: PieceOpts }) {
+  const [tick, setTick] = useState(0);
+  return (
+    <button className="kp-part kp-mo" title={`Replay ${name}`} onClick={() => setTick((t) => t + 1)}>
+      <span key={tick} className={`kp-mostage ${cls}`}>
+        <PPiece {...piece} scale={piece.scale ?? 0.26} />
+      </span>
+      <span className="kp-partname">{name}</span>
+    </button>
+  );
+}
+
 /* jump into the editor with a section opened — Build Parts are editable by
    opening the layer that produces them */
 function openEditor(sec: string) {
@@ -159,8 +174,10 @@ function openEditor(sec: string) {
 }
 
 /** Banner rendered with its three-slice guides: fixed caps, stretch middle,
- *  text-safe area — computed from the real silhouette metadata. */
-function SliceDemo({ cfg, label, size = "m" }: { cfg: GenConfig; label: string; size?: KitSize }) {
+ *  text-safe area — computed from the real silhouette metadata. The demo
+ *  scales itself into `fit` px so a very wide banner never dominates the
+ *  page; the ruler label reports its true shell width. */
+function SliceDemo({ cfg, label, size = "m", fit = 520, ruler }: { cfg: GenConfig; label: string; size?: KitSize; fit?: number; ruler?: boolean }) {
   const { kitShapes } = useGen();
   const shape = kitShapes.header ?? "banner";
   const met = silhouetteMeta(shape);
@@ -174,21 +191,26 @@ function SliceDemo({ cfg, label, size = "m" }: { cfg: GenConfig; label: string; 
     const cap = met.capScale * h, safe = met.content.left * h;
     const x0 = pad + 52;
     return {
+      total, shellW: Math.round(shellW),
       capL: ((x0 + cap) / total) * 100, capR: ((x0 + shellW - cap) / total) * 100,
       safeL: ((x0 + safe) / total) * 100, safeR: ((x0 + shellW - safe) / total) * 100,
     };
   }, [svg, met, size]);
+  const scale = geo ? Math.min(0.44, fit / geo.total) : 0.44;
   return (
-    <div className="kp-slice">
-      <Art svg={svg} scale={0.44} />
-      {geo && (
-        <>
-          <span className="kp-guide cap" style={{ left: `${geo.capL}%` }} />
-          <span className="kp-guide cap" style={{ left: `${geo.capR}%` }} />
-          <span className="kp-guide safe" style={{ left: `${geo.safeL}%` }} />
-          <span className="kp-guide safe" style={{ left: `${geo.safeR}%` }} />
-        </>
-      )}
+    <div>
+      <div className="kp-slice">
+        <Art svg={svg} scale={scale} />
+        {geo && (
+          <>
+            <span className="kp-guide cap" style={{ left: `${geo.capL}%` }} />
+            <span className="kp-guide cap" style={{ left: `${geo.capR}%` }} />
+            <span className="kp-guide safe" style={{ left: `${geo.safeL}%` }} />
+            <span className="kp-guide safe" style={{ left: `${geo.safeR}%` }} />
+          </>
+        )}
+      </div>
+      {ruler && geo && <div className="kp-ruler">├─ true shell width ≈ {geo.shellW}px · shown at {Math.round(scale * 100)}% ─┤</div>}
     </div>
   );
 }
@@ -445,11 +467,11 @@ export function KitPage() {
           <Piece id="progress" caption="Progress" value={0.62} ambient />
         </div>
         <StateStrip variants={[
-          { cap: "Min", piece: { id: "slider", value: 0 } },
-          { cap: "25%", piece: { id: "slider", value: 0.25 } },
-          { cap: "Mid", piece: { id: "slider", value: 0.5 } },
-          { cap: "75%", piece: { id: "slider", value: 0.75 } },
-          { cap: "Max", piece: { id: "slider", value: 1 } },
+          { cap: "Min", piece: { id: "slider", value: 0, scale: 0.26 } },
+          { cap: "25%", piece: { id: "slider", value: 0.25, scale: 0.26 } },
+          { cap: "Mid", piece: { id: "slider", value: 0.5, scale: 0.26 } },
+          { cap: "75%", piece: { id: "slider", value: 0.75, scale: 0.26 } },
+          { cap: "Max", piece: { id: "slider", value: 1, scale: 0.26 } },
         ]} />
       </Sec>
 
@@ -478,11 +500,11 @@ export function KitPage() {
         <div className="kp-subhead">Banner / Stretch</div>
         <div className="kp-tray kp-banners">
           <div>
-            <SliceDemo cfg={applyKitDesign(cfg, kitDesigns.header)} label={label} />
+            <SliceDemo cfg={applyKitDesign(cfg, kitDesigns.header)} label={label} fit={380} ruler />
             <div className="kp-cap"><span>Standard</span></div>
           </div>
           <div>
-            <SliceDemo cfg={applyKitDesign(cfg, kitDesigns.header)} label="CONTINUE YOUR ADVENTURE" size="l" />
+            <SliceDemo cfg={applyKitDesign(cfg, kitDesigns.header)} label="CONTINUE YOUR ADVENTURE" size="l" fit={520} ruler />
             <div className="kp-cap"><span>Wide</span></div>
           </div>
         </div>
@@ -515,10 +537,52 @@ export function KitPage() {
         </div>
       </Sec>
 
+      {/* ── 10 · game HUD & data ── */}
+      <Sec n="10" title="Game HUD & Data" note="The mobile-game core: HUD counters, data rows, item slots and progress rings — every icon, portrait and value is a replaceable slot.">
+        <div className="kp-subhead">HUD counters</div>
+        <div className="kp-tray">
+          <Piece id="resource" caption="Compact" label="1 250" scale={0.4} />
+          <Piece id="resource" caption="Current / max" label="3" max="5" icon={STOCK_ICONS.heart} scale={0.4} />
+          <Piece id="resource" caption="With add" label="980" addBtn scale={0.4} />
+          <Piece id="resource" caption="Low resource" label="0" max="5" icon={STOCK_ICONS.heart} baseState="hover" scale={0.4} />
+          <Piece id="resource" caption="Disabled" label="—" baseState="disabled" scale={0.4} />
+        </div>
+        <div className="kp-subhead">Data rows</div>
+        <div className="kp-tray">
+          <Piece id="datarow" caption="Standard" scale={0.42} value={0.4} />
+          <Piece id="datarow" caption="Selected" baseState="hover" value={0.4} scale={0.42} />
+        </div>
+        <div className="kp-tray">
+          <Piece id="datarow" caption="Locked" overlay="locked" baseState="disabled" label="???" sub="Reach level 20" value={0} scale={0.42} />
+          <Piece id="datarow" caption="Completed" overlay="check" label="Daily Login" sub="Reward ready" value={1} scale={0.42} />
+        </div>
+        <div className="kp-subhead">Item slots — stackable status overlays</div>
+        <div className="kp-tray">
+          <Piece id="slot" caption="Empty" icon={null} scale={0.4} />
+          <Piece id="slot" caption="Filled" icon={STOCK_ICONS.gem} scale={0.4} />
+          <Piece id="slot" caption="Count" icon={STOCK_ICONS.gem} overlay="count:14" scale={0.4} />
+          <Piece id="slot" caption="Level" icon={STOCK_ICONS.user} overlay="level:12" scale={0.4} />
+          <Piece id="slot" caption="Locked" icon={STOCK_ICONS.gem} overlay="locked" scale={0.4} />
+          <Piece id="slot" caption="New" icon={STOCK_ICONS.bag} overlay="new" scale={0.4} />
+          <Piece id="slot" caption="Equipped" icon={STOCK_ICONS.gem} overlay="equipped" scale={0.4} />
+          <Piece id="slot" caption="Cooldown" icon={STOCK_ICONS.gem} overlay="cooldown:12s" scale={0.4} />
+          <Piece id="slot" caption="Claimable" icon={STOCK_ICONS.gem} overlay="claimable" baseState="hover" scale={0.4} />
+        </div>
+        <div className="kp-subhead">Progress rings & timers — click one to replay it</div>
+        <div className="kp-tray">
+          <Piece id="ring" size="s" caption="Small" value={0.3} scale={0.5} />
+          <Piece id="ring" size="m" caption="Countdown" value={0.72} label="0:42" scale={0.5} ambient />
+          <Piece id="ring" size="l" caption="Large" value={0.62} scale={0.5} />
+          <Piece id="ring" size="m" caption="Nearly done" value={0.94} scale={0.5} />
+          <Piece id="ring" size="m" caption="Complete" value={1} label="✓" scale={0.5} />
+          <Piece id="ring" size="m" caption="Expired" value={0} label="0:00" baseState="disabled" scale={0.5} />
+        </div>
+      </Sec>
+
       <Chapter id="assemblies" label="Assemblies" blurb="components combined into ready pieces — no new materials, no one-off styling" />
 
-      {/* ── 10 · containers & assemblies ── */}
-      <Sec n="10" title="Containers & Assemblies" note="Panels and compound pieces built entirely from the components above.">
+      {/* ── 11 · containers & assemblies ── */}
+      <Sec n="11" title="Containers & Assemblies" note="Panels and compound pieces built entirely from the components above.">
         <div className="kp-tray">
           <Piece id="panel" size="s" caption="Panel · S" />
           <Piece id="panel" size="m" caption="Panel · M" />
@@ -599,19 +663,107 @@ export function KitPage() {
               <PPiece id="ghost" label="Back" size="s" scale={0.3} />
             </div>
           </div>
+          <div className="gp-card">
+            <div className="gp-title">Bottom sheet · collapsed</div>
+            <div className="kp-sheet collapsed">
+              <span className="kp-handle" />
+              <div className="gp-row">
+                <span className="gp-label">Squad details</span>
+                <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.18} />
+              </div>
+            </div>
+          </div>
+          <div className="gp-card">
+            <div className="gp-title">Bottom sheet · expanded</div>
+            <div className="kp-sheet">
+              <span className="kp-handle" />
+              <div className="gp-row"><span className="gp-label">Squad details</span><PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.16} /></div>
+              <PPiece id="datarow" value={0.4} scale={0.3} />
+              <PPiece id="datarow" label="Iron Golem" sub="Level 8 · Tank" value={0.7} scale={0.3} />
+              <div className="kp-sheetfoot"><PPiece id="small" label="DEPLOY" scale={0.28} /></div>
+            </div>
+          </div>
+        </div>
+      </Sec>
+
+      {/* ── 12 · reward & objectives ── */}
+      <Sec n="12" title="Reward Track & Objectives" note="Progression assemblies — the track scrolls horizontally when it outgrows the row; every milestone is a registered slot.">
+        <div className="kp-subhead">Reward track</div>
+        <div className="kp-track">
+          <div className="kp-rail"><span className="kp-railfill" style={{ width: "46%" }} /></div>
+          <div className="kp-milestones">
+            <div className="kp-mile"><PPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="check" scale={0.34} /><span>Claimed</span></div>
+            <div className="kp-mile"><PPiece id="slot" size="s" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.34} /><span>Claimable</span></div>
+            <div className="kp-mile current"><PPiece id="ring" size="s" value={0.46} scale={0.4} /><span>Current</span></div>
+            <div className="kp-mile"><PPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="locked" scale={0.34} /><span>Locked</span></div>
+            <div className="kp-mile"><PPiece id="slot" size="s" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.34} /><span>Final</span></div>
+          </div>
+        </div>
+        <div className="kp-subhead">Objective list</div>
+        <div className="kp-tray">
+          <Piece id="datarow" caption="In progress" label="Win 3 matches" sub="2 of 3 · +250 gems" value={0.66} scale={0.42} />
+          <Piece id="datarow" caption="Claimable" label="Daily login" sub="Tap to claim · +50 gems" value={1} overlay="check" baseState="hover" scale={0.42} />
+        </div>
+      </Sec>
+
+      {/* ── 13 · onboarding & map ── */}
+      <Sec n="13" title="Onboarding & Map" note="Tutorial and progression-map primitives — the spotlight and ring point at other components without changing them.">
+        <div className="kp-patterns kp-assemblies">
+          <div className="gp-card">
+            <div className="gp-title">Speech bubble · coachmark</div>
+            <div className="kp-bubblerow">
+              <PPiece id="iconbtn" icon={STOCK_ICONS.user} scale={0.26} />
+              <div className="kp-bubble">Tap the glowing button to start your first quest!</div>
+            </div>
+            <div className="kp-coach">
+              <span className="kp-step">1 / 3</span>
+              <span className="gp-label">This is your energy meter.</span>
+              <div className="gp-row center">
+                <PPiece id="small" label="NEXT" scale={0.26} />
+                <PPiece id="ghost" label="Skip" size="s" scale={0.24} />
+              </div>
+            </div>
+          </div>
+          <div className="gp-card">
+            <div className="gp-title">Spotlight · target ring</div>
+            <div className="kp-dim">
+              <span className="kp-spot">
+                <span className="kp-ringpulse" />
+                <PPiece id="small" label="CLAIM" baseState="hover" scale={0.3} />
+              </span>
+              <span className="kp-pointer">▲</span>
+              <span className="gp-label">Rewards land here</span>
+            </div>
+          </div>
+          <div className="gp-card">
+            <div className="gp-title">Map nodes · connectors</div>
+            <div className="kp-map">
+              <span className="kp-line done" />
+              <span className="kp-line" />
+              <div className="kp-nodes">
+                <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.check} scale={0.24} /><span>Done</span></div>
+                <div className="kp-node sel"><span className="kp-ringpulse" /><PPiece id="badge" label="4" scale={0.26} baseState="hover" /><span>Current</span></div>
+                <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.lock} scale={0.24} /><span>Locked</span></div>
+              </div>
+              <div className="gp-row center">
+                <PPiece id="iconbtn" icon={STOCK_ICONS.search} scale={0.18} />
+                <PPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.18} />
+              </div>
+            </div>
+          </div>
         </div>
       </Sec>
 
       <Chapter id="parts" label="Build Parts" blurb="the construction vocabulary — build what the kit doesn’t have yet without breaking the language" />
 
-      {/* ── 11 · build parts ── */}
-      <Sec n="11" title="Build Parts" note="Everything above is built from these. Click any part to open the layer that produces it in the editor.">
+      {/* ── 14 · build parts ── */}
+      <Sec n="14" title="Build Parts" note="Everything above is built from these. Click any part to open the layer that produces it in the editor.">
         <div className="kp-subhead">Stretch systems</div>
         <p className="kp-note">Every silhouette is procedural three-slice geometry: caps are sized by height and never distort; only the middle stretches. Magenta dashes mark the fixed caps, green marks the text-safe area.</p>
         <div className="kp-slices">
-          <SliceDemo cfg={cfg} label="GO" />
-          <SliceDemo cfg={cfg} label={label} />
-          <SliceDemo cfg={cfg} label="CONTINUE YOUR ADVENTURE" />
+          <SliceDemo cfg={cfg} label="GO" fit={300} />
+          <SliceDemo cfg={cfg} label={label} fit={380} />
+          <SliceDemo cfg={cfg} label="CONTINUE YOUR ADVENTURE" fit={520} ruler />
         </div>
         <div className="kp-meta">
           <span>Left cap · Fixed</span><span>Center · Stretch X</span><span>Right cap · Fixed</span>
@@ -667,10 +819,28 @@ export function KitPage() {
         </div>
       </Sec>
 
+      {/* ── 15 · motion ── */}
+      <Sec n="15" title="Motion" note="Parameterized behaviors, not one-off animations — apply them to any piece. Click a card to replay it; reduced-motion turns them all off.">
+        <div className="kp-motion">
+          {([
+            ["Attention pulse", "mo-pulse", { id: "small" as KitComponentId, label: "CLAIM" }],
+            ["Small bounce", "mo-bounce", { id: "badge" as KitComponentId, baseState: "pressed" as GenStateName }],
+            ["Glow cycle", "mo-glow", { id: "chip" as KitComponentId, label: "+500", icon: STOCK_ICONS.gem }],
+            ["Error shake", "mo-shake", { id: "input" as KitComponentId, label: "Wrong code" }],
+            ["Reward pop", "mo-pop", { id: "slot" as KitComponentId, icon: STOCK_ICONS.gem, overlay: "claimable" }],
+            ["Press compression", "mo-press", { id: "small" as KitComponentId, label: "GO" }],
+            ["Notification entrance", "mo-slidein", { id: "resource" as KitComponentId, label: "+50" }],
+            ["Panel slide", "mo-rise", { id: "tab" as KitComponentId, label: "NEW QUEST" }],
+          ] as [string, string, PieceOpts][]).map(([name, cls, piece]) => (
+            <MotionDemo key={cls} name={name} cls={cls} piece={piece} />
+          ))}
+        </div>
+      </Sec>
+
       <Chapter id="patterns" label="Screen Patterns" blurb="complete live screens — start here and restyle everything at once" />
 
-      {/* ── 12 · patterns ── */}
-      <Sec n="12" title="Screen Patterns" note="Eleven little screens built from nothing but registered components — all of them live, every nested piece editable.">
+      {/* ── 16 · patterns ── */}
+      <Sec n="16" title="Screen Patterns" note="Eleven little screens built from nothing but registered components — all of them live, every nested piece editable.">
         <div className="kp-patterns">
           <div className="gp-card">
             <div className="gp-title">Main menu</div>
@@ -714,8 +884,8 @@ export function KitPage() {
           </div>
           <div className="gp-card">
             <div className="gp-title">Reward</div>
-            <PPiece id="header" label="LEVEL UP!" scale={0.3} />
-            <PPiece id="badge" baseState="pressed" scale={0.44} />
+            <PPiece id="header" label="LEVEL UP!" scale={0.28} />
+            <PPiece id="badge" baseState="pressed" scale={0.36} />
             <PPiece id="chip" label="+500" icon={STOCK_ICONS.gem} />
             <div className="gp-col"><span className="gp-label">Next reward</span><PPiece id="progress" value={1} /></div>
             <PPiece id="primary" label="CLAIM" size="s" />
