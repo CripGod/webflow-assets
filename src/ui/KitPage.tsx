@@ -178,10 +178,11 @@ function openEditor(sec: string) {
  *  scales itself into `fit` px so a very wide banner never dominates the
  *  page; the ruler label reports its true shell width. */
 function SliceDemo({ cfg, label, size = "m", fit = 520, ruler }: { cfg: GenConfig; label: string; size?: KitSize; fit?: number; ruler?: boolean }) {
-  const { kitShapes } = useGen();
+  const { kitShapes, kitTextOy } = useGen();
   const shape = kitShapes.header ?? "banner";
   const met = silhouetteMeta(shape);
-  const svg = useMemo(() => renderKit(cfg, "header", size, "default", undefined, kitShapes.header, { label }), [cfg, label, size, kitShapes.header]);
+  const oy = kitTextOy[`header:${size}`];
+  const svg = useMemo(() => renderKit(cfg, "header", size, "default", undefined, kitShapes.header, { label, textOy: oy }), [cfg, label, size, kitShapes.header, oy]);
   const geo = useMemo(() => {
     const m = svg.match(/viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/);
     if (!m || !met) return null;
