@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix, isDarkBg } from "@/generator/model";
-import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize } from "@/generator/model";
+import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
 import { previewSvg } from "@/generator/icons";
@@ -21,7 +21,7 @@ const CHAPTERS: [string, string, string][] = [
   ["resources", "05", "Resources"],
 ];
 
-const PIECE_SCALE = 0.56;
+const PIECE_SCALE = 0.62;
 const PATTERN_SCALE = 0.31;
 
 const clone = (c: GenConfig) => JSON.parse(JSON.stringify(c)) as GenConfig;
@@ -39,7 +39,7 @@ interface PieceOpts {
   id: KitComponentId; size?: KitSize; label?: string; segments?: string[];
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string; trim?: boolean;
-  kind?: "circle" | "oval" | "strip"; tone?: "alt";
+  kind?: "circle" | "oval" | "strip"; tone?: "alt"; shape?: Shape;
 }
 
 /** Shared plumbing for every live piece on this page. The page is always
@@ -48,7 +48,8 @@ function usePiece(p: PieceOpts) {
   const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitRow, setFocus, setKitSize } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
-  const size = p.size ?? kitSizes[p.id] ?? "m";
+  // the documentation shows medium and large only — a stored Small reads as Medium
+  const size = p.size ?? (kitSizes[p.id] === "s" ? "m" : kitSizes[p.id]) ?? "m";
   return {
     // a locked component renders its own snapshot, not the master's style
     cfg: applyKitDesign(cfg, kitDesigns[p.id]),
@@ -57,7 +58,7 @@ function usePiece(p: PieceOpts) {
     sizable: p.size === undefined,
     name: KIT_COMPONENTS.find((c) => c.id === p.id)?.name ?? p.id,
     kit: {
-      id: p.id, size, shape: kitShapes[p.id], label: p.label, segments: p.segments,
+      id: p.id, size, shape: p.shape ?? kitShapes[p.id], label: p.label, segments: p.segments,
       icon: p.icon, value: p.value, baseState: p.baseState,
       sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay,
       // explicit per-component vertical text adjustment (0 is a valid value)
@@ -87,7 +88,7 @@ function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
         </button>
         {sizable && (
           <span className="kp-sizes">
-            {(["s", "m", "l"] as const).map((s) => (
+            {(["m", "l"] as const).map((s) => (
               <button key={s} className={size === s ? "on" : ""} title={`Size ${s.toUpperCase()}`}
                 onClick={(e) => { e.stopPropagation(); setKitSize(p.id, s); }}>{s.toUpperCase()}</button>
             ))}
@@ -177,50 +178,15 @@ function LayoutCard({ id, name, device, onHide, children }: {
   );
 }
 
-/* ── hero collage — live pieces scattered free on a starfield ─────
-   Three anchors always show (banner, primary, progress); the rest is a
-   fresh random pick and jitter on every visit. Nothing is boxed — the
-   field fades out radially, so the collage flows into the page. */
-const COLLAGE_SLOTS: { x: number; y: number; r: number }[] = [
-  { x: 50, y: 10, r: -2 }, { x: 50, y: 47, r: 0 }, { x: 48, y: 64, r: -1.5 },
-  { x: 17, y: 17, r: -7 }, { x: 83, y: 14, r: 5 }, { x: 13, y: 50, r: 4 },
-  { x: 86, y: 46, r: -4 }, { x: 19, y: 82, r: -5 }, { x: 56, y: 87, r: 2 }, { x: 84, y: 76, r: 6 },
-];
-function buildCollage(): { x: number; y: number; r: number; p: PieceOpts; s: number; amb?: boolean }[] {
-  const jit = (v: number, a: number) => v + (Math.random() * 2 - 1) * a;
-  const pool: { p: PieceOpts; s: number }[] = [
-    { p: { id: "badge", size: "l", baseState: "pressed", icon: STOCK_ICONS.star }, s: 0.5 },
-    { p: { id: "slot", icon: STOCK_ICONS.gem, overlay: "count:128" }, s: 0.44 },
-    { p: { id: "resource", label: "12.8k", icon: STOCK_ICONS.gem }, s: 0.42 },
-    { p: { id: "joystick", size: "s" }, s: 0.42 },
-    { p: { id: "ring", value: 0.72 }, s: 0.5 },
-    { p: { id: "toggle", value: 1 }, s: 0.36 },
-    { p: { id: "chip", label: "+50", icon: STOCK_ICONS.heart }, s: 0.44 },
-    { p: { id: "small", label: "CLAIM" }, s: 0.42 },
-    { p: { id: "tab", label: "STAGE 06", tone: "alt" }, s: 0.38 },
-    { p: { id: "iconbtn", icon: STOCK_ICONS.trophy }, s: 0.4 },
-    { p: { id: "segment", segments: ["1×", "2×", "3×"], value: 1 }, s: 0.34 },
-  ];
-  const picks = [...pool].sort(() => Math.random() - 0.5).slice(0, 7);
-  const out: { x: number; y: number; r: number; p: PieceOpts; s: number; amb?: boolean }[] = [
-    { ...COLLAGE_SLOTS[0], p: { id: "header", label: "LEVEL UP!" }, s: 0.44 },
-    { ...COLLAGE_SLOTS[1], p: { id: "primary", label: "PLAY NOW" }, s: 0.48 },
-    { ...COLLAGE_SLOTS[2], p: { id: "progress", value: 0.68 }, s: 0.42, amb: true },
-  ];
-  picks.forEach((pk, i) => {
-    const sl = COLLAGE_SLOTS[3 + i];
-    out.push({ x: jit(sl.x, 3), y: jit(sl.y, 4), r: jit(sl.r, 3), p: pk.p, s: pk.s });
-  });
-  return out;
-}
-
+/* ── hero composition — a structured screen-like collage of live pieces
+   on a starfield, unbounded by any card. Deliberate slots, not random:
+   headline column center, meta clusters left and right, dashed arcs. */
 function Collage() {
   const { cfg } = useGen();
-  const items = useMemo(() => buildCollage(), []);
   const glow = cfg.effects.Glow ?? "#8FF0FF";
   const bevel = cfg.effects.Bevel ?? "#0E9CC9";
   return (
-    <div className="kp-collage" aria-label="Live component collage" style={{
+    <div className="kp-collage" aria-label="Live component composition" style={{
       backgroundImage: [
         `radial-gradient(ellipse 60% 45% at 64% 30%, ${hexMix(glow, "#000000", 0)}1f, transparent 70%)`,
         `radial-gradient(ellipse 55% 40% at 30% 72%, ${hexMix(bevel, "#000000", 0)}1a, transparent 70%)`,
@@ -231,16 +197,71 @@ function Collage() {
       backgroundPosition: "0 0, 0 0, 12px 8px, 40px 50px",
     }}>
       <svg className="kp-collarcs" viewBox="0 0 600 540" aria-hidden="true" preserveAspectRatio="none">
-        <path d="M128 100 C 180 46, 250 40, 292 70" />
-        <path d="M466 128 C 516 176, 514 224, 462 252" />
-        <path d="M150 410 C 224 462, 330 468, 410 430" />
+        <path d="M150 120 C 200 70, 260 60, 296 84" />
+        <path d="M452 150 C 500 196, 498 240, 452 266" />
+        <path d="M160 420 C 230 466, 330 470, 408 436" />
         <text x="76" y="308">✦</text><text x="522" y="86">✦</text><text x="544" y="440">✦</text><text x="60" y="120">✦</text>
       </svg>
-      {items.map((it, i) => (
-        <div className="kp-colit" key={i} style={{ left: `${it.x}%`, top: `${it.y}%`, transform: `translate(-50%, -50%) rotate(${it.r}deg)` }}>
-          <SPiece {...it.p} scale={it.s} ambient={it.amb} />
+
+      <div className="kp-colit" style={{ left: "12%", top: "14%", transform: "translate(-50%,-50%) rotate(-5deg)" }}>
+        <SPiece id="slot" icon={STOCK_ICONS.gem} overlay="count:128" scale={0.6} />
+      </div>
+      <div className="kp-colit" style={{ left: "50%", top: "9%", transform: "translate(-50%,-50%) rotate(-1.5deg)" }}>
+        <SPiece id="header" label="LEVEL UP!" scale={0.48} />
+      </div>
+      <div className="kp-colit kp-hudtrio" style={{ left: "80%", top: "10%", transform: "translate(-50%,-50%) rotate(3deg)" }}>
+        <SPiece id="resource" label="5" max="5" icon={STOCK_ICONS.heart} scale={0.34} />
+        <SPiece id="resource" label="340" icon={STOCK_ICONS.star} scale={0.34} />
+        <SPiece id="resource" label="12.8k" icon={STOCK_ICONS.gem} scale={0.34} />
+      </div>
+      <div className="kp-colit kp-scorebd" style={{ left: "13%", top: "48%", transform: "translate(-50%,-50%) rotate(-2deg)" }}>
+        <SPiece id="tab" label="SCORE BOARD" tone="alt" scale={0.34} />
+        <div className="kp-scrows">
+          {([["1", "JellyHero", "98,428"], ["2", "GrapeKing", "87,210"], ["3", "PurplePush", "75,300"]] as const).map(([n, who, pts]) => (
+            <div className="kp-scrow" key={n}><b>{n}</b><span>{who}</span><em>{pts}</em></div>
+          ))}
         </div>
-      ))}
+        <SPiece id="ghost" label="VIEW LEADERBOARD" size="s" scale={0.32} />
+      </div>
+      <div className="kp-colit" style={{ left: "50%", top: "27%", transform: "translate(-50%,-50%)" }}>
+        <SPiece id="chip" label="STAGE 06" icon={null} tone="alt" scale={0.36} />
+      </div>
+      <div className="kp-colit" style={{ left: "50%", top: "42%", transform: "translate(-50%,-50%)" }}>
+        <SPiece id="primary" label="PLAY NOW" scale={0.58} />
+      </div>
+      <div className="kp-colit" style={{ left: "49%", top: "58%", transform: "translate(-50%,-50%) rotate(-1deg)" }}>
+        <SPiece id="progress" value={0.64} ambient scale={0.48} />
+      </div>
+      <div className="kp-colit kp-dailyb" style={{ left: "81%", top: "44%", transform: "translate(-50%,-50%) rotate(2deg)" }}>
+        <span className="kp-dbt">Daily bonus</span>
+        <span className="kp-dbs">Collect your reward</span>
+        <div className="kp-dbrow">
+          <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.4} />
+          <SPiece id="small" label="CLAIM" scale={0.4} />
+        </div>
+      </div>
+      <div className="kp-colit kp-navstrip" style={{ left: "50%", top: "76%", transform: "translate(-50%,-50%)" }}>
+        <SPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.34} />
+        <SPiece id="iconbtn" icon={STOCK_ICONS.trophy} scale={0.34} />
+        <SPiece id="iconbtn" icon={STOCK_ICONS.star} baseState="hover" scale={0.4} />
+        <SPiece id="iconbtn" icon={STOCK_ICONS.bag} scale={0.34} />
+        <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.34} />
+      </div>
+      <div className="kp-colit kp-loadcl" style={{ left: "16%", top: "84%", transform: "translate(-50%,-50%) rotate(-3deg)" }}>
+        <SPiece id="ring" value={0.72} scale={0.4} />
+        <div className="kp-loadcol">
+          <span className="kp-dbs">Loading level…</span>
+          <SPiece id="progress" value={0.72} ambient scale={0.32} />
+        </div>
+      </div>
+      <div className="kp-colit" style={{ left: "80%", top: "80%", transform: "translate(-50%,-50%) rotate(4deg)" }}>
+        <SPiece id="joystick" size="s" scale={0.5} />
+      </div>
+      <div className="kp-colit kp-chiptrio" style={{ left: "52%", top: "90%", transform: "translate(-50%,-50%)" }}>
+        <SPiece id="chip" label="POWER UP" icon={null} scale={0.32} />
+        <SPiece id="chip" label="LIMITED" icon={null} tone="alt" scale={0.32} />
+        <SPiece id="chip" label="EPIC" icon={STOCK_ICONS.star} baseState="hover" scale={0.32} />
+      </div>
     </div>
   );
 }
@@ -725,7 +746,6 @@ export function KitPage() {
         <div className="kp-tray">
           <Piece id="primary" size="l" caption="Primary · L" />
           <Piece id="primary" size="m" caption="Primary · M" />
-          <Piece id="primary" size="s" caption="Primary · S" />
         </div>
         <div className="kp-tray">
           <Piece id="secondary" caption="Secondary" />
@@ -836,7 +856,7 @@ export function KitPage() {
         <div className="kp-icons">
           {ICON_SET.map((ic) => (
             <figure className="kp-icon" key={ic.key} title={ic.name}>
-              <span dangerouslySetInnerHTML={{ __html: previewSvg(STOCK_ICONS[ic.key], 22) }} />
+              <span dangerouslySetInnerHTML={{ __html: previewSvg(STOCK_ICONS[ic.key], 27) }} />
               <figcaption>{ic.name}</figcaption>
             </figure>
           ))}
@@ -889,13 +909,11 @@ export function KitPage() {
         <div className="kp-subhead">Touch controls</div>
         <div className="kp-tray">
           <Piece id="joystick" caption="Joystick · drag me" scale={0.44} />
-          <Piece id="joystick" caption="Joystick · small" size="s" scale={0.44} />
           <Piece id="joystick" caption="Disabled" baseState="disabled" scale={0.44} />
         </div>
         <div className="kp-meta"><span>Knob springs back on release</span><span>Deflection clamps to the travel ring</span><span>data-stick carries the geometry for engine bindings</span></div>
         <div className="kp-subhead">Progress rings & timers — click one to replay it</div>
         <div className="kp-ringrow">
-          <Piece id="ring" size="s" caption="Small" value={0.3} scale={0.5} />
           <Piece id="ring" size="m" caption="Standard" value={0.62} scale={0.5} />
           <Piece id="ring" size="l" caption="Large" value={0.62} scale={0.5} />
           <Piece id="ring" size="m" caption="Countdown" value={0.72} label="0:42" scale={0.5} ambient />
@@ -1141,17 +1159,17 @@ export function KitPage() {
         <div className="kp-track3">
           <span className="kp-rail3" aria-hidden="true"><i /><em /></span>
           {([
-            ["Claimed", "5,000 XP", "done", <SPiece key="a" id="slot" size="s" icon={STOCK_ICONS.check} overlay="check" scale={0.4} />, false],
-            ["Claimable", "10,000 XP", "done", <SPiece key="b" id="slot" size="s" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.4} />, true],
-            ["Current", "20,000 XP", "current", <SPiece key="c" id="slot" icon={STOCK_ICONS.gem} overlay="new" baseState="hover" scale={0.44} />, false],
-            ["Upcoming", "30,000 XP", "next", <SPiece key="d" id="slot" size="s" icon={STOCK_ICONS.lock} overlay="locked" scale={0.4} />, false],
-            ["Final reward", "50,000 XP", "next", <SPiece key="e" id="slot" size="s" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.4} />, false],
+            ["Claimed", "5,000 XP", "done", <SPiece key="a" id="slot" size="s" icon={STOCK_ICONS.check} overlay="check" scale={0.74} />, false],
+            ["Claimable", "10,000 XP", "done", <SPiece key="b" id="slot" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.84} />, true],
+            ["Current", "20,000 XP", "current", <SPiece key="c" id="slot" shape="pill" icon={STOCK_ICONS.gem} overlay="new" baseState="hover" scale={1.12} />, false],
+            ["Upcoming", "30,000 XP", "next", <SPiece key="d" id="slot" size="s" icon={STOCK_ICONS.lock} overlay="locked" scale={0.74} />, false],
+            ["Final reward", "50,000 XP", "next", <SPiece key="e" id="slot" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.95} />, false],
           ] as [string, string, string, React.ReactNode, boolean][]).map(([capn, xp, st, node, claim]) => (
             <div className={`kp-tstop3 ${st}`} key={capn}>
-              <div className={`kp-tnode${st === "current" ? " current" : ""}`}>{node}</div>
+              <div className={`kp-tnodezone${st === "current" ? " current" : ""}`}>{node}</div>
               <span className="kp-tstate"><i className={`kp-tdot ${st}`} />{capn}</span>
               <span className="kp-txp">{xp}</span>
-              {claim && <SPiece id="ghost" label="CLAIM REWARD" size="s" scale={0.3} />}
+              {claim && <SPiece id="ghost" label="CLAIM REWARD" size="s" scale={0.34} />}
             </div>
           ))}
         </div>
@@ -1167,14 +1185,14 @@ export function KitPage() {
                 [STOCK_ICONS.star, "Collect 10 power-ups", "Find or earn power-ups.", "6 / 10", 0.6, "active", "+300 XP"],
               ] as [IconDef, string, string, string, number, string, string][]).map(([ic, t, sub, count, v, st, xp]) => (
                 <div className="kp-obj" key={t}>
-                  <SPiece id="iconbtn" icon={ic} scale={0.3} />
+                  <span className="kp-objic" aria-hidden="true" dangerouslySetInnerHTML={{ __html: previewSvg(ic, 22) }} />
                   <div className="kp-objtext"><b>{t}</b><span>{sub}</span></div>
                   <div className="kp-objprog">
                     <span className={`kp-objcount${st === "done" ? " done" : ""}`}>{count}</span>
-                    <SPiece id="progress" value={v} scale={0.28} />
+                    <SPiece id="progress" value={v} scale={0.34} />
                   </div>
                   <span className={`kp-objstate ${st}`}>{st === "done" ? "✓ Completed" : st === "active" ? "In progress" : "Not started"}</span>
-                  <SPiece id="chip" label={xp} icon={STOCK_ICONS.gem} scale={0.3} />
+                  <SPiece id="chip" label={xp} icon={STOCK_ICONS.gem} scale={0.36} />
                 </div>
               ))}
             </div>
@@ -1188,7 +1206,7 @@ export function KitPage() {
               <div className="kp-wkdays">
                 {(["M", "T", "W", "T", "F", "S", "S"] as const).map((d, i) => (
                   <div className="kp-wkday" key={d + i}>
-                    {i < 4 ? <SPiece id="checkbox" scale={0.24} /> : <SPiece id="radio" baseState="disabled" scale={0.24} />}
+                    {i < 4 ? <SPiece id="checkbox" scale={0.3} /> : <SPiece id="radio" baseState="disabled" scale={0.3} />}
                     <span>{d}</span>
                   </div>
                 ))}
@@ -1196,8 +1214,8 @@ export function KitPage() {
               <div className="kp-wkline" />
               <span className="sc-caption dim">BONUS REWARD</span>
               <div className="kp-wkreward">
-                <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.4} />
-                <SPiece id="chip" label="+1,000 XP" icon={null} scale={0.36} />
+                <SPiece id="badge" size="l" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.56} />
+                <SPiece id="chip" label="+1,000 XP" icon={null} scale={0.46} />
               </div>
             </div>
           </div>
@@ -1280,25 +1298,73 @@ export function KitPage() {
       </Sec>
 
       {/* ── proof of system — the chapter's conclusion ── */}
-      <Sec n="07" title="Proof of System" note="The Objective Card, assembled only from the parts above. If the rules hold here, they hold for anything you build.">
-        <div className="kp-patterns kp-assemblies">
-          <div className="gp-card kp-objective">
-            <div className="gp-row">
-              <PPiece id="tab" label="DAILY OBJECTIVE" scale={0.3} />
-              <PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.2} />
+      <Sec n="07" title="Proof of System" note="The Objective Card as a full game screen, assembled only from registered parts. If the rules hold here, they hold for anything you build.">
+        <div className="kp-proof" style={{
+          backgroundImage: [
+            `radial-gradient(ellipse 70% 90% at 82% 20%, ${hexMix(cfg.effects.Bevel ?? "#0E9CC9", dark ? "#05060C" : "#EDF0F8", 0.55)}, transparent 70%)`,
+            `radial-gradient(ellipse 60% 80% at 10% 85%, ${hexMix(cfg.effects.Glow ?? "#8FF0FF", dark ? "#05060C" : "#EDF0F8", 0.6)}, transparent 72%)`,
+            `linear-gradient(170deg, var(--st-bg1), var(--st-bg2) 75%)`,
+          ].join(", "),
+        }}>
+          <div className="kp-proofcard">
+            <div className="kp-prhead">
+              <SPiece id="header" label="DAILY OBJECTIVE" scale={0.4} />
+              <span className="lay-spring" />
+              <span className="kp-prcap">Time remaining</span>
+              <SPiece id="chip" label="14H 37M" icon={null} tone="alt" scale={0.36} />
+              <SPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.3} />
             </div>
-            <div className="gp-row center">
-              <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.trophy} scale={0.26} />
-              <span className="gp-label">Win 3 matches in ranked mode</span>
+            <div className="kp-prmain">
+              <div className="kp-prleft">
+                <div className="kp-prtitle">
+                  <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.trophy} scale={0.5} />
+                  <div>
+                    <h3>Win 3 matches in ranked mode</h3>
+                    <p>Compete in ranked matches and secure 3 victories to earn your reward.</p>
+                  </div>
+                </div>
+                <span className="kp-prcap">Progress</span>
+                <div className="kp-prprog">
+                  <SPiece id="progress" value={0.66} ambient scale={0.5} />
+                  <b>2 / 3</b>
+                </div>
+              </div>
+              <div className="kp-prrewards">
+                <span className="kp-prcap">Rewards</span>
+                <div className="kp-prrgrid">
+                  <div className="kp-prreward"><SPiece id="slot" icon={STOCK_ICONS.gem} overlay="claimable" scale={0.5} /><b>+250</b><span>gems</span></div>
+                  <div className="kp-prreward"><SPiece id="slot" icon={STOCK_ICONS.bag} overlay="count:1" scale={0.5} /><b>Premium crate</b><span>×1</span></div>
+                </div>
+              </div>
             </div>
-            <PPiece id="progress" value={0.66} scale={0.34} />
-            <div className="gp-row center">
-              <PPiece id="chip" label="+250" icon={STOCK_ICONS.gem} scale={0.28} />
-              <PPiece id="small" label="CLAIM" scale={0.3} />
+            <div className="kp-prtrack">
+              <span className="kp-prcap">Milestone tracker</span>
+              <div className="kp-prstops">
+                {([
+                  ["1 win", "50 gems", "done", <SPiece key="1" id="checkbox" scale={0.3} />],
+                  ["2 wins", "100 gems", "done", <SPiece key="2" id="checkbox" scale={0.3} />],
+                  ["3 wins", "250 + crate", "current", <SPiece key="3" id="badge" baseState="pressed" icon={STOCK_ICONS.trophy} scale={0.4} />],
+                  ["5 wins", "500 gems", "next", <SPiece key="5" id="slot" size="s" icon={STOCK_ICONS.lock} overlay="locked" scale={0.32} />],
+                  ["7 wins", "Legendary crate", "next", <SPiece key="7" id="slot" size="s" icon={STOCK_ICONS.lock} overlay="locked" scale={0.32} />],
+                ] as [string, string, string, React.ReactNode][]).map(([w, prize, st, node], i) => (
+                  <div className={`kp-prstop ${st}`} key={w}>
+                    {i > 0 && <span className={`kp-prconn ${st === "next" ? "pending" : "done"}`} />}
+                    <div className="kp-prnode">{node}</div>
+                    <b>{w}</b><span>{prize}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="kp-prfoot">
+              <SPiece id="ghost" label="OBJECTIVES" size="s" scale={0.4} />
+              <SPiece id="primary" label="CLAIM REWARD" scale={0.56} />
+              <SPiece id="ghost" label="SHARE" size="s" scale={0.4} />
             </div>
           </div>
         </div>
-
+        <div className="kp-meta">
+          <span>Built entirely from: Foundations (color, type, material)</span><span>Components (buttons, slots, progress)</span><span>Assemblies (banner, tracker, rewards)</span><span>System rules (spacing, radius, glow)</span><span>Backdrop: blurred tints derived from the kit's own color roles</span>
+        </div>
       </Sec>
 
       <Chapter n="04" id="patterns" label="Screen Patterns" blurb="Complete screens composed from the system." />
