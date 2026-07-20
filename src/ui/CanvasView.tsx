@@ -11,7 +11,7 @@ import { LiveArt } from "./LiveArt";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, kitShapes, bgShow, bgOpacity, bgBlur } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitRow, bgShow, bgOpacity, bgBlur } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -31,9 +31,14 @@ export function CanvasView() {
   // the hero live under the pointer.
   const playing = canvasMode === "play";
   const displayed: GenStateName = phase === "master" && playing && live && selectedState !== "disabled" ? live : selectedState;
+  // the hero previews the focused component at its kit-selected size, with its
+  // own vertical text nudge — the same key the Typography panel edits, so the
+  // slider responds live on the surface the user is actually looking at
+  const fSize = focus ? (kitSizes[focus] ?? "m") : "m";
+  const fOy = focus ? kitTextOy[`${focus}:${fSize}`] : undefined;
   const heroSvg = useMemo(
-    () => (focus ? renderKit(cfg, focus, "m", displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus]) : renderBevel(cfg, displayed)),
-    [cfg, displayed, focus, kitShapes]
+    () => (focus ? renderKit(cfg, focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined }) : renderBevel(cfg, displayed)),
+    [cfg, displayed, focus, kitShapes, fSize, fOy, kitRow]
   );
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
@@ -224,7 +229,7 @@ export function CanvasView() {
             <button className={`scard clickable${s === selectedState ? " sel" : ""}`} key={s}
               onClick={() => setSelectedState(s)} title={`Edit ${cap}`} aria-pressed={s === selectedState}>
               <div className="scard-title">{cap}{s === selectedState ? " · editing" : ""}</div>
-              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(cfg, focus, "m", s, v, kitShapes[focus]) : renderBevel(cfg, s) }} />
+              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(cfg, focus, fSize, s, v, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined }) : renderBevel(cfg, s) }} />
             </button>
           ))}
         </div>
