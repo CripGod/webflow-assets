@@ -1,17 +1,16 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { Hand, Minus, Plus, LayoutGrid, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, PenTool } from "lucide-react";
 import { useGen } from "@/generator/store";
-import type { BoardItem, LibItem } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
 import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES , isDarkBg } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { KitPage } from "./KitPage";
-import { LiveArt } from "./LiveArt";
+import { BoardView } from "./Board";
 
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, setPhase, selectedState, setSelectedState, canvasMode, setCanvasMode, board, library, moveBoardItem, scaleBoardItem, removeBoardItem, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitRow, bgShow, bgOpacity, bgBlur } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitRow } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -21,7 +20,6 @@ export function CanvasView() {
   }, []);
   const scroller = useRef<HTMLDivElement>(null);
   const bgInput = useRef<HTMLInputElement>(null);
-  const boardDrag = useRef<{ id: string; dx: number; dy: number; ox: number; oy: number } | null>(null);
   const drag = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
   // live interaction: hovering/pressing the hero previews those states ("hot"),
   // while edits keep applying to the selected state.
@@ -114,37 +112,7 @@ export function CanvasView() {
             />
           </div>
         ) : phase === "board" ? (
-          <div className="board stage169" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
-            {bgImage && bgShow && (
-              <div className="board-bg" style={{ backgroundImage: `url(${bgImage})`, opacity: bgOpacity / 100, filter: bgBlur ? `blur(${bgBlur}px)` : undefined }} />
-            )}
-            {board.map((b) => {
-              const item = library.find((l) => l.id === b.libId);
-              if (!item) return null;
-              return (
-                <BoardPiece key={b.id} b={b} item={item} playing={playing}
-                  onDragStart={(e) => {
-                    boardDrag.current = { id: b.id, dx: e.clientX, dy: e.clientY, ox: b.x, oy: b.y };
-                  }}
-                  onDragMove={(e) => {
-                    const d = boardDrag.current;
-                    if (!d || d.id !== b.id) return;
-                    moveBoardItem(b.id, d.ox + (e.clientX - d.dx) / zoom, d.oy + (e.clientY - d.dy) / zoom);
-                  }}
-                  onDragEnd={() => { boardDrag.current = null; }}
-                  onScale={(dir) => scaleBoardItem(b.id, (b.scale ?? 1) + dir * 0.15)}
-                  onRemove={() => removeBoardItem(b.id)} />
-              );
-            })}
-            {board.length === 0 && (
-              <div className="board-hint" style={{ color: capColor }}>
-                The sketch board is empty — open the Library and send components here.
-              </div>
-            )}
-            <button className="makekit second" onClick={() => setPhase("master")} title="Back to the component editor">
-              <PenTool size={14} strokeWidth={2} /> Edit master
-            </button>
-          </div>
+          <BoardView playing={playing} />
         ) : (
           <div className="kitwrap" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
             <KitPage />
@@ -255,39 +223,3 @@ export function CanvasView() {
 }
 
 
-/** A component placed on the sketch board — draggable and scalable in design
- *  mode, fully alive in Play mode: buttons hover and press, and a saved
- *  slider, toggle, segment, dropdown or progress plays as that component. */
-function BoardPiece({ b, item, playing, onDragStart, onDragMove, onDragEnd, onScale, onRemove }: {
-  b: BoardItem; item: LibItem; playing: boolean;
-  onDragStart: (e: React.PointerEvent) => void; onDragMove: (e: React.PointerEvent) => void; onDragEnd: () => void;
-  onScale: (dir: 1 | -1) => void; onRemove: () => void;
-}) {
-  const sc = b.scale ?? 1;
-  return (
-    <div className={`board-item${playing ? " playing" : ""}`} style={{ left: b.x, top: b.y }}
-      {...(playing ? {} : {
-        onPointerDown: (e: React.PointerEvent) => {
-          onDragStart(e);
-          (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-        },
-        onPointerMove: onDragMove,
-        onPointerUp: onDragEnd,
-        onPointerCancel: onDragEnd,
-      })}>
-      {!playing && (
-        <div className="board-tools" onPointerDown={(e) => e.stopPropagation()}>
-          <button title="Smaller" onClick={() => onScale(-1)}><Minus size={12} strokeWidth={2.4} /></button>
-          <button title="Bigger" onClick={() => onScale(1)}><Plus size={12} strokeWidth={2.4} /></button>
-          <button title="Remove from stage" onClick={onRemove}><X size={12} strokeWidth={2.4} /></button>
-        </div>
-      )}
-      <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }}>
-        {/* anchorContent: the saved x/y keeps pointing at the shell, not the
-            glow pad — layouts arranged before the pad existed stay put */}
-        <LiveArt cfg={item.cfg} playing={playing} anchorContent
-          kit={item.kit ? { id: item.kit.id, size: item.kit.size, shape: item.kit.shape } : undefined} />
-      </div>
-    </div>
-  );
-}

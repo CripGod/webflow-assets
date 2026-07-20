@@ -177,6 +177,74 @@ function LayoutCard({ id, name, device, onHide, children }: {
   );
 }
 
+/* ── hero collage — live pieces scattered free on a starfield ─────
+   Three anchors always show (banner, primary, progress); the rest is a
+   fresh random pick and jitter on every visit. Nothing is boxed — the
+   field fades out radially, so the collage flows into the page. */
+const COLLAGE_SLOTS: { x: number; y: number; r: number }[] = [
+  { x: 50, y: 10, r: -2 }, { x: 50, y: 47, r: 0 }, { x: 48, y: 64, r: -1.5 },
+  { x: 17, y: 17, r: -7 }, { x: 83, y: 14, r: 5 }, { x: 13, y: 50, r: 4 },
+  { x: 86, y: 46, r: -4 }, { x: 19, y: 82, r: -5 }, { x: 56, y: 87, r: 2 }, { x: 84, y: 76, r: 6 },
+];
+function buildCollage(): { x: number; y: number; r: number; p: PieceOpts; s: number; amb?: boolean }[] {
+  const jit = (v: number, a: number) => v + (Math.random() * 2 - 1) * a;
+  const pool: { p: PieceOpts; s: number }[] = [
+    { p: { id: "badge", size: "l", baseState: "pressed", icon: STOCK_ICONS.star }, s: 0.5 },
+    { p: { id: "slot", icon: STOCK_ICONS.gem, overlay: "count:128" }, s: 0.44 },
+    { p: { id: "resource", label: "12.8k", icon: STOCK_ICONS.gem }, s: 0.42 },
+    { p: { id: "joystick", size: "s" }, s: 0.42 },
+    { p: { id: "ring", value: 0.72 }, s: 0.5 },
+    { p: { id: "toggle", value: 1 }, s: 0.36 },
+    { p: { id: "chip", label: "+50", icon: STOCK_ICONS.heart }, s: 0.44 },
+    { p: { id: "small", label: "CLAIM" }, s: 0.42 },
+    { p: { id: "tab", label: "STAGE 06", tone: "alt" }, s: 0.38 },
+    { p: { id: "iconbtn", icon: STOCK_ICONS.trophy }, s: 0.4 },
+    { p: { id: "segment", segments: ["1×", "2×", "3×"], value: 1 }, s: 0.34 },
+  ];
+  const picks = [...pool].sort(() => Math.random() - 0.5).slice(0, 7);
+  const out: { x: number; y: number; r: number; p: PieceOpts; s: number; amb?: boolean }[] = [
+    { ...COLLAGE_SLOTS[0], p: { id: "header", label: "LEVEL UP!" }, s: 0.44 },
+    { ...COLLAGE_SLOTS[1], p: { id: "primary", label: "PLAY NOW" }, s: 0.48 },
+    { ...COLLAGE_SLOTS[2], p: { id: "progress", value: 0.68 }, s: 0.42, amb: true },
+  ];
+  picks.forEach((pk, i) => {
+    const sl = COLLAGE_SLOTS[3 + i];
+    out.push({ x: jit(sl.x, 3), y: jit(sl.y, 4), r: jit(sl.r, 3), p: pk.p, s: pk.s });
+  });
+  return out;
+}
+
+function Collage() {
+  const { cfg } = useGen();
+  const items = useMemo(() => buildCollage(), []);
+  const glow = cfg.effects.Glow ?? "#8FF0FF";
+  const bevel = cfg.effects.Bevel ?? "#0E9CC9";
+  return (
+    <div className="kp-collage" aria-label="Live component collage" style={{
+      backgroundImage: [
+        `radial-gradient(ellipse 60% 45% at 64% 30%, ${hexMix(glow, "#000000", 0)}1f, transparent 70%)`,
+        `radial-gradient(ellipse 55% 40% at 30% 72%, ${hexMix(bevel, "#000000", 0)}1a, transparent 70%)`,
+        "radial-gradient(rgba(150,160,200,0.35) 1px, transparent 1.6px)",
+        "radial-gradient(rgba(150,160,200,0.22) 1px, transparent 1.4px)",
+      ].join(", "),
+      backgroundSize: "100% 100%, 100% 100%, 110px 110px, 66px 66px",
+      backgroundPosition: "0 0, 0 0, 12px 8px, 40px 50px",
+    }}>
+      <svg className="kp-collarcs" viewBox="0 0 600 540" aria-hidden="true" preserveAspectRatio="none">
+        <path d="M128 100 C 180 46, 250 40, 292 70" />
+        <path d="M466 128 C 516 176, 514 224, 462 252" />
+        <path d="M150 410 C 224 462, 330 468, 410 430" />
+        <text x="76" y="308">✦</text><text x="522" y="86">✦</text><text x="544" y="440">✦</text><text x="60" y="120">✦</text>
+      </svg>
+      {items.map((it, i) => (
+        <div className="kp-colit" key={i} style={{ left: `${it.x}%`, top: `${it.y}%`, transform: `translate(-50%, -50%) rotate(${it.r}deg)` }}>
+          <SPiece {...it.p} scale={it.s} ambient={it.amb} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StateScreen({ icon, title, line, action }: { icon: IconDef; title: string; line: string; action: string }) {
   return (
     <>
@@ -376,7 +444,7 @@ const ICON_SET: { key: string; name: string }[] = [
 ];
 
 export function KitPage() {
-  const { cfg, kitDesigns, setPhase, kitName, setKitName } = useGen();
+  const { cfg, kitDesigns, setPhase, kitName, setKitName, saveUserPreset } = useGen();
   const dark = isDarkBg(cfg.canvas);
   const preset = PRESETS.find((p) => p.id === cfg.presetId);
   const sil = SHAPES.find((s) => s.id === cfg.shape)?.name.split(" — ")[0] ?? "Custom";
@@ -516,7 +584,13 @@ export function KitPage() {
           {renaming ? (
             <input className="kp-titleedit" autoFocus maxLength={40} aria-label="Kit name"
               defaultValue={kitName ?? `The ${preset?.name ?? "Custom"} Kit`}
-              onBlur={(e) => { const v = e.target.value.trim(); setKitName(v && v !== `The ${preset?.name ?? "Custom"} Kit` ? v : null); setRenaming(false); }}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                const changed = v && v !== `The ${preset?.name ?? "Custom"} Kit`;
+                setKitName(changed ? v : null);
+                if (changed) saveUserPreset(v); // the named look becomes a preset — the original stays
+                setRenaming(false);
+              }}
               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setRenaming(false); }} />
           ) : (
             <h1 className="kp-title kp-renamable" onClick={() => setRenaming(true)} title="Click to rename this kit">
@@ -528,8 +602,8 @@ export function KitPage() {
             {([["5", "Levels"], [String(KIT_COMPONENTS.length) + "+", "Components"], ["20+", "Assemblies"], [sil, "Silhouette"]] as const).map(([v, l]) => (
               <div className="kp-fact" key={l}><b>{v}</b><span>{l}</span></div>
             ))}
-            <button className={`kp-fact kp-a11ybtn a11y-${audit.level.toLowerCase()}`} aria-expanded={a11yOpen} onClick={() => setA11yOpen((v) => !v)}>
-              <b><ShieldCheck size={14} strokeWidth={2.4} /> {audit.level}</b><span>Accessibility</span>
+            <button className={`kp-fact kp-a11ybtn${a11yOpen ? ` a11y-${audit.level.toLowerCase()}` : ""}`} aria-expanded={a11yOpen} onClick={() => setA11yOpen((v) => !v)}>
+              <b><ShieldCheck size={14} strokeWidth={2.4} /> {a11yOpen ? audit.level : "See score"}</b><span>Accessibility</span>
             </button>
           </div>
           <div className="kp-roleline" aria-hidden="true">
@@ -548,18 +622,11 @@ export function KitPage() {
             <div className={`kp-a11y ${audit.level.toLowerCase()}`} role="status">
               <b>{audit.level === "Strong" ? "Strong — reads clearly." : audit.level === "Fair" ? "Fair — solid, with a couple of watch-outs." : "Risky — worth a tweak before shipping."}</b>
               <ul>{audit.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+              <div className="kp-a11yhow">Computed locally from WCAG contrast ratios and type metrics — no AI involved, nothing leaves the page.</div>
             </div>
           )}
         </div>
-        <div className="kp-herostage" aria-label="Hero composition — live components">
-          <div className="sc">
-            <SPiece id="header" label="LEVEL UP!" scale={0.34} />
-            <div className="sc-push"><SPiece id="badge" size="l" baseState="pressed" icon={STOCK_ICONS.star} scale={0.6} /></div>
-            <SPiece id="chip" label="+250 XP" icon={null} scale={0.38} />
-            <SPiece id="progress" value={0.74} ambient scale={0.42} />
-            <div className="sc-push"><SPiece id="primary" label="CLAIM" size="s" scale={0.4} /></div>
-          </div>
-        </div>
+        <Collage />
       </header>
 
       <Chapter n="01" id="foundations" label="Foundations" blurb="The color roles, material and typography every component inherits." />
@@ -1069,28 +1136,74 @@ export function KitPage() {
       </Sec>
 
       {/* ── 12 · reward & objectives ── */}
-      <Sec n="04" title="Reward Track & Objectives" note="Progression assemblies. Every milestone is a registered slot; the track scrolls when it outgrows the row.">
+      <Sec n="04" title="Reward Track & Objectives" note="Progression assemblies built from registered components. The track visualizes milestone rewards; objectives drive player progression and grant resources.">
         <div className="kp-subhead">Reward track</div>
-        <div className="kp-track2">
+        <div className="kp-track3">
+          <span className="kp-rail3" aria-hidden="true"><i /><em /></span>
           {([
-            ["Claimed", <PPiece key="a" id="slot" size="s" icon={STOCK_ICONS.gem} overlay="check" scale={0.34} />, "done"],
-            ["Claimable", <PPiece key="b" id="slot" size="s" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.34} />, "done"],
-            ["Current", <PPiece key="c" id="slot" size="s" icon={STOCK_ICONS.gem} overlay="new" baseState="hover" scale={0.34} />, "pending"],
-            ["Upcoming", <PPiece key="d" id="slot" size="s" icon={STOCK_ICONS.gem} overlay="locked" scale={0.34} />, "pending"],
-            ["Final", <PPiece key="e" id="slot" size="s" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.34} />, null],
-          ] as [string, React.ReactNode, string | null][]).map(([capn, node, conn], i) => (
-            <div className="kp-tstop" key={capn}>
-              <div className={`kp-tnode${capn === "Current" ? " current" : ""}`}>{node}</div>
-              <span className="kp-tcap">{capn}</span>
-              {conn && <span className={`kp-tconn ${conn}`} data-i={i} />}
+            ["Claimed", "5,000 XP", "done", <SPiece key="a" id="slot" size="s" icon={STOCK_ICONS.check} overlay="check" scale={0.4} />, false],
+            ["Claimable", "10,000 XP", "done", <SPiece key="b" id="slot" size="s" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.4} />, true],
+            ["Current", "20,000 XP", "current", <SPiece key="c" id="slot" icon={STOCK_ICONS.gem} overlay="new" baseState="hover" scale={0.44} />, false],
+            ["Upcoming", "30,000 XP", "next", <SPiece key="d" id="slot" size="s" icon={STOCK_ICONS.lock} overlay="locked" scale={0.4} />, false],
+            ["Final reward", "50,000 XP", "next", <SPiece key="e" id="slot" size="s" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.4} />, false],
+          ] as [string, string, string, React.ReactNode, boolean][]).map(([capn, xp, st, node, claim]) => (
+            <div className={`kp-tstop3 ${st}`} key={capn}>
+              <div className={`kp-tnode${st === "current" ? " current" : ""}`}>{node}</div>
+              <span className="kp-tstate"><i className={`kp-tdot ${st}`} />{capn}</span>
+              <span className="kp-txp">{xp}</span>
+              {claim && <SPiece id="ghost" label="CLAIM REWARD" size="s" scale={0.3} />}
             </div>
           ))}
         </div>
-        <Meta items={["Rail states: done · pending", "milestones on one rhythm", "scrolls horizontally when it outgrows the row"]} />
-        <div className="kp-subhead">Objective list</div>
-        <div className="kp-tray">
-          <Piece id="datarow" caption="In progress" label="Win 3 matches" sub="2 of 3 · +250 gems" value={0.66} scale={0.42} />
-          <Piece id="datarow" caption="Claimable" label="Daily login" sub="Tap to claim · +50 gems" value={1} overlay="check" baseState="hover" scale={0.42} />
+        <div className="kp-progrid">
+          <div>
+            <div className="kp-subhead">Current objectives</div>
+            <p className="kp-note">Complete objectives to earn rewards and XP.</p>
+            <div className="kp-objlist">
+              {([
+                [STOCK_ICONS.play, "Play 3 matches", "Jump into any game mode.", "3 / 3", 1, "done", "+250 XP"],
+                [STOCK_ICONS.warning, "Deal 5,000 damage", "Damage enemy players.", "2,850 / 5,000", 0.57, "active", "+400 XP"],
+                [STOCK_ICONS.trophy, "Win 1 match", "Achieve victory in any mode.", "0 / 1", 0, "idle", "+350 XP"],
+                [STOCK_ICONS.star, "Collect 10 power-ups", "Find or earn power-ups.", "6 / 10", 0.6, "active", "+300 XP"],
+              ] as [IconDef, string, string, string, number, string, string][]).map(([ic, t, sub, count, v, st, xp]) => (
+                <div className="kp-obj" key={t}>
+                  <SPiece id="iconbtn" icon={ic} scale={0.3} />
+                  <div className="kp-objtext"><b>{t}</b><span>{sub}</span></div>
+                  <div className="kp-objprog">
+                    <span className={`kp-objcount${st === "done" ? " done" : ""}`}>{count}</span>
+                    <SPiece id="progress" value={v} scale={0.28} />
+                  </div>
+                  <span className={`kp-objstate ${st}`}>{st === "done" ? "✓ Completed" : st === "active" ? "In progress" : "Not started"}</span>
+                  <SPiece id="chip" label={xp} icon={STOCK_ICONS.gem} scale={0.3} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="kp-subhead">Weekly bonus</div>
+            <p className="kp-note">Complete objectives all week to earn a bonus reward.</p>
+            <div className="kp-weekly">
+              <span className="sc-caption dim">WEEKLY STREAK</span>
+              <div className="kp-wkbig"><b>4</b><span>/ 7 days</span></div>
+              <div className="kp-wkdays">
+                {(["M", "T", "W", "T", "F", "S", "S"] as const).map((d, i) => (
+                  <div className="kp-wkday" key={d + i}>
+                    {i < 4 ? <SPiece id="checkbox" scale={0.24} /> : <SPiece id="radio" baseState="disabled" scale={0.24} />}
+                    <span>{d}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="kp-wkline" />
+              <span className="sc-caption dim">BONUS REWARD</span>
+              <div className="kp-wkreward">
+                <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.4} />
+                <SPiece id="chip" label="+1,000 XP" icon={null} scale={0.36} />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="kp-meta">
+          <span>Composed from: Track rail</span><span>Milestone node (item slot)</span><span>Objective item</span><span>Reward chip</span><span>Status badge</span><span>Weekly panel</span>
         </div>
       </Sec>
 

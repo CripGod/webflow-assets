@@ -185,6 +185,15 @@ interface GenStore {
   loadFromLibrary: (id: string) => void;
   board: BoardItem[];
   addToBoard: (libId: string) => void;
+  /** Drop a live kit component on the board — follows the master style. */
+  addKitToBoard: (kitId: KitComponentId) => void;
+  rotateBoardItem: (id: string, deg: number) => void;
+  boardAspect: "169" | "mobile";
+  setBoardAspect: (a: "169" | "mobile") => void;
+  boardSnap: boolean;
+  setBoardSnap: (v: boolean) => void;
+  boardSel: string | null;
+  setBoardSel: (id: string | null) => void;
   moveBoardItem: (id: string, x: number, y: number) => void;
   scaleBoardItem: (id: string, scale: number) => void;
   removeBoardItem: (id: string) => void;
@@ -207,6 +216,12 @@ interface GenStore {
   /** Custom kit name for the guidelines page (null = derived from preset). */
   kitName: string | null;
   setKitName: (v: string | null) => void;
+  /** Named full-design snapshots — created by renaming the kit. They appear
+   *  at the top of the preset grid and never overwrite the built-ins. */
+  userPresets: UserPreset[];
+  saveUserPreset: (name: string) => void;
+  applyUserPreset: (id: string) => void;
+  removeUserPreset: (id: string) => void;
   /** Imported flat-vector silhouettes — see the spec in the Silhouette panel. */
   userShapes: UserShape[];
   addUserShape: (u: UserShape) => void;
@@ -244,6 +259,7 @@ interface GenStore {
  *  was focused), so the board can render and play it as that piece — a slider
  *  stays a slider. Absent = the master button (all older saves). */
 export interface LibKit { id: KitComponentId; size: KitSize; shape?: Shape }
+export interface UserPreset { id: string; name: string; cfg: GenConfig; thumb?: string }
 export interface LibItem { id: string; name: string; cfg: GenConfig; kit?: LibKit }
 export interface StyleItem {
   id: string; name: string;
@@ -251,7 +267,13 @@ export interface StyleItem {
   /** Rendered at save time by the same engine — the style's face in the list. */
   thumb?: string;
 }
-export interface BoardItem { id: string; libId: string; x: number; y: number; scale?: number }
+export interface BoardItem {
+  id: string; libId: string; x: number; y: number; scale?: number;
+  /** degrees, applied around the piece center */
+  rot?: number;
+  /** kit-asset items render the CURRENT design live (no library snapshot) */
+  kitId?: KitComponentId;
+}
 /** Two independent text groups + slot toggles for the Data Row family. */
 export interface RowCfg {
   title: string; sub: string;
@@ -351,6 +373,24 @@ export const useGen = create<GenStore>((set, get) => ({
     saveJson(BOARD_KEY, board);
     set({ board, phase: "board" });
   },
+  addKitToBoard: (kitId) => {
+    const n = get().board.length;
+    const item: BoardItem = { id: "bd" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), libId: "", kitId, x: 640 + (n % 3) * 90, y: 420 + (n % 3) * 60 };
+    const board = [...get().board, item];
+    saveJson(BOARD_KEY, board);
+    set({ board, boardSel: item.id });
+  },
+  rotateBoardItem: (id, deg) => {
+    const board = get().board.map((b) => (b.id === id ? { ...b, rot: Math.max(-180, Math.min(180, Math.round(deg))) } : b));
+    saveJson(BOARD_KEY, board);
+    set({ board });
+  },
+  boardAspect: (loadJson<string>("ui-generator-boardaspect", "169") === "mobile" ? "mobile" : "169") as "169" | "mobile",
+  setBoardAspect: (a) => { saveJson("ui-generator-boardaspect", a); set({ boardAspect: a }); },
+  boardSnap: loadJson<boolean>("ui-generator-boardsnap", true),
+  setBoardSnap: (v) => { saveJson("ui-generator-boardsnap", v); set({ boardSnap: v }); },
+  boardSel: null,
+  setBoardSel: (id) => set({ boardSel: id }),
   moveBoardItem: (id, x, y) => {
     const board = get().board.map((b) => (b.id === id ? { ...b, x, y } : b));
     set({ board });
@@ -414,6 +454,36 @@ export const useGen = create<GenStore>((set, get) => ({
     if (d) kitDesigns[id] = d; else delete kitDesigns[id];
     saveJson("ui-generator-kitdesigns", kitDesigns);
     set({ kitDesigns });
+  },
+  userPresets: loadJson<UserPreset[]>("ui-generator-userpresets", []),
+  saveUserPreset: (name) => {
+    markTouched();
+    const clone = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)));
+    const cfg = clone(get().cfg) as GenConfig;
+    const tc = clone(cfg) as GenConfig;
+    for (const st of Object.values(tc.states)) st.glow = 0;
+    tc.content.label = "PLAY"; tc.icon.show = false;
+    const thumb = renderBevel(tc, "default");
+    const existing = get().userPresets.find((u) => u.name === name);
+    const userPresets = existing
+      ? get().userPresets.map((u) => (u.name === name ? { ...u, cfg, thumb } : u))
+      : [{ id: "up" + Date.now().toString(36), name, cfg, thumb }, ...get().userPresets];
+    saveJson("ui-generator-userpresets", userPresets);
+    set({ userPresets });
+  },
+  applyUserPreset: (id) => {
+    const u = get().userPresets.find((x) => x.id === id);
+    if (!u) return;
+    const clone = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)));
+    const next = clone(u.cfg) as GenConfig;
+    next.canvas = get().cfg.canvas; // presets restyle the component, never the stage
+    get().replaceConfig(next);
+    get().setKitName(u.name);
+  },
+  removeUserPreset: (id) => {
+    const userPresets = get().userPresets.filter((x) => x.id !== id);
+    saveJson("ui-generator-userpresets", userPresets);
+    set({ userPresets });
   },
   kitName: loadJson<string | null>("ui-generator-kitname", null),
   setKitName: (v) => { markTouched(); saveJson("ui-generator-kitname", v); set({ kitName: v }); },
