@@ -247,7 +247,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, setSectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -389,12 +389,6 @@ export function Panel() {
         </div>
       )}
       {/* ── Global — whole-component adjustments per state ── */}
-      {sectionFilter && (
-        <button className="secfilterbar" onClick={() => setSectionFilter(null)}
-          title="Show every control group again">
-          Focused view — showing {sectionFilter} controls only · Show all
-        </button>
-      )}
       <Section id="state" title="Global" right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
         <div className="segmini" role="radiogroup" aria-label="State being edited">
           {STATE_NAMES.map((s) => (
