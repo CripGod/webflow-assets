@@ -247,7 +247,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, setSectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, setSectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -428,6 +428,15 @@ export function Panel() {
       {/* ── A · Style (the candy construction) ────────────── */}
       <Section id="shape" title="Presets" summary={<span className="mapbar" style={{ background: mapBar }} />}>
         <div className="presetgrid">
+          {userPresets.map((u) => (
+            <button key={u.id} className={`presetcard user${kitName === u.name ? " on" : ""}`} title={`${u.name} — your saved kit`}
+              onClick={() => applyUserPreset(u.id)}>
+              {u.thumb ? <span className="presetart" dangerouslySetInnerHTML={{ __html: u.thumb }} /> : <span className="presetart" />}
+              <span className="presetname">{u.name}</span>
+              <span className="shapedel" role="button" aria-label={`Delete preset ${u.name}`} title="Delete"
+                onClick={(e) => { e.stopPropagation(); removeUserPreset(u.id); }}>×</span>
+            </button>
+          ))}
           {presetArt().map((p) => (
             <button key={p.id} className={`presetcard${cfg.presetId === p.id ? " on" : ""}`} title={p.name}
               onClick={() => setPreset(p.id)}>

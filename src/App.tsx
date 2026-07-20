@@ -23,7 +23,7 @@ export function App() {
   const dragFrom = useRef<{ x: number; w: number } | null>(null);
   // The Kit is a reading surface — the inspector column steps aside entirely
   // and the guideline sheet becomes the hero. The rail still navigates.
-  const slim = phase === "kit";
+  const slim = phase !== "master"; // kit reads, board assembles — both full-width
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
