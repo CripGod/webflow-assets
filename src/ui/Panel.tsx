@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen , Upload } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight } from "@/generator/model";
-import type { GenStateName, BlendMode } from "@/generator/model";
+import type { GenStateName, BlendMode , PatternType } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
 import { renderBevel, renderKit, shapePath } from "@/generator/bevel";
@@ -74,13 +74,16 @@ export function Rail() {
     ...(ICONS_ENABLED ? [{ id: "icons", Icon: Search, label: "Icon library" }] : []),
   ];
   const jump = (id: string) => {
+    // section groups live in the editor's inspector — leave the kit or board
+    // view first so the rail keeps working everywhere
+    if (phase !== "master") setPhase("master");
     setSectionFilter(id);
     // open the group's sections for real, then bring the first into view
     useGen.setState((st) => ({ open: { ...st.open, ...Object.fromEntries((GROUPS[id] ?? []).map((k) => [k, true])) } }));
     window.setTimeout(() => {
       const first = GROUPS[id]?.[0];
       document.querySelector(`[data-sec="${first}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 40);
+    }, phase !== "master" ? 140 : 40);
   };
   return (
     <nav className="rail" aria-label="Sections">
@@ -239,12 +242,13 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
   const [outlines, setOutlines] = useState(false);
   const [silCat, setSilCat] = useState<string>("All");
+  const [shapeErr, setShapeErr] = useState<string | null>(null);
   const savedLib = cfg.icon.def?.lib && ICON_LIBS.some((l) => l.id === cfg.icon.def!.lib) ? cfg.icon.def!.lib : "lucide";
   const [browseLib, setBrowseLib] = useState(savedLib);
   const libIsReady = libLoaded(browseLib);
@@ -466,6 +470,55 @@ export function Panel() {
               <span>{m.name}</span>
             </button>
           ))}
+        </div>
+        {userShapes.length > 0 && (
+          <div className="shapegrid">
+            {userShapes.map((u) => (
+              <button key={u.id} className={`shapecard${(focus ? (kitShapes[focus] ?? KIT_SHAPE[focus] ?? D.shape) : D.shape) === u.id ? " on" : ""}`} title={`${u.name} — imported silhouette`}
+                onClick={() => { if (focus) setKitShape(focus, u.id); else update((c) => { c.shape = u.id; }); }}>
+                <svg viewBox="0 0 120 56" aria-hidden="true"><path d={shapePath(u.id, 8, 8, 104, 40, D.bevel.softness)} /></svg>
+                <span>{u.name}</span>
+                <span className="shapedel" role="button" aria-label={`Remove ${u.name}`} title="Remove"
+                  onClick={(e) => { e.stopPropagation(); removeUserShape(u.id); }}>×</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <label className="fileadd">
+          <Upload size={13} strokeWidth={2} /> Import silhouette (SVG)
+          <input type="file" accept=".svg,image/svg+xml" hidden onChange={(e) => {
+            const f = e.target.files?.[0]; e.target.value = "";
+            if (!f) return;
+            f.text().then((txt) => {
+              const doc = new DOMParser().parseFromString(txt, "image/svg+xml");
+              const path = doc.querySelector("path");
+              const d = path?.getAttribute("d");
+              if (!d) { setShapeErr("No <path> found — flatten the artwork to a single filled path first."); return; }
+              const NS = "http://www.w3.org/2000/svg";
+              const tmp = document.createElementNS(NS, "svg");
+              tmp.setAttribute("style", "position:absolute;opacity:0;pointer-events:none");
+              const pp = document.createElementNS(NS, "path");
+              pp.setAttribute("d", d);
+              tmp.appendChild(pp); document.body.appendChild(tmp);
+              const bb = pp.getBBox(); document.body.removeChild(tmp);
+              if (!bb.width || !bb.height) { setShapeErr("That path has no area — export the filled outline, not a stroke."); return; }
+              setShapeErr(null);
+              addUserShape({
+                id: `user:${Date.now().toString(36)}`,
+                name: f.name.replace(/\.svg$/i, "").replace(/[-_]+/g, " ").slice(0, 22) || "Custom",
+                d, vb: [bb.x, bb.y, bb.width, bb.height],
+              });
+            });
+          }} />
+        </label>
+        {shapeErr && <div className="helper" role="alert">{shapeErr}</div>}
+        <div className="helper">
+          Import spec: a plain flat vector — one closed, <b>filled</b> path (no strokes, groups,
+          transforms or images). Draw it around a wide landscape box (about 200 × 100) with the
+          outline touching all four edges; the generator stretches it to each component,
+          so keep decorative caps inside the outer 30% of the width. Prefer bezier curves
+          over arc segments — arcs can distort under stretch. Boolean-union overlapping
+          shapes before export; counter-holes are fine.
         </div>
         {D.shape !== "pill" && (
           <Slider label="Corner softness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
@@ -799,7 +852,7 @@ export function Panel() {
           </button>
         </div>
         <div className="helper">Paste the family name exactly as it appears on fonts.google.com (e.g. “Titan One”).</div>
-        <Slider label="Size" value={T2.size} min={28} max={76} unit="px" onChange={(v) => update((c) => { c.type.size = v; })} />
+        <Slider label="Size" value={T2.size} min={28} max={140} unit="px" onChange={(v) => update((c) => { c.type.size = v; })} />
         {focus ? (
           <>
             <Slider label="Vertical nudge" value={kitTextOy[`${focus}:${kitSizes[focus] ?? "m"}`] ?? T2.oy ?? 0} min={-20} max={20} unit="px"
@@ -923,11 +976,20 @@ export function Panel() {
           <Slider label="Size" value={T2.glow.size} min={2} max={24} unit="px" onChange={(v) => update((c) => { c.type.glow.size = v; })} />
           <Slider label="Opacity" value={T2.glow.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.glow.opacity = v; })} />
         </FxToggle>
-        <FxToggle label="Stripes" on={T2.stripes?.on ?? false}
-          onToggle={(v) => update((c) => { c.type.stripes = { on: v, angle: c.type.stripes?.angle ?? 45, opacity: c.type.stripes?.opacity ?? 30 }; })}>
-          <Slider label="Angle" value={T2.stripes?.angle ?? 45} min={0} max={180} unit="°" onChange={(v) => update((c) => { c.type.stripes = { on: c.type.stripes?.on ?? true, angle: v, opacity: c.type.stripes?.opacity ?? 30 }; })} />
-          <Slider label="Opacity" value={T2.stripes?.opacity ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.stripes = { on: c.type.stripes?.on ?? true, angle: c.type.stripes?.angle ?? 45, opacity: v }; })} />
-          <div className="helper">Candy-wrap stripes inside the letterforms — tone-on-tone from the shell color.</div>
+        <FxToggle label="Pattern fill" on={T2.stripes?.on ?? false}
+          onToggle={(v) => update((c) => { c.type.stripes = { on: v, angle: c.type.stripes?.angle ?? 45, opacity: c.type.stripes?.opacity ?? 30, style: c.type.stripes?.style ?? "stripes" }; })}>
+          <div className="ctl">
+            <label>Style</label>
+            <select value={T2.stripes?.style ?? "stripes"} aria-label="Text pattern style"
+              onChange={(e) => update((c) => { c.type.stripes = { on: c.type.stripes?.on ?? true, angle: c.type.stripes?.angle ?? 45, opacity: c.type.stripes?.opacity ?? 30, style: e.target.value as Exclude<PatternType, "none"> }; })}>
+              {PATTERN_TYPES.filter((pt) => pt.id !== "none").map((pt) => (
+                <option key={pt.id} value={pt.id}>{pt.name.split(" — ")[0]}</option>
+              ))}
+            </select>
+          </div>
+          <Slider label="Angle" value={T2.stripes?.angle ?? 45} min={0} max={180} unit="°" onChange={(v) => update((c) => { c.type.stripes = { ...(c.type.stripes ?? { on: true, opacity: 30 }), on: c.type.stripes?.on ?? true, angle: v, opacity: c.type.stripes?.opacity ?? 30 }; })} />
+          <Slider label="Opacity" value={T2.stripes?.opacity ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.stripes = { ...(c.type.stripes ?? { on: true, angle: 45 }), on: c.type.stripes?.on ?? true, angle: c.type.stripes?.angle ?? 45, opacity: v }; })} />
+          <div className="helper">Any face pattern, inside the letterforms — tone-on-tone from the shell color.</div>
         </FxToggle>
         <FxToggle label="Inflate" on={T2.inflate?.on ?? false}
           onToggle={(v) => update((c) => { c.type.inflate = { on: v, strength: c.type.inflate?.strength ?? 55 }; })}>

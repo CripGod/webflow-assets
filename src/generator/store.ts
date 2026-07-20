@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS, KIT_SHAPE, applyKitDesign } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS, KIT_SHAPE, applyKitDesign, setUserShapes } from "./model";
+import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
 import siteDefaultJson from "./site-default.json";
@@ -203,6 +204,10 @@ interface GenStore {
    *  group, plus slot toggles. Too intricate for the generic text controls. */
   kitRow: RowCfg;
   setKitRow: (patch: Partial<RowCfg>) => void;
+  /** Imported flat-vector silhouettes — see the spec in the Silhouette panel. */
+  userShapes: UserShape[];
+  addUserShape: (u: UserShape) => void;
+  removeUserShape: (id: string) => void;
   styleLib: StyleItem[];
   saveStyle: (name: string) => void;
   applyStyle: (id: string) => void;
@@ -404,6 +409,23 @@ export const useGen = create<GenStore>((set, get) => ({
     if (d) kitDesigns[id] = d; else delete kitDesigns[id];
     saveJson("ui-generator-kitdesigns", kitDesigns);
     set({ kitDesigns });
+  },
+  userShapes: (() => { const l = loadJson<UserShape[]>("ui-generator-usershapes", []); setUserShapes(l); return l; })(),
+  addUserShape: (u) => {
+    markTouched();
+    const userShapes = [...get().userShapes.filter((x) => x.id !== u.id), u];
+    setUserShapes(userShapes); saveJson("ui-generator-usershapes", userShapes);
+    set({ userShapes });
+  },
+  removeUserShape: (id) => {
+    markTouched();
+    const userShapes = get().userShapes.filter((x) => x.id !== id);
+    setUserShapes(userShapes); saveJson("ui-generator-usershapes", userShapes);
+    // anything still wearing the removed silhouette falls back to Rounded
+    const st = get();
+    const kitShapes = Object.fromEntries(Object.entries(st.kitShapes).filter(([, v]) => v !== id));
+    set({ userShapes, kitShapes: kitShapes as typeof st.kitShapes });
+    if (st.cfg.shape === id) st.update((c) => { c.shape = "round"; });
   },
   kitRow: { ...defaultRow(), ...loadJson<Partial<RowCfg>>("ui-generator-kitrow", {}) },
   setKitRow: (patch) => {

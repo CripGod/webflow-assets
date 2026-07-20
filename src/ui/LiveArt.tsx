@@ -24,7 +24,7 @@ export interface LiveKit {
   addBtn?: boolean;
   overlay?: string;
   /** Data-row content model (see KitOpts.row). */
-  row?: Record<string, string | number | boolean | undefined>;
+  row?: import("@/generator/store").RowCfg;
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -33,7 +33,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
  *  host wires it). Play mode: hover/press states, toggles flip, sliders drag,
  *  segments switch, progress animates, dropdowns open, badges award — every
  *  interaction the component implies, all through the same pure renderer. */
-export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, className, style, title, onDesignClick }: {
+export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient, className, style, title, onDesignClick }: {
   cfg: GenConfig;
   kit?: LiveKit;
   playing: boolean;
@@ -42,6 +42,12 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
   /** Anchor the shell, not the glow pad: pulls the art up-left by the pad so
    *  top-left-positioned hosts (the board) keep their saved layouts. */
   anchorContent?: boolean;
+  /** Screen-composition mode: reclaim the invisible canvas around the shell
+   *  (glow pad + fixed insets) with computed negative margins, so pieces
+   *  stack at believable interface rhythm at any display scale. The glow
+   *  still draws — it just overlaps neighbours like it would on a real
+   *  screen instead of reserving blank layout space. */
+  trim?: boolean;
   /** Progress bars quietly re-fill on their own — the page breathes. */
   ambient?: boolean;
   className?: string;
@@ -101,10 +107,27 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
 
   // the glow pad the renderer added — read back from the viewBox origin
   const pad = useMemo(() => {
-    if (!anchorContent) return 0;
+    if (!anchorContent && !trim) return 0;
     const m = svg.match(/viewBox="(-?[\d.]+)/);
     return m ? -+m[1] : 0;
-  }, [svg, anchorContent]);
+  }, [svg, anchorContent, trim]);
+
+  /* Screen-composition trim: the renderer's canvas = glow pad + x/y margins
+     + depth-and-shadow allowance below the shell. Reclaim the pad exactly
+     plus a conservative share of the fixed insets (top ~14, sides ~12,
+     bottom ~22 viewBox units — the bottom keeps room for extrusion depth
+     and the cast shadow), all at display scale. Shells then stack at real
+     UI rhythm while glows draw freely over the gaps. */
+  const trimStyle = useMemo(() => {
+    if (!trim || scale === undefined) return undefined;
+    const s = scale;
+    return {
+      marginTop: -Math.round((pad + 14) * s),
+      marginRight: -Math.round((pad + 12) * s),
+      marginBottom: -Math.round((pad + 22) * s),
+      marginLeft: -Math.round((pad + 12) * s),
+    };
+  }, [trim, scale, pad]);
 
   /* Map a pointer to the control's track using the exact geometry the renderer
      stamped on the svg (viewBox units) — precise at any scale or glow pad. */
@@ -211,7 +234,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, ambient, clas
     } : {}),
   };
 
-  const anchorStyle = pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined;
+  const anchorStyle = trimStyle ?? (anchorContent && pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined);
   // draggable pieces own their gestures — a slider drag must never pan the page
   const gestureStyle = id === "slider" || id === "segment" ? { touchAction: "none" as const } : undefined;
   return (
