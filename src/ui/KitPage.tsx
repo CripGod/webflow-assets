@@ -30,7 +30,7 @@ function Art({ svg, scale, className }: { svg: string; scale: number; className?
 interface PieceOpts {
   id: KitComponentId; size?: KitSize; label?: string; segments?: string[];
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
-  sub?: string; max?: string; addBtn?: boolean; overlay?: string;
+  sub?: string; max?: string; addBtn?: boolean; overlay?: string; trim?: boolean;
 }
 
 /** Shared plumbing for every live piece on this page. The page is always
@@ -103,13 +103,65 @@ function PPiece(p: PieceOpts & { ambient?: boolean }) {
   const { cfg, name, kit } = usePiece({ ...p, size: p.size ?? "m" });
   return (
     <LiveArt cfg={cfg} playing scale={p.scale ?? PATTERN_SCALE} className="gp-piece"
-      kit={kit} title={name} ambient={p.ambient} />
+      kit={kit} title={name} ambient={p.ambient} trim={p.trim} />
   );
 }
 
-function Sec({ n, title, anchor, note, children }: { n: string; title: string; anchor?: string; note?: string; children: React.ReactNode }) {
+/** A piece on a screen-pattern stage — same live plumbing, but the invisible
+ *  render canvas is trimmed away so pieces stack at interface rhythm. */
+function SPiece(p: PieceOpts & { ambient?: boolean }) {
+  return <PPiece {...p} trim={p.trim ?? true} />;
+}
+
+/** One screen-pattern specimen: identification above the viewport, the dark
+ *  stage as the actual screen, quiet system metadata below. The viewport's
+ *  aspect ratio is fixed and every nested piece reserves its largest state,
+ *  so no interaction inside can move the card, the grid or the page. */
+function Pat({ n, name, cat, comps, asms, lead, children }: {
+  n: string; name: string; cat: string; comps: number; asms: number;
+  lead: KitComponentId; children: React.ReactNode;
+}) {
+  const { setFocus } = useGen();
   return (
-    <section className="kp-sec" data-anchor={anchor}>
+    <article className="pat">
+      <header className="pat-head">
+        <span className="pat-num">{n}</span>
+        <h4 className="pat-name">{name}</h4>
+        <span className="pat-cat">{cat}</span>
+        <button className="pat-open" onClick={() => setFocus(lead)}
+          title={`Open ${name}'s lead component in the editor — restyle it and the whole pattern follows`}>
+          Open pattern →
+        </button>
+      </header>
+      <div className="pat-view"><div className="sc">{children}</div></div>
+      <footer className="pat-foot">
+        <span>{comps} registered components</span>
+        <span>{asms} {asms === 1 ? "assembly" : "assemblies"}</span>
+        <span>Fully editable</span>
+      </footer>
+    </article>
+  );
+}
+
+/** Shared template for terminal states — icon, title, one-line explanation,
+ *  primary recovery, secondary escape. Empty and Error are the same system. */
+function StateScreen({ icon, title, line, action }: { icon: IconDef; title: string; line: string; action: string }) {
+  return (
+    <>
+      <SPiece id="badge" baseState="pressed" icon={icon} scale={0.34} />
+      <SPiece id="tab" label={title} scale={0.36} />
+      <span className="sc-caption dim">{line}</span>
+      <div className="sc-row sc-push">
+        <SPiece id="small" label={action} scale={0.34} />
+        <PPiece id="ghost" label="Back" size="s" scale={0.32} />
+      </div>
+    </>
+  );
+}
+
+function Sec({ n, title, anchor, note, wide, children }: { n: string; title: string; anchor?: string; note?: string; wide?: boolean; children: React.ReactNode }) {
+  return (
+    <section className={`kp-sec${wide ? " kp-wide" : ""}`} data-anchor={anchor}>
       <header className="kp-sechead">
         <span className="kp-num">{n}</span>
         <h2>{title}</h2>
@@ -298,7 +350,12 @@ export function KitPage() {
   const [a11yOpen, setA11yOpen] = useState(false);
   const audit = useMemo(() => assess(cfg), [cfg]);
 
+  // screen-pattern group filter — restrained text nav, not capsules
+  const [patTab, setPatTab] = useState<"all" | "core" | "outcome" | "state">("all");
+
   const specimen = useMemo(() => renderTypeSpecimen(cfg, label), [cfg, label]);
+  // main-menu title — the game's name (preset), not the master button label
+  const menuArt = useMemo(() => renderTypeSpecimen(cfg, (preset?.name ?? "CANDY").toUpperCase()), [cfg, preset]);
   const loadingArt = useMemo(() => renderTypeSpecimen(cfg, "LOADING"), [cfg]);
   const alphaUp = useMemo(() => renderTypeSpecimen(cfg, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", { keepCase: true }), [cfg]);
   const alphaLo = useMemo(() => renderTypeSpecimen(cfg, "abcdefghijklmnopqrstuvwxyz", { keepCase: true }), [cfg]);
@@ -951,117 +1008,143 @@ export function KitPage() {
 
       <Chapter id="patterns" label="Screen Patterns" blurb="complete live screens — start here and restyle everything at once" />
 
-      {/* ── 16 · patterns ── */}
-      <Sec n="16" title="Screen Patterns" note="Eleven little screens built from nothing but registered components — all of them live, every nested piece editable.">
-        <div className="kp-patterns">
-          <div className="gp-card">
-            <div className="gp-title">Main menu</div>
-            <Art svg={specimen} scale={0.3} />
-            <PPiece id="primary" label="PLAY" size="s" />
-            <PPiece id="ghost" label="Options" size="s" scale={0.3} />
-            <div className="gp-row center">
-              <PPiece id="chip" label="980" icon={STOCK_ICONS.gem} scale={0.26} />
-              <PPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.24} />
-              <PPiece id="badge" label="3" scale={0.22} />
+      {/* ── 16 · patterns — editorial case study, three meaningful groups ── */}
+      <Sec n="16" title="Screen Patterns" wide note="Complete interface compositions built entirely from registered kit components. Every pattern remains live, editable, and connected to the same underlying design system.">
+        <nav className="pat-tabs" aria-label="Pattern groups">
+          {([["all", "All"], ["core", "Core Screens"], ["outcome", "Feedback & Outcomes"], ["state", "Empty & Error"]] as const).map(([id, name]) => (
+            <button key={id} className={patTab === id ? "on" : ""} aria-pressed={patTab === id}
+              onClick={() => setPatTab(id)}>{name}</button>
+          ))}
+        </nav>
+
+        {(patTab === "all" || patTab === "core") && (
+          <div className="pat-group">
+            <div className="pat-ghead">
+              <h3>Core Screens</h3>
+              <p>Primary navigation, account and system management screens.</p>
+            </div>
+            <div className="pat-grid">
+              <Pat n="01" name="Main Menu" cat="Core Screen" comps={7} asms={3} lead="primary">
+                <Art svg={menuArt} scale={0.46} />
+                <SPiece id="primary" label="PLAY" scale={0.46} />
+                <div className="sc-stack">
+                  <SPiece id="small" label="OPTIONS" scale={0.36} />
+                  <SPiece id="small" label="STORE" scale={0.36} />
+                </div>
+                <div className="sc-row sc-util sc-push">
+                  <SPiece id="chip" label="980" icon={STOCK_ICONS.gem} scale={0.32} />
+                  <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.28} />
+                  <SPiece id="badge" label="3" scale={0.26} />
+                </div>
+              </Pat>
+              <Pat n="02" name="Sign In" cat="Core Screen" comps={5} asms={2} lead="input">
+                <SPiece id="header" label="WELCOME BACK" scale={0.34} />
+                <span className="sc-caption dim">Sign in to keep your progress.</span>
+                <div className="sc-stack sc-push">
+                  <SPiece id="input" label="Username" scale={0.38} />
+                  <SPiece id="input" label="Password" scale={0.38} />
+                </div>
+                <SPiece id="primary" label="SIGN IN" size="s" scale={0.4} />
+                <div className="sc-push"><SPiece id="ghost" label="Forgot password?" size="s" scale={0.32} /></div>
+              </Pat>
+              <Pat n="03" name="Settings" cat="Core Screen" comps={6} asms={2} lead="slider">
+                <SPiece id="header" label="SETTINGS" scale={0.32} />
+                <div className="sc-form sc-push">
+                  <div className="sc-set"><span className="sc-lab">Music</span><SPiece id="slider" value={0.8} scale={0.32} /></div>
+                  <div className="sc-set"><span className="sc-lab">Sound FX</span><SPiece id="slider" value={0.55} scale={0.32} /></div>
+                  <div className="sc-set"><span className="sc-lab">Haptics</span><SPiece id="toggle" value={1} scale={0.26} /></div>
+                  <div className="sc-set"><span className="sc-lab">Notifications</span><SPiece id="toggle" value={0} scale={0.26} /></div>
+                </div>
+                <div className="sc-push"><SPiece id="small" label="DONE" scale={0.34} /></div>
+              </Pat>
+              <Pat n="04" name="Profile" cat="Core Screen" comps={4} asms={3} lead="progress">
+                <div className="sc-row sc-id">
+                  <SPiece id="iconbtn" icon={STOCK_ICONS.user} scale={0.44} />
+                  <div className="sc-idcol">
+                    <span className="sc-name">PLAYER ONE</span>
+                    <SPiece id="chip" label="LV 24" icon={STOCK_ICONS.star} scale={0.3} />
+                  </div>
+                </div>
+                <div className="sc-form sc-push">
+                  <div className="sc-between"><span className="sc-lab">XP</span><span className="sc-caption dim">3,450 / 5,000</span></div>
+                  <SPiece id="progress" value={0.69} ambient scale={0.42} />
+                </div>
+                <div className="sc-push"><SPiece id="small" label="EDIT PROFILE" scale={0.38} /></div>
+              </Pat>
+              <Pat n="05" name="Reward" cat="Core Screen" comps={4} asms={2} lead="badge">
+                <SPiece id="header" label="LEVEL UP!" scale={0.38} />
+                <div className="sc-push"><SPiece id="badge" size="l" baseState="pressed" icon={STOCK_ICONS.star} scale={0.72} /></div>
+                <SPiece id="chip" label="+250" icon={STOCK_ICONS.gem} scale={0.42} />
+                <div className="sc-push"><SPiece id="primary" label="CLAIM REWARD" size="s" scale={0.44} /></div>
+              </Pat>
+              <Pat n="06" name="Purchase" cat="Core Screen" comps={5} asms={3} lead="segment">
+                <SPiece id="header" label="STORE" scale={0.3} />
+                <div className="sc-push"><SPiece id="segment" segments={["500", "1,200", "2,500"]} value={1} scale={0.42} /></div>
+                <div className="sc-row">
+                  <SPiece id="chip" label="1,200" icon={STOCK_ICONS.gem} scale={0.34} />
+                  <span className="sc-caption dim">for</span>
+                  <SPiece id="chip" label="$4.99" icon={null} scale={0.34} />
+                </div>
+                <SPiece id="primary" label="BUY NOW" size="s" scale={0.38} />
+                <SPiece id="ghost" label="Cancel" size="s" scale={0.3} />
+              </Pat>
             </div>
           </div>
-          <div className="gp-card">
-            <div className="gp-title">Sign in</div>
-            <PPiece id="header" label="WELCOME BACK" scale={0.3} />
-            <PPiece id="input" label="Email address" />
-            <PPiece id="input" label="Password" />
-            <PPiece id="primary" label="LOG IN" size="s" />
-            <PPiece id="ghost" label="Forgot password?" size="s" scale={0.3} />
-          </div>
-          <div className="gp-card">
-            <div className="gp-title">Settings</div>
-            <PPiece id="header" label="SETTINGS" scale={0.3} />
-            <div className="gp-col"><span className="gp-label">Music</span><PPiece id="slider" value={0.8} /></div>
-            <div className="gp-col"><span className="gp-label">Sound FX</span><PPiece id="slider" value={0.55} /></div>
-            <div className="gp-row"><span className="gp-label">Haptics</span><PPiece id="toggle" value={0} /></div>
-            <PPiece id="small" label="DONE" />
-          </div>
-          <div className="gp-card">
-            <div className="gp-title">Profile</div>
-            <PPiece id="header" label="PROFILE" scale={0.3} />
-            <div className="gp-row center">
-              <PPiece id="iconbtn" icon={STOCK_ICONS.user} />
-              <div className="gp-col">
-                <span className="gp-name">PLAYER ONE</span>
-                <PPiece id="chip" label="LV 12" icon={STOCK_ICONS.star} scale={0.3} />
-              </div>
+        )}
+
+        {(patTab === "all" || patTab === "outcome") && (
+          <div className="pat-group">
+            <div className="pat-ghead">
+              <h3>Feedback &amp; Outcomes</h3>
+              <p>System feedback, progress and end-state compositions.</p>
             </div>
-            <div className="gp-col"><span className="gp-label">XP · 620 / 1000</span><PPiece id="progress" value={0.62} ambient /></div>
-            <PPiece id="small" label="EDIT" scale={0.3} />
-          </div>
-          <div className="gp-card">
-            <div className="gp-title">Reward</div>
-            <PPiece id="header" label="LEVEL UP!" scale={0.28} />
-            <PPiece id="badge" baseState="pressed" scale={0.36} />
-            <PPiece id="chip" label="+500" icon={STOCK_ICONS.gem} />
-            <div className="gp-col"><span className="gp-label">Next reward</span><PPiece id="progress" value={1} /></div>
-            <PPiece id="primary" label="CLAIM" size="s" />
-          </div>
-          <div className="gp-card">
-            <div className="gp-title">Purchase</div>
-            <PPiece id="header" label="STORE" scale={0.3} />
-            <PPiece id="segment" segments={["1×", "10×", "100×"]} value={0} />
-            <div className="gp-row center">
-              <PPiece id="chip" label="980" icon={STOCK_ICONS.gem} />
-              <PPiece id="chip" label="4.99" icon={STOCK_ICONS.cart} />
-            </div>
-            <PPiece id="primary" label="BUY NOW" size="s" />
-            <PPiece id="ghost" label="Cancel" size="s" scale={0.3} />
-          </div>
-          <div className="gp-card">
-            <div className="gp-title">Confirmation</div>
-            <PPiece id="header" label="ARE YOU SURE?" scale={0.28} />
-            <span className="gp-label">Quitting now will forfeit the match.</span>
-            <div className="gp-row center">
-              <PPiece id="small" label="CONFIRM" scale={0.32} />
-              <PPiece id="ghost" label="Cancel" size="s" scale={0.3} />
-            </div>
-            <PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.2} />
-          </div>
-          <div className="gp-card">
-            <div className="gp-title">Loading</div>
-            <Art svg={loadingArt} scale={0.26} />
-            <PPiece id="progress" value={0.85} ambient />
-            <span className="gp-label">Tip: locked doors remember you.</span>
-            <span className="gp-label dim">Fetching world state…</span>
-          </div>
-          <div className="gp-card">
-            <div className="gp-title">Results · Victory</div>
-            <Art svg={splashArt} scale={0.26} />
-            <div className="gp-row center">
-              <PPiece id="chip" label="SCORE 12 480" icon={null} scale={0.28} />
-              <PPiece id="chip" label="BEST" icon={STOCK_ICONS.star} scale={0.26} />
-            </div>
-            <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.trophy} scale={0.3} />
-            <div className="gp-row center">
-              <PPiece id="primary" label="CONTINUE" size="s" scale={0.32} />
-              <PPiece id="ghost" label="Replay" size="s" scale={0.28} />
+            <div className="pat-grid three">
+              <Pat n="07" name="Confirmation" cat="Outcome Screen" comps={3} asms={1} lead="small">
+                <div className="sc-modal">
+                  <SPiece id="header" label="ARE YOU SURE?" scale={0.26} />
+                  <span className="sc-caption">Quitting now will forfeit the match.</span>
+                  <div className="sc-row sc-push">
+                    <SPiece id="small" label="CONFIRM" scale={0.36} />
+                    <SPiece id="ghost" label="Cancel" size="s" scale={0.34} />
+                  </div>
+                </div>
+              </Pat>
+              <Pat n="08" name="Loading" cat="Outcome Screen" comps={2} asms={1} lead="progress">
+                <Art svg={loadingArt} scale={0.32} />
+                <SPiece id="progress" value={0.72} ambient scale={0.48} />
+                <span className="sc-caption dim sc-push">Tip: locked doors remember you.</span>
+              </Pat>
+              <Pat n="09" name="Results — Victory" cat="Outcome Screen" comps={4} asms={2} lead="primary">
+                <Art svg={splashArt} scale={0.28} />
+                <div className="sc-cluster sc-push">
+                  <span className="sc-caption dim">Score</span>
+                  <SPiece id="resource" label="12,450" icon={STOCK_ICONS.trophy} scale={0.46} />
+                </div>
+                <div className="sc-row sc-push">
+                  <SPiece id="primary" label="CONTINUE" size="s" scale={0.38} />
+                  <SPiece id="ghost" label="Replay" size="s" scale={0.34} />
+                </div>
+              </Pat>
             </div>
           </div>
-          <div className="gp-card">
-            <div className="gp-title">Empty state</div>
-            <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.search} scale={0.3} />
-            <PPiece id="tab" label="NO ITEMS YET" scale={0.3} />
-            <span className="gp-label">Complete quests to fill your bag.</span>
-            <PPiece id="small" label="EXPLORE" scale={0.32} />
-            <PPiece id="ghost" label="Back" size="s" scale={0.28} />
-          </div>
-          <div className="gp-card">
-            <div className="gp-title">Connection error</div>
-            <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.warning} scale={0.3} />
-            <PPiece id="tab" label="CONNECTION LOST" scale={0.3} />
-            <span className="gp-label">We couldn’t reach the server.</span>
-            <div className="gp-row center">
-              <PPiece id="small" label="RETRY" scale={0.3} />
-              <PPiece id="ghost" label="Back" size="s" scale={0.28} />
+        )}
+
+        {(patTab === "all" || patTab === "state") && (
+          <div className="pat-group">
+            <div className="pat-ghead">
+              <h3>Empty &amp; Error States</h3>
+              <p>Empty, offline and error handling — one template, two intents.</p>
+            </div>
+            <div className="pat-grid">
+              <Pat n="10" name="Empty State" cat="State Screen" comps={4} asms={1} lead="small">
+                <StateScreen icon={STOCK_ICONS.search} title="NO ITEMS YET" line="Complete levels to fill your bag." action="BROWSE STORE" />
+              </Pat>
+              <Pat n="11" name="Connection Error" cat="State Screen" comps={4} asms={1} lead="small">
+                <StateScreen icon={STOCK_ICONS.warning} title="CONNECTION LOST" line="We can’t reach the server." action="RETRY" />
+              </Pat>
             </div>
           </div>
-        </div>
+        )}
       </Sec>
 
       <footer className="kp-foot">Made with The UI Generator · five levels, one material recipe, one renderer, zero mockups.</footer>
