@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix } from "@/generator/model";
@@ -6,14 +6,22 @@ import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize } from "
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
 import { previewSvg } from "@/generator/icons";
-import { downloadSvg, downloadZip } from "@/generator/exportUtils";
+import { downloadSettings, downloadSvg, downloadZip } from "@/generator/exportUtils";
 import { LiveArt } from "./LiveArt";
 
 /* The Kit — a living guideline sheet in five levels: Foundations, Components,
    Assemblies, Build Parts, Screen Patterns. One renderer draws everything,
    every example is live, and every piece opens in the editor. */
 
-const PIECE_SCALE = 0.5;
+const CHAPTERS: [string, string, string][] = [
+  ["foundations", "01", "Foundations"],
+  ["components", "02", "Components"],
+  ["parts", "03", "Build Parts"],
+  ["patterns", "04", "Screen Patterns"],
+  ["resources", "05", "Resources"],
+];
+
+const PIECE_SCALE = 0.56;
 const PATTERN_SCALE = 0.31;
 
 const clone = (c: GenConfig) => JSON.parse(JSON.stringify(c)) as GenConfig;
@@ -36,7 +44,7 @@ interface PieceOpts {
 /** Shared plumbing for every live piece on this page. The page is always
  *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, setFocus, setKitSize } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitRow, setFocus, setKitSize } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   const size = p.size ?? kitSizes[p.id] ?? "m";
@@ -53,6 +61,9 @@ function usePiece(p: PieceOpts) {
       sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay,
       // explicit per-component vertical text adjustment (0 is a valid value)
       textOy: kitTextOy[`${p.id}:${size}`],
+      // data rows follow the row model everywhere; a variant's explicit
+      // label/sub still wins for its own line
+      row: p.id === "datarow" ? kitRow : undefined,
     },
     onEdit: () => setFocus(p.id),
   };
@@ -173,13 +184,16 @@ function Sec({ n, title, anchor, note, wide, children }: { n: string; title: str
   );
 }
 
-/** Chapter divider — one of the kit's five levels. */
-function Chapter({ id, label, blurb }: { id: string; label: string; blurb: string }) {
+/** Chapter divider — a level of the system, visually senior to any section. */
+function Chapter({ n, id, label, blurb }: { n: string; id: string; label: string; blurb: string }) {
   return (
-    <div className="kp-chapter" id={`chap-${id}`}>
+    <div className="kp-chapter" id={`chap-${id}`} data-chap={id}>
+      <span className="kp-chapnum" aria-hidden="true">{n}</span>
+      <div className="kp-chaptext">
+        <span className="kp-chapname">{label}</span>
+        <span className="kp-chapblurb">{blurb}</span>
+      </div>
       <span className="kp-chapline" />
-      <span className="kp-chapname">{label}</span>
-      <span className="kp-chapblurb">{blurb}</span>
     </div>
   );
 }
@@ -200,6 +214,19 @@ function SpecList({ rows }: { rows: [string, string][] }) {
       ))}
     </dl>
   );
+}
+
+/* color readouts — designers hand these to print and engine pipelines */
+function rgbOf(hex: string): [number, number, number] {
+  const p = parseInt(hex.slice(1), 16);
+  return [(p >> 16) & 255, (p >> 8) & 255, p & 255];
+}
+function cmykOf(hex: string): string {
+  const [r, g, b] = rgbOf(hex).map((v) => v / 255);
+  const k = 1 - Math.max(r, g, b);
+  if (k >= 1) return "0 0 0 100";
+  const f = (v: number) => Math.round(((1 - v - k) / (1 - k)) * 100);
+  return `${f(r)} ${f(g)} ${f(b)} ${Math.round(k * 100)}`;
 }
 
 /* relative luminance + WCAG-ish contrast for the accessibility read */
@@ -229,7 +256,7 @@ function assess(cfg: GenConfig): { level: "Strong" | "Fair" | "Risky"; notes: st
   if ((T.outline.on && T.outline.width < 1)) notes.push("A sub-1px outline tends to disappear on low-DPI screens.");
   if (cfg.candy.pattern.type !== "none" && cfg.candy.pattern.opacity > 60) notes.push("The face pattern is strong enough to compete with the label — lower its opacity for text-heavy pieces.");
   const level = hard ? "Risky" : notes.length > 1 ? "Fair" : "Strong";
-  if (!notes.length) notes.push("Contrast, tracking and effects all look comfortable. Nice.");
+  if (!notes.length) notes.push("Contrast, tracking and effects are all comfortable. No warnings.");
   return { level, notes };
 }
 
@@ -250,7 +277,9 @@ function StateStrip({ variants }: {
 }
 
 /** One motion behavior demo — click replays the behavior on a real piece. */
-function MotionDemo({ name, cls, piece }: { name: string; cls: string; piece: PieceOpts }) {
+function MotionDemo({ name, cls, piece, purpose, dur, ease }: {
+  name: string; cls: string; piece: PieceOpts; purpose: string; dur: string; ease: string;
+}) {
   const [tick, setTick] = useState(0);
   return (
     <button className="kp-part kp-mo" title={`Replay ${name}`} onClick={() => setTick((t) => t + 1)}>
@@ -258,6 +287,8 @@ function MotionDemo({ name, cls, piece }: { name: string; cls: string; piece: Pi
         <PPiece {...piece} scale={piece.scale ?? 0.26} />
       </span>
       <span className="kp-partname">{name}</span>
+      <span className="kp-mopurpose">{purpose}</span>
+      <span className="kp-mospec">{dur} · {ease}</span>
     </button>
   );
 }
@@ -353,6 +384,26 @@ export function KitPage() {
   // screen-pattern group filter — restrained text nav, not capsules
   const [patTab, setPatTab] = useState<"all" | "core" | "outcome" | "state">("all");
 
+  // hero disclosure + sticky-nav orientation
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [activeChap, setActiveChap] = useState("foundations");
+  useEffect(() => {
+    const scroller = document.querySelector(".canvas");
+    if (!scroller) return;
+    let raf = 0;
+    const read = () => {
+      raf = 0;
+      const marks = [...document.querySelectorAll<HTMLElement>("[data-chap]")];
+      let current = "foundations";
+      for (const m of marks) if (m.getBoundingClientRect().top < 190) current = m.dataset.chap ?? current;
+      setActiveChap((prev) => (prev === current ? prev : current));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(read); };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    read();
+    return () => { scroller.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
+  }, []);
+
   const specimen = useMemo(() => renderTypeSpecimen(cfg, label), [cfg, label]);
   // main-menu title — the game's name (preset), not the master button label
   const menuArt = useMemo(() => renderTypeSpecimen(cfg, (preset?.name ?? "CANDY").toUpperCase()), [cfg, preset]);
@@ -415,51 +466,95 @@ export function KitPage() {
 
   return (
     <div className={`kitpage${dark ? " dark" : ""}`}>
-      <button className="makekit kitback" onClick={() => setPhase("master")} title="Back to the component editor">
-        <PenTool size={14} strokeWidth={2} /> Edit master
-      </button>
-
-      {/* ── intro ── */}
-      <header className="kp-hero">
-        <div className="kp-eyebrow">PatternBreak · UI Guidelines</div>
-        <h1 className="kp-title">The {preset?.name ?? "Custom"} Kit</h1>
-        <p className="kp-sub">
-          {sil} silhouette · {T.font} · one material recipe at five scales: foundations, finished components,
-          assemblies, Build Parts for constructing new assets, and complete screen patterns.
-          Everything is live — press, drag, flip, open — and everything stays editable via the ✎ next to its name.
-        </p>
-        <div className="kp-dots" aria-hidden="true">
-          {roles.map((r) => <span key={r} style={{ background: cfg.effects[r] }} />)}
-        </div>
-        <nav className="kp-chapnav" aria-label="Kit chapters">
-          {[["foundations", "Foundations"], ["components", "Components"], ["assemblies", "Assemblies"], ["parts", "Build Parts"], ["patterns", "Screen Patterns"]].map(([id, name]) => (
-            <button key={id} onClick={() => document.getElementById(`chap-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{name}</button>
-          ))}
-          <button className="kp-a11ybtn" aria-expanded={a11yOpen} onClick={() => setA11yOpen((v) => !v)}>
-            <ShieldCheck size={13} strokeWidth={2.2} /> Accessibility · {audit.level}
+      {/* ── sticky chapter navigation — persistent orientation ── */}
+      <nav className="kp-tabsbar" aria-label="Kit chapters">
+        {CHAPTERS.map(([id, num, name]) => (
+          <button key={id} className={activeChap === id ? "on" : ""}
+            onClick={() => document.getElementById(`chap-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            <span className="kp-tabnum">{num}</span> {name}
           </button>
-        </nav>
-        {a11yOpen && (
-          <div className={`kp-a11y ${audit.level.toLowerCase()}`} role="status">
-            <b>{audit.level === "Strong" ? "Strong — reads clearly." : audit.level === "Fair" ? "Fair — solid, with a couple of watch-outs." : "Risky — worth a tweak before shipping."}</b>
-            <ul>{audit.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+        ))}
+        <button className="kp-tabedit" onClick={() => setPhase("master")} title="Back to the component editor">
+          <PenTool size={13} strokeWidth={2} /> Editor
+        </button>
+      </nav>
+
+      {/* ── hero — the system, stated once ── */}
+      <header className="kp-hero kp-hero2">
+        <div className="kp-heroleft">
+          <div className="kp-eyebrow"><span className="kp-verpill">Design System</span> PatternBreak</div>
+          <h1 className="kp-title">The {preset?.name ?? "Custom"} Kit</h1>
+          <p className="kp-sub">A dimensional candy interface system for fast, playful game UI — one material, five levels, everything live.</p>
+          <div className="kp-facts">
+            {([["5", "Levels"], [String(KIT_COMPONENTS.length) + "+", "Components"], ["20+", "Assemblies"], [sil, "Silhouette"]] as const).map(([v, l]) => (
+              <div className="kp-fact" key={l}><b>{v}</b><span>{l}</span></div>
+            ))}
+            <button className={`kp-fact kp-a11ybtn a11y-${audit.level.toLowerCase()}`} aria-expanded={a11yOpen} onClick={() => setA11yOpen((v) => !v)}>
+              <b><ShieldCheck size={14} strokeWidth={2.4} /> {audit.level}</b><span>Accessibility</span>
+            </button>
           </div>
-        )}
+          <div className="kp-roleline" aria-hidden="true">
+            {roles.map((r) => <span className="kp-roledot" key={r}><i style={{ background: cfg.effects[r] }} />{r}</span>)}
+          </div>
+          <button className="kp-about" aria-expanded={aboutOpen} onClick={() => setAboutOpen((v) => !v)}>About this kit {aboutOpen ? "–" : "+"}</button>
+          {aboutOpen && (
+            <p className="kp-note kp-aboutbody">
+              {sil} silhouette · {T.font}. One material recipe at five levels: foundations, finished
+              components, Build Parts with containers and assemblies, screen patterns and resources.
+              Every specimen is a live render from the same engine that draws the editor canvas;
+              each opens in the editor via the ✎ next to its name. Nothing on this page is a mockup.
+            </p>
+          )}
+          {a11yOpen && (
+            <div className={`kp-a11y ${audit.level.toLowerCase()}`} role="status">
+              <b>{audit.level === "Strong" ? "Strong — reads clearly." : audit.level === "Fair" ? "Fair — solid, with a couple of watch-outs." : "Risky — worth a tweak before shipping."}</b>
+              <ul>{audit.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+            </div>
+          )}
+        </div>
+        <div className="kp-herostage" aria-label="Hero composition — live components">
+          <div className="sc">
+            <SPiece id="header" label="LEVEL UP!" scale={0.34} />
+            <div className="sc-push"><SPiece id="badge" size="l" baseState="pressed" icon={STOCK_ICONS.star} scale={0.6} /></div>
+            <SPiece id="chip" label="+250 XP" icon={null} scale={0.38} />
+            <SPiece id="progress" value={0.74} ambient scale={0.42} />
+            <div className="sc-push"><SPiece id="primary" label="CLAIM" size="s" scale={0.4} /></div>
+          </div>
+        </div>
       </header>
 
-      <Chapter id="foundations" label="Foundations" blurb="the tokens and type everything else inherits" />
+      <Chapter n="01" id="foundations" label="Foundations" blurb="The color roles, material and typography every component inherits." />
 
       {/* ── 01 · style tokens ── */}
-      <Sec n="01" title="Style" note="Five wells drive every layer of the shell — repaint them in Color and the whole page follows.">
-        <div className="kp-swatches">
-          {roles.map((r) => (
-            <div className="kp-swatch" key={r}>
-              <span className="kp-chip" style={{ background: cfg.effects[r] }} />
-              <span className="kp-swname">{r}</span>
-              <span className="kp-swhex">{cfg.effects[r]?.toUpperCase()}</span>
-              <span className="kp-swhint">{ROLE_HINT[r]}</span>
-            </div>
-          ))}
+      <Sec n="01" title="Color & Material" note="Five color roles drive the material: face, bevel, glow, shadow and inner fill. Repaint a role and every layer that uses it follows. These are functional roles, not a brand palette.">
+        <div className="kp-mat">
+          <div className="kp-explode" aria-label="Material layers, top to bottom">
+            {([["01", "Glow", "Outer bloom for energy and focus", "Outer glow (aura)"],
+               ["02", "Face", "Lit surface that carries the content", "Face gradient"],
+               ["03", "Shell", "Wall and rim for shape definition", "Shell wall + rim"],
+               ["04", "Body", "Extrusion for physical depth", "Extrusion body"],
+               ["05", "Shadow", "Grounding and separation", "Cast shadow"]] as const).map(([n, t, d, layer]) => (
+              <div className="kp-exrow" key={n}>
+                <div className="kp-exlab"><b>{n} · {t}</b><span>{d}</span></div>
+                <Art svg={layerCards.find((l) => l.name === layer)?.svg ?? ""} scale={0.3} />
+              </div>
+            ))}
+          </div>
+          <div className="kp-roles2">
+            <div className="kp-rolehead">Color roles</div>
+            {roles.map((r) => (
+              <div className="kp-role2" key={r}>
+                <i style={{ background: cfg.effects[r] }} />
+                <div className="kp-rolemeta"><b>{r}</b><span>{ROLE_HINT[r]}</span></div>
+                <code>{cfg.effects[r]?.toUpperCase()}{"\n"}RGB {rgbOf(cfg.effects[r] ?? "#000000").join(" ")}{"\n"}CMYK {cmykOf(cfg.effects[r] ?? "#000000")}</code>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="kp-meta">
+          <span>Change freely: any role's hue</span>
+          <span>Keep related: glow near the bevel family</span>
+          <span>Breaks the look: flat fills, removed rim, black shadows at full opacity</span>
         </div>
         <SpecList rows={[
           ["Face", cfg.face.mode === "dark" ? "Dark" : "Light"],
@@ -473,7 +568,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 02 · typography ── */}
-      <Sec n="02" title="Typography" note="One face, one treatment — every label on this page inherits it. All of it is live text; nothing is outlined or rasterized.">
+      <Sec n="02" title="Typography" note="One typeface, one treatment, inherited by every component. All text is live — never outlined or rasterized.">
         <div className="kp-typo">
           <Art svg={specimen} scale={0.62} />
           <Art svg={alphaUp} scale={0.4} />
@@ -501,28 +596,26 @@ export function KitPage() {
           </a>
         </div>
 
-        {/* splash text — real, editable instances of the display-text component */}
-        <div className="kp-subhead">Splash text</div>
-        <p className="kp-note">Big theme moments, straight from the same type system. Edit the text and the highlight phrase below — the highlight renders as a brighter, illuminated part of the same material.</p>
+        {/* display treatment — real, editable instances of the display-text component */}
+        <div className="kp-subhead">Display treatment</div>
+        <p className="kp-note">Splash moments from the same type system. The highlight phrase renders as a brighter, illuminated part of the same material.</p>
         <div className="kp-splashedit">
           <label>Text <input value={splash} maxLength={32} onChange={(e) => setSplash(e.target.value)} aria-label="Splash text" /></label>
           <label>Highlight phrase <input value={splashHi} maxLength={32} onChange={(e) => setSplashHi(e.target.value)} aria-label="Highlight phrase" /></label>
         </div>
         <Art svg={splashArt} scale={0.58} className="kp-splashmain" />
-        <div className="kp-splashrow">
+        <div className="kp-splashtxts">
           {SPLASHES.map((s) => (
-            <button key={s} className={`kp-splashchip${s === splash ? " on" : ""}`} title={`Load “${s}” into the splash editor`}
-              onClick={() => { setSplash(s); setSplashHi(s === "SWEET VICTORY" ? "VICTORY" : ""); }}>
-              <Art svg={renderTypeSpecimen(cfg, s)} scale={0.22} />
-            </button>
+            <button key={s} className={`kp-splashtxt${s === splash ? " on" : ""}`} title={`Load “${s}” into the splash editor`}
+              onClick={() => { setSplash(s); setSplashHi(s === "SWEET VICTORY" ? "VICTORY" : ""); }}>{s}</button>
           ))}
         </div>
       </Sec>
 
-      <Chapter id="components" label="Components" blurb="finished controls, in true relative scale" />
+      <Chapter n="02" id="components" label="Components" blurb="Finished controls, shown in true relative scale." />
 
       {/* ── 03 · buttons ── */}
-      <Sec n="03" title="Buttons" note="The working set — Primary carries the master label. Hover, press and keyboard-focus any of them; the strip below shows every state.">
+      <Sec n="01" title="Buttons" note="Primary carries the master label. The strip below shows every state; hover, press and keyboard-focus are all real.">
         <div className="kp-tray">
           <Piece id="primary" size="l" caption="Primary · L" />
           <Piece id="primary" size="m" caption="Primary · M" />
@@ -544,7 +637,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 04 · choice controls ── */}
-      <Sec n="04" title="Choice" note="Checks, radios and switches share the shell — click a toggle and it really flips.">
+      <Sec n="02" title="Choice Controls" note="Checks, radios and switches share the shell. Toggles flip on click and on Enter or Space.">
         <div className="kp-tray">
           <Piece id="checkbox" caption="Checkbox" />
           <Piece id="radio" caption="Radio" />
@@ -560,7 +653,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 05 · fields ── */}
-      <Sec n="05" title="Fields" note="Wells sunk into the same candy. Click the dropdown and it opens.">
+      <Sec n="03" title="Fields" note="Input wells sunk into the same material. The dropdown opens in place.">
         <div className="kp-tray">
           <Piece id="input" caption="Input" />
           <Piece id="dropdown" caption="Dropdown" />
@@ -576,7 +669,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 06 · sliders & progress ── */}
-      <Sec n="06" title="Sliders & Progress" note="Drag the slider — the thumb stays inside the shell at both ends. Click the progress bar (or press Enter on it) and it replays 0 → its configured value.">
+      <Sec n="04" title="Sliders & Progress" note="Shared range rules: the thumb stays inside the shell at both endpoints and the fill ends at the thumb's center. Progress replays to its configured value on click or Enter.">
         <div className="kp-tray">
           <Piece id="slider" caption="Slider" value={0.62} />
           <Piece id="progress" caption="Progress" value={0.62} ambient />
@@ -591,7 +684,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 07 · feedback ── */}
-      <Sec n="07" title="Feedback" note="Counts, awards and callouts. Click a badge to award it.">
+      <Sec n="05" title="Feedback" note="Counts, awards and callouts. A badge awards on click.">
         <div className="kp-tray">
           <Piece id="badge" caption="Badge · Count" label="12" />
           <Piece id="badge" caption="Badge · Awarded" baseState="pressed" />
@@ -600,7 +693,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 08 · navigation ── */}
-      <Sec n="08" title="Navigation" note="Tabs, a three-way switch and Banner / Stretch — a three-slice banner whose caps never distort and whose text never enters the tails.">
+      <Sec n="06" title="Navigation" note="Tabs, a segmented switch and the three-slice banner. Caps never distort; text never enters the tails.">
         <div className="kp-tray">
           <Piece id="tab" caption="Tab" label="HOME" />
           <Piece id="tab" caption="Tab" label="STORE" />
@@ -633,7 +726,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 09 · icons ── */}
-      <Sec n="09" title="Icons" anchor="icons" note="The functional glyph set — Lucide, embedded with the same rules everywhere. Shown bare, as icon buttons, and as themed medallions.">
+      <Sec n="07" title="Icons" anchor="icons" note="The functional glyph set, embedded with the same rules everywhere: bare, as icon buttons, and as themed medallions.">
         <div className="kp-icons">
           {ICON_SET.map((ic) => (
             <figure className="kp-icon" key={ic.key} title={ic.name}>
@@ -653,7 +746,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 10 · game HUD & data ── */}
-      <Sec n="10" title="Game HUD & Data" note="The mobile-game core: HUD counters, data rows, item slots and progress rings — every icon, portrait and value is a replaceable slot.">
+      <Sec n="08" title="Game HUD & Data" note="Counters, rows, slots and rings. Every icon, portrait and value is a replaceable slot.">
         <div className="kp-subhead">HUD counters</div>
         <div className="kp-tray">
           <Piece id="resource" caption="Compact" label="1 250" scale={0.4} />
@@ -696,10 +789,120 @@ export function KitPage() {
         </div>
       </Sec>
 
-      <Chapter id="assemblies" label="Assemblies" blurb="components combined into ready pieces — no new materials, no one-off styling" />
+      <Chapter n="03" id="parts" label="Build Parts" blurb="The construction vocabulary: parts, containers, assemblies and motion — with downloads." />
 
+      {/* ── 14 · build parts ── */}
+      <Sec n="01" title="Build Parts" note="Everything in the kit is built from these. Each part opens the layer that produces it in the editor. Downloads are layered SVGs with named groups and nine-slice metadata.">
+        <div className="kp-dlrow">
+          {([["all", "Download full pack"], ["components", "Components"], ["layers", "Material layers"], ["controls", "Control pieces"], ["type", "Typography recipe"], ["assemblies", "Assemblies"]] as const).map(([which, capn]) => (
+            <button key={which} onClick={() => {
+              const st = useGen.getState();
+              const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+              const files: { path: string; data: string }[] = [];
+              if (which === "all" || which === "layers") layerCards.forEach((lc) => files.push({ path: `build-parts/material-layers/${slug(lc.name)}.svg`, data: lc.svg }));
+              if (which === "all" || which === "type") recipe.forEach((r) => files.push({ path: `build-parts/typography-recipe/${slug(r.name)}.svg`, data: r.svg }));
+              if (which === "all" || which === "controls") (["slider", "toggle", "progress", "badge", "ring", "slot", "resource", "datarow"] as KitComponentId[]).forEach((cid) =>
+                files.push({ path: `build-parts/control-pieces/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, "m", "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
+              if (which === "all" || which === "assemblies") {
+                // containers + the pieces every assembly is composed from,
+                // plus a recipe sheet describing the compositions
+                (["s", "m", "l"] as const).forEach((sz) =>
+                  files.push({ path: `assemblies/containers/panel-${sz}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns.panel), "panel", sz, "default", undefined, st.kitShapes.panel, { expand: true }) }));
+                ([["header", "banner"], ["tab", "section-tab"], ["datarow", "list-row"], ["resource", "hud-counter"], ["slot", "item-slot"], ["ring", "progress-ring"], ["chip", "stat-chip"], ["badge", "medallion"]] as [KitComponentId, string][]).forEach(([cid, nm]) =>
+                  files.push({ path: `assemblies/pieces/${nm}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, st.kitSizes[cid] ?? "m", "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
+                files.push({
+                  path: "assemblies/RECIPES.md",
+                  data: [
+                    "# Assembly recipes", "",
+                    "Assemblies are compositions of registered components — no unique art.",
+                    "Rebuild them in any tool by stacking the pieces in this folder:", "",
+                    "- Titled panel: panel + tab (top-left, inset 16) + iconbtn (top-right)",
+                    "- Confirmation modal: panel-s + header + two buttons, stacked on center axis",
+                    "- Toast: chip + small button, right-aligned",
+                    "- List row: list-row; selected state = hover render",
+                    "- Objective card: tab + medallion + text + progress + chip + small button",
+                    "- Reward track: item-slot per milestone, connectors 3px, done = solid",
+                    "- Bottom sheet: panel with 18px top radius + handle bar 44×5",
+                    "- Map node: medallion; current node adds a 2px pulse ring at +8px",
+                  ].join("\n"),
+                });
+              }
+              if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) =>
+                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, st.kitSizes[cid] ?? "m", "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${st.kitSizes[cid] ?? "m"}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
+              if (which === "all") {
+                files.push({
+                  path: "9slice.json",
+                  data: JSON.stringify({
+                    note: "Fixed-cap insets for stretchable pieces. Values are fractions of the piece's shell height H: the caps are capScale×H px wide and must not stretch; only the center region stretches. content gives the text-safe insets.",
+                    silhouettes: SILHOUETTES.map((s) => ({ id: s.id, name: s.name, capScale: s.capScale, content: s.content })),
+                  }, null, 2),
+                });
+                files.push({
+                  path: "README.md",
+                  data: [
+                    "# UI Kit asset pack", "",
+                    "Layered SVGs from The UI Generator. Every component keeps named groups —",
+                    "cast-shadow, extrusion, shell, face, content, gloss, specular — so Figma", "imports them as a readable layer tree.", "",
+                    "## Figma", "Drag any SVG onto the canvas. Ungroup once to reach the named layers.", "",
+                    "## Illustrator", "Open directly. You may see 'Clipping will be lost on roundtrip to Tiny' —",
+                    "that warning concerns re-SAVING to the SVG Tiny profile; the artwork imports",
+                    "completely. The candy face requires one clip group (gloss, pattern and",
+                    "speculars must stay inside the face), which is what triggers the notice.", "",
+                    "## Nine-slice scaling", "See 9slice.json: caps are fixed (capScale × shell height), centers stretch.",
+                    "The `content` insets are the text-safe area used by the generator itself.",
+                  ].join("\n"),
+                });
+              }
+              downloadZip(`ui-kit-${which}.zip`, files);
+            }}><Download size={12} strokeWidth={2.2} /> {capn}</button>
+          ))}
+        </div>
+        <div className="kp-subhead">Stretch systems</div>
+        <p className="kp-note">Every silhouette is procedural three-slice geometry: caps are sized by height and never distort; only the middle stretches. Magenta dashes mark the fixed caps, green marks the text-safe area.</p>
+        <div className="kp-slices">
+          <SliceDemo cfg={cfg} label="GO" fit={300} />
+          <SliceDemo cfg={cfg} label={label} fit={380} />
+          <SliceDemo cfg={cfg} label="CONTINUE YOUR ADVENTURE" fit={520} ruler />
+        </div>
+        <div className="kp-meta">
+          <span>Left cap · Fixed</span><span>Center · Stretch X</span><span>Right cap · Fixed</span>
+          <span>Panel corners · Fixed</span><span>Panel edges · Stretch</span><span>Panel center · Stretch X/Y</span>
+        </div>
+        <div className="kp-subhead">Material &amp; structural layers</div>
+        <div className="kp-parts">
+          {layerCards.map((lc) => (
+            <button className="kp-part" key={lc.name} title={`Open ${lc.name} in the editor`} onClick={() => openEditor(lc.sec)}>
+              <Art svg={lc.svg} scale={0.26} />
+              <span className="kp-partname">{lc.name}</span>
+              <Meta items={lc.meta} />
+            </button>
+          ))}
+        </div>
+        <div className="kp-subhead">Control pieces</div>
+        <div className="kp-tray">
+          <Piece id="slider" caption="Track · Fill · Thumb" value={0.62} />
+          <Piece id="toggle" caption="Track · Knob" value={1} />
+          <Piece id="progress" caption="Fill · Cap" value={0.62} />
+          <Piece id="badge" caption="Badge face · rim" label="7" />
+        </div>
+        <div className="kp-meta">
+          <span>Thumb / knob · Fixed, never scales with track</span><span>Track · Stretch X</span>
+          <span>Fill · Stretch X, ends at thumb center</span><span>All recolor via the five wells</span>
+        </div>
+        <div className="kp-subhead">Typography treatment — live layered recipe</div>
+        <div className="kp-recipe">
+          {recipe.map((r) => (
+            <button className="kp-part wide" key={r.name} title="Open Typography in the editor" onClick={() => openEditor("typography")}>
+              <Art svg={r.svg} scale={0.3} />
+              <span className="kp-partname">{r.name}</span>
+            </button>
+          ))}
+        </div>
+      </Sec>
+
+      {/* ── 15 · motion ── */}
       {/* ── 11 · containers & assemblies ── */}
-      <Sec n="11" title="Containers & Assemblies" note="Panels and compound pieces built entirely from the components above.">
+      <Sec n="02" title="Containers & Assemblies" note="Compound pieces built entirely from registered components — no new materials, no one-off styling. Included in the Build Parts downloads.">
         <div className="kp-tray">
           <Piece id="panel" size="s" caption="Panel · S" />
           <Piece id="panel" size="m" caption="Panel · M" />
@@ -804,13 +1007,13 @@ export function KitPage() {
       </Sec>
 
       {/* ── 12 · reward & objectives ── */}
-      <Sec n="12" title="Reward Track & Objectives" note="Progression assemblies — the track scrolls horizontally when it outgrows the row; every milestone is a registered slot.">
+      <Sec n="03" title="Reward Track & Objectives" note="Progression assemblies. Every milestone is a registered slot; the track scrolls when it outgrows the row.">
         <div className="kp-subhead">Reward track</div>
         <div className="kp-track2">
           {([
             ["Claimed", <PPiece key="a" id="slot" size="s" icon={STOCK_ICONS.gem} overlay="check" scale={0.34} />, "done"],
             ["Claimable", <PPiece key="b" id="slot" size="s" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.34} />, "done"],
-            ["Current", <PPiece key="c" id="ring" size="s" value={0.46} scale={0.4} />, "pending"],
+            ["Current", <PPiece key="c" id="slot" size="s" icon={STOCK_ICONS.gem} overlay="new" baseState="hover" scale={0.34} />, "pending"],
             ["Upcoming", <PPiece key="d" id="slot" size="s" icon={STOCK_ICONS.gem} overlay="locked" scale={0.34} />, "pending"],
             ["Final", <PPiece key="e" id="slot" size="s" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.34} />, null],
           ] as [string, React.ReactNode, string | null][]).map(([capn, node, conn], i) => (
@@ -830,7 +1033,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 13 · onboarding & map ── */}
-      <Sec n="13" title="Onboarding & Map" note="Tutorial and progression-map primitives — the spotlight and ring point at other components without changing them.">
+      <Sec n="04" title="Onboarding & Map" note="Tutorial and map primitives. The spotlight and ring point at components without changing them.">
         <div className="kp-patterns kp-assemblies">
           <div className="gp-card">
             <div className="gp-title">Speech bubble · coachmark</div>
@@ -883,92 +1086,26 @@ export function KitPage() {
         </div>
       </Sec>
 
-      <Chapter id="parts" label="Build Parts" blurb="the construction vocabulary — build what the kit doesn’t have yet without breaking the language" />
+      <Sec n="05" title="Motion" note="Parameterized behaviors that apply to any piece. Click a card to replay it. Reduced-motion preference disables all of them.">
+        <div className="kp-motion">
+          {([
+            ["Attention pulse", "mo-pulse", { id: "small" as KitComponentId, label: "CLAIM" }, "Draw the eye to an idle action", "1.26s", "ease-in-out, loops"],
+            ["Bounce", "mo-bounce", { id: "badge" as KitComponentId, baseState: "pressed" as GenStateName }, "Celebrate a small win", "0.90s", "spring 0.3 / 1.6"],
+            ["Glow cycle", "mo-glow", { id: "chip" as KitComponentId, label: "+500", icon: STOCK_ICONS.gem }, "Ambient shimmer on claimables", "1.98s", "ease-in-out, loops"],
+            ["Error shake", "mo-shake", { id: "input" as KitComponentId, label: "Wrong code" }, "Reject an input without a dialog", "0.54s", "ease-in-out"],
+            ["Reward pop", "mo-pop", { id: "slot" as KitComponentId, icon: STOCK_ICONS.gem, overlay: "claimable" }, "Reveal a claimable reward", "0.63s", "overshoot 0.2 / 1.8"],
+            ["Press compression", "mo-press", { id: "small" as KitComponentId, label: "GO" }, "Tactile press acknowledgement", "0.45s", "ease-out"],
+            ["Notification entrance", "mo-slidein", { id: "resource" as KitComponentId, label: "+50" }, "Bring a counter update in from the edge", "0.63s", "decelerate"],
+            ["Panel slide", "mo-rise", { id: "tab" as KitComponentId, label: "NEW QUEST" }, "Raise a sheet or panel into view", "0.63s", "decelerate"],
+          ] as [string, string, PieceOpts, string, string, string][]).map(([name, cls, piece, purpose, dur, ease]) => (
+            <MotionDemo key={cls} name={name} cls={cls} piece={piece} purpose={purpose} dur={dur} ease={ease} />
+          ))}
+        </div>
+        <div className="kp-meta"><span>Durations scale with --mo-dur</span><span>Magnitude scales with --mo-mag</span><span>prefers-reduced-motion disables every behavior</span></div>
+      </Sec>
 
-      {/* ── 14 · build parts ── */}
-      <Sec n="14" title="Build Parts" note="Everything above is built from these. Click any part to open the layer that produces it in the editor. Download the whole inventory, or one taxonomy at a time — layered SVGs with named groups (shell, face, content…), plus nine-slice metadata for stretchable pieces.">
-        <div className="kp-dlrow">
-          {([["all", "Full pack"], ["components", "Components"], ["layers", "Material layers"], ["controls", "Control pieces"], ["type", "Typography recipe"]] as const).map(([which, capn]) => (
-            <button key={which} onClick={() => {
-              const st = useGen.getState();
-              const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-              const files: { path: string; data: string }[] = [];
-              if (which === "all" || which === "layers") layerCards.forEach((lc) => files.push({ path: `build-parts/material-layers/${slug(lc.name)}.svg`, data: lc.svg }));
-              if (which === "all" || which === "type") recipe.forEach((r) => files.push({ path: `build-parts/typography-recipe/${slug(r.name)}.svg`, data: r.svg }));
-              if (which === "all" || which === "controls") (["slider", "toggle", "progress", "badge", "ring", "slot", "resource", "datarow"] as KitComponentId[]).forEach((cid) =>
-                files.push({ path: `build-parts/control-pieces/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, "m", "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
-              if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) =>
-                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, st.kitSizes[cid] ?? "m", "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${st.kitSizes[cid] ?? "m"}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
-              if (which === "all") {
-                files.push({
-                  path: "9slice.json",
-                  data: JSON.stringify({
-                    note: "Fixed-cap insets for stretchable pieces. Values are fractions of the piece's shell height H: the caps are capScale×H px wide and must not stretch; only the center region stretches. content gives the text-safe insets.",
-                    silhouettes: SILHOUETTES.map((s) => ({ id: s.id, name: s.name, capScale: s.capScale, content: s.content })),
-                  }, null, 2),
-                });
-                files.push({
-                  path: "README.md",
-                  data: [
-                    "# UI Kit asset pack", "",
-                    "Layered SVGs from The UI Generator. Every component keeps named groups —",
-                    "cast-shadow, extrusion, shell, face, content, gloss, specular — so Figma", "imports them as a readable layer tree.", "",
-                    "## Figma", "Drag any SVG onto the canvas. Ungroup once to reach the named layers.", "",
-                    "## Illustrator", "Open directly. You may see 'Clipping will be lost on roundtrip to Tiny' —",
-                    "that warning concerns re-SAVING to the SVG Tiny profile; the artwork imports",
-                    "completely. The candy face requires one clip group (gloss, pattern and",
-                    "speculars must stay inside the face), which is what triggers the notice.", "",
-                    "## Nine-slice scaling", "See 9slice.json: caps are fixed (capScale × shell height), centers stretch.",
-                    "The `content` insets are the text-safe area used by the generator itself.",
-                  ].join("\n"),
-                });
-              }
-              downloadZip(`ui-kit-${which}.zip`, files);
-            }}><Download size={12} strokeWidth={2.2} /> {capn}</button>
-          ))}
-        </div>
-        <div className="kp-subhead">Stretch systems</div>
-        <p className="kp-note">Every silhouette is procedural three-slice geometry: caps are sized by height and never distort; only the middle stretches. Magenta dashes mark the fixed caps, green marks the text-safe area.</p>
-        <div className="kp-slices">
-          <SliceDemo cfg={cfg} label="GO" fit={300} />
-          <SliceDemo cfg={cfg} label={label} fit={380} />
-          <SliceDemo cfg={cfg} label="CONTINUE YOUR ADVENTURE" fit={520} ruler />
-        </div>
-        <div className="kp-meta">
-          <span>Left cap · Fixed</span><span>Center · Stretch X</span><span>Right cap · Fixed</span>
-          <span>Panel corners · Fixed</span><span>Panel edges · Stretch</span><span>Panel center · Stretch X/Y</span>
-        </div>
-        <div className="kp-subhead">Material &amp; structural layers</div>
-        <div className="kp-parts">
-          {layerCards.map((lc) => (
-            <button className="kp-part" key={lc.name} title={`Open ${lc.name} in the editor`} onClick={() => openEditor(lc.sec)}>
-              <Art svg={lc.svg} scale={0.26} />
-              <span className="kp-partname">{lc.name}</span>
-              <Meta items={lc.meta} />
-            </button>
-          ))}
-        </div>
-        <div className="kp-subhead">Control pieces</div>
-        <div className="kp-tray">
-          <Piece id="slider" caption="Track · Fill · Thumb" value={0.62} />
-          <Piece id="toggle" caption="Track · Knob" value={1} />
-          <Piece id="progress" caption="Fill · Cap" value={0.62} />
-          <Piece id="badge" caption="Badge face · rim" label="7" />
-        </div>
-        <div className="kp-meta">
-          <span>Thumb / knob · Fixed, never scales with track</span><span>Track · Stretch X</span>
-          <span>Fill · Stretch X, ends at thumb center</span><span>All recolor via the five wells</span>
-        </div>
-        <div className="kp-subhead">Typography treatment — live layered recipe</div>
-        <div className="kp-recipe">
-          {recipe.map((r) => (
-            <button className="kp-part wide" key={r.name} title="Open Typography in the editor" onClick={() => openEditor("typography")}>
-              <Art svg={r.svg} scale={0.3} />
-              <span className="kp-partname">{r.name}</span>
-            </button>
-          ))}
-        </div>
-        <div className="kp-subhead">Proof of system — Objective Card, assembled only from parts above</div>
+      {/* ── proof of system — the chapter's conclusion ── */}
+      <Sec n="06" title="Proof of System" note="The Objective Card, assembled only from the parts above. If the rules hold here, they hold for anything you build.">
         <div className="kp-patterns kp-assemblies">
           <div className="gp-card kp-objective">
             <div className="gp-row">
@@ -986,30 +1123,13 @@ export function KitPage() {
             </div>
           </div>
         </div>
+
       </Sec>
 
-      {/* ── 15 · motion ── */}
-      <Sec n="15" title="Motion" note="Parameterized behaviors, not one-off animations — apply them to any piece. Click a card to replay it; reduced-motion turns them all off.">
-        <div className="kp-motion">
-          {([
-            ["Attention pulse", "mo-pulse", { id: "small" as KitComponentId, label: "CLAIM" }],
-            ["Small bounce", "mo-bounce", { id: "badge" as KitComponentId, baseState: "pressed" as GenStateName }],
-            ["Glow cycle", "mo-glow", { id: "chip" as KitComponentId, label: "+500", icon: STOCK_ICONS.gem }],
-            ["Error shake", "mo-shake", { id: "input" as KitComponentId, label: "Wrong code" }],
-            ["Reward pop", "mo-pop", { id: "slot" as KitComponentId, icon: STOCK_ICONS.gem, overlay: "claimable" }],
-            ["Press compression", "mo-press", { id: "small" as KitComponentId, label: "GO" }],
-            ["Notification entrance", "mo-slidein", { id: "resource" as KitComponentId, label: "+50" }],
-            ["Panel slide", "mo-rise", { id: "tab" as KitComponentId, label: "NEW QUEST" }],
-          ] as [string, string, PieceOpts][]).map(([name, cls, piece]) => (
-            <MotionDemo key={cls} name={name} cls={cls} piece={piece} />
-          ))}
-        </div>
-      </Sec>
-
-      <Chapter id="patterns" label="Screen Patterns" blurb="complete live screens — start here and restyle everything at once" />
+      <Chapter n="04" id="patterns" label="Screen Patterns" blurb="Complete screens composed from the system." />
 
       {/* ── 16 · patterns — editorial case study, three meaningful groups ── */}
-      <Sec n="16" title="Screen Patterns" wide note="Complete interface compositions built entirely from registered kit components. Every pattern remains live, editable, and connected to the same underlying design system.">
+      <Sec n="01" title="Screen Patterns" wide note="Complete interface compositions built entirely from registered kit components. Every pattern remains live, editable, and connected to the same underlying design system.">
         <nav className="pat-tabs" aria-label="Pattern groups">
           {([["all", "All"], ["core", "Core Screens"], ["outcome", "Feedback & Outcomes"], ["state", "Empty & Error"]] as const).map(([id, name]) => (
             <button key={id} className={patTab === id ? "on" : ""} aria-pressed={patTab === id}
@@ -1147,7 +1267,26 @@ export function KitPage() {
         )}
       </Sec>
 
-      <footer className="kp-foot">Made with The UI Generator · five levels, one material recipe, one renderer, zero mockups.</footer>
+      <Chapter n="05" id="resources" label="Resources" blurb="Files, formats and integration notes." />
+
+      <Sec n="01" title="Export & Integration" note="Layered SVG first — Figma reads the named groups directly. Category downloads sit with Build Parts above; engine sprite kits export from the toolbar.">
+        <SpecList rows={[
+          ["Figma", "Drop any exported SVG on the canvas; ungroup once for the layer tree (shadow, extrusion, shell, face, content, gloss)"],
+          ["Illustrator", "Opens directly. The SVG-Tiny clipping notice concerns re-saving only; imports are complete"],
+          ["Engines", "Sprite-sheet kit with per-state rects and 9-slice borders — Unity Sprite Editor and Unreal UMG shapes"],
+          ["Nine-slice", "Caps are capScale × shell height and never stretch; content gives the text-safe insets (9slice.json)"],
+          ["Settings", "The whole design as portable JSON — re-import it or share it as a team default"],
+        ]} />
+        <div className="kp-links">
+          <a target="_blank" rel="noreferrer"
+            href={`https://github.com/google/fonts/tree/main/ofl/${T.font.toLowerCase().replace(/[^a-z0-9]/g, "")}`}>{T.font} on GitHub ↗</a>
+          <a target="_blank" rel="noreferrer"
+            href={`https://fonts.google.com/specimen/${encodeURIComponent(T.font).replace(/%20/g, "+")}`}>Google Fonts ↗</a>
+          <a href="#settings" onClick={(e) => { e.preventDefault(); downloadSettings(cfg); }}>Download settings JSON ↓</a>
+        </div>
+      </Sec>
+
+      <footer className="kp-foot">The UI Generator Design System · five levels, one material recipe, one renderer, zero mockups.</footer>
     </div>
   );
 }

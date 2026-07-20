@@ -24,7 +24,7 @@ export interface LiveKit {
   addBtn?: boolean;
   overlay?: string;
   /** Data-row content model (see KitOpts.row). */
-  row?: Record<string, string | number | boolean | undefined>;
+  row?: import("@/generator/store").RowCfg;
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));

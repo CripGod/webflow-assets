@@ -932,3 +932,134 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   border: 1px solid rgba(235,238,255,.15); border-radius: 18px; background: rgba(9,11,19,.6);
   box-shadow: 0 14px 34px rgba(0,0,0,.4);
 }
+
+/* ── v33: editorial guidelines document ───────────────────────── */
+/* reading mode: canvas tools dock to the lower-right corner so they
+   never sit over the document's center column */
+.canvas-wrap.kitread .zoolbar { left: auto; right: 22px; transform: none; }
+
+/* sticky chapter navigation — persistent orientation for a long page */
+.kp-tabsbar {
+  position: sticky; top: 10px; z-index: 30;
+  display: flex; align-items: center; gap: 4px; width: fit-content; max-width: 100%;
+  margin: 0 auto; padding: 5px 6px; border-radius: 999px;
+  border: 1px solid var(--kp-line); background: color-mix(in srgb, var(--kp-card) 60%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.kp-tabsbar button {
+  border: 0; background: none; border-radius: 999px; padding: 7px 13px;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--kp-ink2); cursor: pointer; white-space: nowrap;
+}
+.kp-tabsbar button:hover { color: var(--kp-ink); }
+.kp-tabsbar button.on { background: var(--kp-ink); color: var(--kp-card); }
+.kitpage.dark .kp-tabsbar button.on { color: #101018; }
+.kp-tabnum { font-size: 10.5px; font-weight: 700; opacity: .55; margin-right: 2px; font-variant-numeric: tabular-nums; }
+.kp-tabedit { display: inline-flex; align-items: center; gap: 6px; border-left: 1px solid var(--kp-line) !important; border-radius: 0 999px 999px 0 !important; }
+
+/* hero — one statement, one inspectable composition */
+.kp-hero2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 470px); gap: 40px; align-items: center; padding: 34px 0 6px; }
+.kp-verpill { display: inline-block; border: 1px solid var(--kp-line); border-radius: 999px; padding: 3px 10px; margin-right: 8px; font-size: 10.5px; letter-spacing: .18em; }
+.kp-hero2 .kp-sub { font-size: 15.5px; max-width: 460px; }
+.kp-facts { display: flex; flex-wrap: wrap; gap: 26px; margin-top: 22px; }
+.kp-fact { display: flex; flex-direction: column; gap: 1px; border: 0; background: none; padding: 0; text-align: left; font: inherit; }
+.kp-fact b { font-size: 19px; font-weight: 800; letter-spacing: -.01em; color: var(--kp-ink); display: inline-flex; align-items: center; gap: 6px; }
+.kp-fact span { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--kp-ink3); }
+button.kp-fact { cursor: pointer; }
+.kp-fact.a11y-strong b { color: #2fa876; }
+.kp-fact.a11y-fair b { color: #c99a2e; }
+.kp-fact.a11y-risky b { color: #d4574e; }
+.kp-roleline { display: flex; flex-wrap: wrap; gap: 5px 16px; margin-top: 18px; }
+.kp-roledot { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--kp-ink3); }
+.kp-roledot i { width: 13px; height: 13px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.16); }
+.kp-about { margin-top: 16px; border: 0; background: none; padding: 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--kp-ink2); cursor: pointer; border-bottom: 1px solid var(--kp-line); width: fit-content; }
+.kp-about:hover { color: var(--kp-ink); }
+.kp-aboutbody { max-width: 480px; }
+.kp-herostage {
+  position: relative; aspect-ratio: 1.14 / 1; border-radius: 20px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(235,238,255,.13); background: linear-gradient(170deg, #171923, #0c0d15 70%);
+  box-shadow: 0 14px 40px rgba(9,10,18,.22);
+}
+.kp-herostage::before, .kp-herostage::after {
+  content: ""; position: absolute; width: 22px; height: 22px; pointer-events: none; opacity: .6;
+}
+.kp-herostage::before { top: 12px; left: 12px; border-top: 2px solid rgba(235,238,255,.7); border-left: 2px solid rgba(235,238,255,.7); border-top-left-radius: 6px; }
+.kp-herostage::after { bottom: 12px; right: 12px; border-bottom: 2px solid rgba(235,238,255,.7); border-right: 2px solid rgba(235,238,255,.7); border-bottom-right-radius: 6px; }
+.kp-herostage .sc { width: 72%; }
+
+/* anchored jumps land below the sticky bar */
+.kp-chapter, .kp-sec { scroll-margin-top: 78px; }
+
+/* chapters read as a different order of object than sections */
+.kp-chapter { display: flex; align-items: center; gap: 18px; margin-top: 84px; padding-top: 26px; border-top: 2px solid var(--kp-ink); }
+.kp-chapnum { font-size: 44px; font-weight: 800; letter-spacing: -.04em; line-height: 1; color: var(--kp-ink); opacity: .16; font-variant-numeric: tabular-nums; }
+.kp-chaptext { display: flex; flex-direction: column; gap: 3px; }
+.kp-chapname { font-size: 17px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: var(--kp-ink); }
+.kp-chapblurb { font-size: 12.5px; color: var(--kp-ink3); }
+.kp-chapline { flex: 1; height: 0; }
+
+/* larger documentation voice */
+.kp-note { font-size: 13.5px; max-width: 620px; }
+.kp-sechead h2 { font-size: 23px; }
+.kp-cap { font-size: 11.5px; }
+
+/* component captions: name centered under the art; utilities overlay the
+   piece and appear on hover — documentation quieter than the specimens */
+.kp-piece { position: relative; }
+.kp-cap { justify-content: center; text-align: center; }
+.kp-piece .kp-edit { position: absolute; top: 2px; right: 2px; z-index: 3; background: var(--kp-card); border: 1px solid var(--kp-line); border-radius: 7px; }
+.kp-piece .kp-dl { position: absolute; top: 2px; right: 27px; z-index: 3; background: var(--kp-card); border: 1px solid var(--kp-line); border-radius: 7px; }
+.kp-piece .kp-sizes { position: absolute; top: 2px; left: 2px; z-index: 3; background: var(--kp-card); }
+
+/* color & material — exploded layers beside functional color roles */
+.kp-mat { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); gap: 28px; margin-top: 14px; align-items: start; }
+.kp-explode { display: flex; flex-direction: column; gap: 0; border: 1px solid rgba(235,238,255,.13); border-radius: 18px; background: linear-gradient(170deg, #171923, #0c0d15 70%); padding: 18px 22px; }
+.kp-exrow { display: grid; grid-template-columns: 168px 1fr; align-items: center; gap: 16px; }
+.kp-exrow + .kp-exrow { margin-top: -26px; }
+.kp-exrow .kp-art { justify-self: center; max-width: 100%; }
+.kp-exlab { display: flex; flex-direction: column; gap: 1px; position: relative; z-index: 1; }
+.kp-exlab b { font-size: 11.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: rgba(235,238,255,.88); }
+.kp-exlab span { font-size: 11px; line-height: 1.45; color: rgba(235,238,255,.5); }
+.kp-roles2 { border: 1px solid var(--kp-line); border-radius: 16px; background: var(--kp-card); padding: 12px 16px 6px; }
+.kp-rolehead { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--kp-ink3); padding-bottom: 6px; border-bottom: 1px solid var(--kp-line); }
+.kp-role2 { display: grid; grid-template-columns: 20px 1fr auto; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--kp-line); }
+.kp-role2:last-child { border-bottom: 0; }
+.kp-role2 i { width: 20px; height: 20px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.16); }
+.kp-rolemeta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.kp-rolemeta b { font-size: 12.5px; font-weight: 700; color: var(--kp-ink); }
+.kp-rolemeta span { font-size: 10.5px; color: var(--kp-ink3); line-height: 1.35; }
+.kp-role2 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; line-height: 1.5; color: var(--kp-ink2); white-space: pre; text-align: right; }
+
+/* downloads: one primary action, quiet category menu */
+.kp-dlrow button:first-child { background: var(--kp-ink); color: var(--kp-card); border-color: var(--kp-ink); }
+.kitpage.dark .kp-dlrow button:first-child { color: #101018; }
+.kp-dlrow button:first-child:hover { opacity: .88; }
+
+/* motion cards carry their documentation */
+.kp-mopurpose { font-size: 11px; line-height: 1.4; color: var(--kp-ink3); }
+.kp-mospec { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: var(--kp-ink3); opacity: .8; }
+
+/* splash presets as restrained text selections */
+.kp-splashtxts { display: flex; flex-wrap: wrap; gap: 2px 18px; margin-top: 8px; }
+.kp-splashtxt { border: 0; background: none; padding: 4px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--kp-ink3); cursor: pointer; border-bottom: 1px solid transparent; }
+.kp-splashtxt:hover { color: var(--kp-ink2); }
+.kp-splashtxt.on { color: var(--kp-ink); border-bottom-color: var(--kp-ink); }
+
+/* silhouette import (inspector) */
+.fileadd {
+  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; margin-top: 8px;
+  border: 1px dashed var(--line2); border-radius: 9px; background: var(--card); color: var(--ink);
+  font-size: 12px; font-weight: 600; cursor: pointer; width: fit-content;
+}
+.fileadd:hover { border-color: var(--ink); }
+.shapecard { position: relative; }
+.shapedel {
+  position: absolute; top: 2px; right: 4px; display: none; width: 16px; height: 16px; line-height: 14px;
+  border-radius: 6px; background: var(--soft); color: var(--ink); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer;
+}
+.shapecard:hover .shapedel { display: block; }
+
+@media (max-width: 1080px) {
+  .kp-hero2 { grid-template-columns: 1fr; }
+  .kp-mat { grid-template-columns: 1fr; }
+}

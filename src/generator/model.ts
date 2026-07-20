@@ -23,7 +23,19 @@ export type Shape =
   // v21 — measured from Kenney UI Pack 2.0 vector sources (CC0)
   | "kenneyRect" | "kenneyTag"
   // v22 — measured from Vector UI Pack (dobo_ui by Duplo) renders
-  | "doboMarquee" | "doboRibbon" | "doboBracket";
+  | "doboMarquee" | "doboRibbon" | "doboBracket"
+  // v33 — user-imported flat-vector silhouettes (registry below)
+  | `user:${string}`;
+/* ── user silhouettes ─────────────────────────────────────────────
+   Imported flat vectors: one closed, filled outline normalized to its own
+   bounding box; the renderer stretches it into each component's frame.
+   The registry is module state so the pure renderer can read it without
+   store imports; the store hydrates and persists it. */
+export interface UserShape { id: `user:${string}`; name: string; d: string; vb: [number, number, number, number] }
+let USER_SHAPES: UserShape[] = [];
+export const userShapes = (): UserShape[] => USER_SHAPES;
+export function setUserShapes(list: UserShape[]) { USER_SHAPES = list; }
+
 export const SHAPES: { id: Shape; name: string }[] = [
   { id: "round", name: "Rounded" },
   { id: "pill", name: "Pill" },
@@ -159,8 +171,9 @@ export interface TypeCfg {
   /** First matching phrase inside the label renders as a brighter, illuminated
    *  portion of the same material — same font, metrics, outline, everything. */
   highlight?: string;
-  /** Candy-wrap stripes inside the letterforms (off by default). */
-  stripes?: { on: boolean; angle: number; opacity: number };
+  /** Pattern fill inside the letterforms (off by default) — any face
+   *  pattern style, tone-on-tone from the shell color. */
+  stripes?: { on: boolean; angle: number; opacity: number; style?: Exclude<PatternType, "none"> };
   /** Balloon highlight following the key light — the closest the shell gets
    *  to an inflate effect without touching the glyph geometry. */
   inflate?: { on: boolean; strength: number };

@@ -1,5 +1,5 @@
 import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSize, IconDef, StateDesign } from "./model";
-import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE } from "./model";
+import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE , userShapes } from "./model";
 import { iconGroup } from "./icons";
 import { silhouetteMeta } from "./silhouettes";
 import rough from "roughjs";
@@ -78,7 +78,44 @@ function inkRun(x1: number, y1: number, x2: number, y2: number, wob: number, sal
   return d;
 }
 
+/* Scale raw SVG path data from its own box into (x, y, w, h). Handles
+   M L H V C S Q T A Z, absolute and relative. Arc radii scale per-axis —
+   exact under uniform scale; the import spec recommends bezier outlines. */
+export function transformPath(d: string, vb: [number, number, number, number], x: number, y: number, w: number, h: number): string {
+  const [vx, vy, vw, vh] = vb;
+  const sx = w / (vw || 1), sy = h / (vh || 1);
+  const toks = d.match(/[MLHVCSQTAZmlhvcsqtaz]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) ?? [];
+  const out: string[] = [];
+  let i = 0, cmd = "";
+  const num = () => parseFloat(toks[i++]);
+  const px = (v: number, rel: boolean) => (rel ? v * sx : x + (v - vx) * sx).toFixed(2);
+  const py = (v: number, rel: boolean) => (rel ? v * sy : y + (v - vy) * sy).toFixed(2);
+  while (i < toks.length) {
+    if (/^[a-z]$/i.test(toks[i])) cmd = toks[i++];
+    const rel = cmd === cmd.toLowerCase() && cmd !== "z" && cmd !== "Z";
+    const C = cmd.toUpperCase();
+    if (C === "Z") { out.push("Z"); continue; }
+    if (C === "H") { out.push(rel ? "h" : "H", px(num(), rel)); continue; }
+    if (C === "V") { out.push(rel ? "v" : "V", py(num(), rel)); continue; }
+    if (C === "A") {
+      const rx = num(), ry = num(), rot = num(), laf = num(), swf = num(), ex = num(), ey = num();
+      out.push(rel ? "a" : "A", (rx * Math.abs(sx)).toFixed(2), (ry * Math.abs(sy)).toFixed(2),
+        String(rot), String(laf), String(swf), px(ex, rel), py(ey, rel));
+      continue;
+    }
+    const pairs = C === "C" ? 3 : C === "S" || C === "Q" ? 2 : 1; // M L T
+    out.push(rel ? cmd : C);
+    for (let k = 0; k < pairs; k++) { out.push(px(num(), rel), py(num(), rel)); }
+  }
+  return out.join(" ");
+}
+
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
+  if (shape.startsWith("user:")) {
+    const us = userShapes().find((u) => u.id === shape);
+    if (us) return transformPath(us.d, us.vb, x, y, w, h);
+    return roundRect(x, y, w, h, 4 + softness * 0.52); // registry miss — neutral fallback
+  }
   if (shape === "pill") return roundRect(x, y, w, h, h / 2);
   if (shape === "round") return roundRect(x, y, w, h, 4 + softness * 0.52);
   /* ── v19 silhouette library — every layer insets this same geometry ── */
@@ -366,11 +403,26 @@ interface Geom {
   tokenH?: number;
 }
 
+
+/** One pattern cell for text fills — mirrors the face pattern language at
+ *  letterform scale. `ps` is the cell size in viewBox units. */
+function textPatternCell(style: string, ps: number, color: string): string {
+  const h = (ps / 2).toFixed(1);
+  if (style === "dots") return `<circle cx="${h}" cy="${h}" r="${(ps * 0.22).toFixed(1)}" fill="${color}"/>`;
+  if (style === "stars") return `<path d="${starPath(ps)}" fill="${color}"/>`;
+  if (style === "checker") return `<rect width="${h}" height="${h}" fill="${color}"/><rect x="${h}" y="${h}" width="${h}" height="${h}" fill="${color}"/>`;
+  if (style === "halftone") return `<circle cx="${h}" cy="${h}" r="${(ps * 0.3).toFixed(1)}" fill="${color}"/><circle cx="0" cy="0" r="${(ps * 0.16).toFixed(1)}" fill="${color}"/><circle cx="${ps.toFixed(1)}" cy="${ps.toFixed(1)}" r="${(ps * 0.16).toFixed(1)}" fill="${color}"/>`;
+  return `<rect width="${(ps / 2).toFixed(1)}" height="${ps.toFixed(1)}" fill="${color}"/>`; // stripes
+}
+
 /** Core builder — the candy stack. Width grows with the content. */
 function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   label?: string; iconDef?: IconDef | null; secondary?: boolean; shapeOverride?: Shape; fixedW?: number;
   /** Explicit per-component vertical text adjustment — overrides the theme's. */
   textOy?: number;
+  /** Anchor text at its left edge (type specimens) — estimate error then
+   *  lands on the ragged right instead of staggering every line. */
+  anchorLeft?: boolean;
 } = {}): string {
   const id = "b" + UID++;
   const disabled = state === "disabled";
@@ -428,7 +480,9 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     ? clamp(T2.width, capsF.wdth[0], capsF.wdth[1]) : undefined;
   const widthK = wdthV !== undefined ? wdthV / 100 : 1;
   const italicPad = T2.italic ? fs * 0.3 : 0; // slanted glyphs overhang their advance
-  const textW = (showText ? label.length * fs * fontDef.factor * widthK * (1 + spacingEm) * weightK * 1.06 : 0) + italicPad;
+  // left-anchored specimens carry extra right slack — the whole estimate
+  // error lands on the ragged right edge instead of splitting across both
+  const textW = (showText ? label.length * fs * fontDef.factor * widthK * (1 + spacingEm) * weightK * (opts.anchorLeft ? 1.13 : 1.06) : 0) + italicPad;
   const contentW = textW + (iconDef ? iconSize : 0) + gap;
 
   /* text-safe area — the silhouette's authored content insets keep labels out
@@ -456,7 +510,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     const wdX = capsX?.wdth && Tx.width !== undefined ? clamp(Tx.width, capsX.wdth[0], capsX.wdth[1]) / 100 : 1;
     const wkX = 1 + Math.max(0, Tx.weight - 700) * 0.0004;
     const itX = Tx.italic ? fsx * 0.3 : 0;
-    const twX = (showText ? casedX.length * fsx * fontByName(Tx.font).factor * wdX * (1 + Tx.spacing / 100) * wkX * 1.06 : 0) + itX;
+    const twX = (showText ? casedX.length * fsx * fontByName(Tx.font).factor * wdX * (1 + Tx.spacing / 100) * wkX * (opts.anchorLeft ? 1.13 : 1.06) : 0) + itX;
     const cwX = twX + (iconDef ? iconSize : 0) + gap;
     const metX = silhouetteMeta(shx);
     const erX = shx === "pill" ? h * 0.16 : 0;
@@ -743,6 +797,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const placeLeft = opts.iconDef === undefined && cfg.icon.placement === "left" && !iconOnly;
   const italicShift = T2.italic ? italicPad * 0.35 : 0; // rebalance the lean
   const textX = (placeLeft ? startX + (iconDef ? iconSize + gap : 0) + textW / 2 : startX + textW / 2) - italicShift;
+  const tAnchor = opts.anchorLeft ? "start" : "middle";
+  const tTextX = opts.anchorLeft ? x + padL - italicShift : textX;
   const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K;
   const iconY = cy - iconSize / 2 + cfg.icon.oy * K;
   const textOy = opts.textOy ?? T2.oy ?? 0;
@@ -836,7 +892,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <stop offset="0" stop-color="${hexMix(hiC, "#FFFFFF", 0.7)}"/>
     <stop offset="1" stop-color="${hexMix(glowC, "#FFFFFF", 0.3)}"/>
   </linearGradient>` : ""}
-  ${showText && T2.stripes?.on ? `<pattern id="${id}tst" width="${(fs * 0.3).toFixed(1)}" height="${(fs * 0.3).toFixed(1)}" patternUnits="userSpaceOnUse" patternTransform="rotate(${T2.stripes.angle})"><rect width="${(fs * 0.15).toFixed(1)}" height="${(fs * 0.3).toFixed(1)}" fill="${darken(bevelC, 0.25)}"/></pattern>` : ""}
+  ${showText && T2.stripes?.on ? `<pattern id="${id}tst" width="${(fs * 0.3).toFixed(1)}" height="${(fs * 0.3).toFixed(1)}" patternUnits="userSpaceOnUse" patternTransform="rotate(${T2.stripes.angle})">${textPatternCell(T2.stripes.style ?? "stripes", fs * 0.3, darken(bevelC, 0.25))}</pattern>` : ""}
   ${showText && T2.inflate?.on ? `<linearGradient id="${id}tif" ${axis}>
     <stop offset="0" stop-color="${hiC}" stop-opacity="0"/>
     <stop offset="0.45" stop-color="${hiC}" stop-opacity="0"/>
@@ -872,9 +928,9 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${innerEdge}
     </g>
     <g id="${id}_content" opacity="${(T.content / 100).toFixed(2)}">
-      ${showText ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="middle" dominant-baseline="central"${textFilter}>${textInner}</text>` : ""}
-      ${showText && T2.stripes?.on ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tst)" opacity="${clamp((T2.stripes.opacity ?? 30) / 100, 0, 1).toFixed(2)}" text-anchor="middle" dominant-baseline="central">${label}</text>` : ""}
-      ${showText && T2.inflate?.on ? `<text x="${textX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle("mix-blend-mode:screen")} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tif)" text-anchor="middle" dominant-baseline="central">${label}</text>` : ""}
+      ${showText ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="${tAnchor}" dominant-baseline="central"${textFilter}>${textInner}</text>` : ""}
+      ${showText && T2.stripes?.on ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tst)" opacity="${clamp((T2.stripes.opacity ?? 30) / 100, 0, 1).toFixed(2)}" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
+      ${showText && T2.inflate?.on ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle("mix-blend-mode:screen")} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tif)" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
       ${iconDef ? (inheritTypo && prims.length
         ? `<g filter="url(#${id}tf)">${iconGroup(iconDef, iconX, iconY, iconSize, iconColor, { strokeWidth: cfg.icon.strokeWidth / 10 })}</g>`
         : iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
@@ -930,7 +986,7 @@ export function renderTypeSpecimen(cfg: GenConfig, text: string, opts: SpecimenO
   opts.mutate?.(c);
   // maxW lifted far above the button default — a full alphabet line must
   // never clip against the auto-width cap
-  return build(c, "default", { x: 26, y: 20, h: 130, fs: 52, iconSize: 0, maxW: 4200 }, { iconDef: null, label: text });
+  return build(c, "default", { x: 26, y: 20, h: 130, fs: 52, iconSize: 0, maxW: 4200 }, { iconDef: null, label: text, anchorLeft: true });
 }
 
 /* ── kit components ────────────────────────────────────────────── */

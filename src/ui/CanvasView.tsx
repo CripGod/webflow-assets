@@ -61,7 +61,7 @@ export function CanvasView() {
   const onPointerUp = () => { drag.current = null; };
 
   return (
-    <div className={`canvas-wrap${phase !== "master" ? " kitmode" : ""}`}>
+    <div className={`canvas-wrap${phase !== "master" ? " kitmode" : ""}${phase === "kit" ? " kitread" : ""}`}>
       <div className="canvas-col">
       <div
         ref={scroller}
