@@ -602,7 +602,8 @@ export type KitComponentId =
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
   | "slider" | "progress" | "input" | "dropdown" | "panel"
-  | "resource" | "datarow" | "slot" | "ring" | "joystick";
+  | "resource" | "datarow" | "slot" | "ring" | "joystick"
+  | "reticle" | "minimap" | "ammo" | "lives" | "bignum";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -628,6 +629,11 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "slot", name: "Item slot" },
   { id: "ring", name: "Progress ring" },
   { id: "joystick", name: "Joystick" },
+  { id: "reticle", name: "Reticle" },
+  { id: "minimap", name: "Mini-map" },
+  { id: "ammo", name: "Ammo counter" },
+  { id: "lives", name: "Lives" },
+  { id: "bignum", name: "Big number" },
 ];
 
 /* A locked component keeps a full design snapshot of its own — the master

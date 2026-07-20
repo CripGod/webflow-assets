@@ -1131,8 +1131,19 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const caps = opts.segments && opts.segments.length === 3 ? opts.segments : ["ONE", "TWO", "THREE"];
       return stampTrack(inject(track, well + caps.map((cap, i) => t(cap, 39 + bw + segW * (i + 0.5), i === sel ? 1 : 0.55)).join("")), 39 + bw, w - bw * 2);
     }
-    case "checkbox":
-      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 54 * k }, { iconDef: STOCK_ICONS.check, label: "", fixedW: 118 * k, shapeOverride: sov });
+    case "checkbox": {
+      // stateful: a dead (dim) check sits in the well until clicked alive.
+      // rendered on the resting state only — checks never grow on hover.
+      const lit = (value ?? 1) > 0.5;
+      const ch = 118 * k;
+      const track = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: ch, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: ch, shapeOverride: sov });
+      const inset3 = bw + 4;
+      const wellP = shapePath(sov ?? cfg.shape, 33 + inset3, 27 + inset3, ch - inset3 * 2, ch - inset3 * 2, Math.max(0, cfg.bevel.softness - 10));
+      const ck = lit
+        ? iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, glow, { strokeWidth: 3, filter: `drop-shadow(0 0 6px ${glow})` })
+        : iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, "rgba(255,255,255,0.22)", { strokeWidth: 3 });
+      return inject(track, `<path d="${wellP}" fill="${wellFill}" opacity="0.9"/>` + ck);
+    }
     case "radio":
       return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k, shapeOverride: sov });
     case "toggle": {
@@ -1169,7 +1180,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       return stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${sfx.defs}</defs>
-         ${fillW > 1 ? `${sfx.open}<path d="${roundRect(bx, by, fillW, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${sfx.close}${sfx.over}` : ""}` +
+         ${fillW > 1 ? `${sfx.open}<path d="${roundRect(bx, by, fillW, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${sfx.close}
+         <path d="${roundRect(bx, by + bh * 0.08, fillW, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${sfx.over}` : ""}` +
         candyKnob(knobX, knobY, kr, bevel)), bx, trackW);
     }
     case "progress": {
@@ -1305,7 +1317,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         `<path d="${roundRect(33 + inset2, 27 + inset2, d2 - inset2 * 2, d2 - inset2 * 2, (d2 - inset2 * 2) / 2)}" fill="${wellFill}" opacity="0.94"/>
          <circle cx="${cx2}" cy="${cy2}" r="${(maxOff + kr2 * 0.5).toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="2" stroke-dasharray="3 8"/>` +
         candyKnob(cx2 + sx2 * f2 * maxOff, cy2 + sy3 * f2 * maxOff, kr2, bevel, state === "disabled" ? "#A7AAB4" : glow));
-      return svg2.replace("<svg ", `<svg data-stick="${cx2} ${cy2} ${maxOff.toFixed(1)}" `);
+      return svg2.replace("<svg ", `<svg data-stick="${cx2} ${cy2} ${maxOff.toFixed(1)}" ${opts.overlay === "ghost" ? 'style="opacity:0.48" ' : ""}`);
     }
     case "slot": {
       /* Portrait / item slot — square frame with stackable status overlays.
@@ -1340,8 +1352,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         parts.push(`<circle cx="${bx2}" cy="${by2}" r="15" fill="${bevel}" stroke="${darken(bevel, 0.4)}" stroke-width="1.5"/><text x="${bx2}" y="${by2 + 1}" font-family="Inter, sans-serif" font-size="15" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(n)}</text>`);
       }
       if (ov.startsWith("level")) {
+        // the level IS the content — big number in the kit's own type
         const n = ov.split(":")[1] ?? "1";
-        parts.push(`<path d="${roundRect(33 + inset + 4, 27 + s2 - inset - 22, inner - 8, 18, 6)}" fill="rgba(6,8,16,0.72)"/><text x="${cx2}" y="${(27 + s2 - inset - 12.5).toFixed(1)}" font-family="Inter, sans-serif" font-size="12.5" font-weight="800" letter-spacing=".08em" fill="${glow}" text-anchor="middle" dominant-baseline="central">LV ${esc(n)}</text>`);
+        parts.push(`<text x="${cx2}" y="${(27 + inset + 13).toFixed(1)}" font-family="Inter, sans-serif" font-size="11" font-weight="800" letter-spacing=".2em" fill="rgba(255,255,255,0.55)" text-anchor="middle" dominant-baseline="central">LV</text>`);
+        parts.push(`<text x="${cx2}" y="${(cy2 + 8).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(inner * 0.48).toFixed(1)}" font-weight="800" fill="${hexMix(glow, "#FFFFFF", 0.3)}" stroke="${darken(bevel, 0.5)}" stroke-width="${(inner * 0.03).toFixed(1)}" paint-order="stroke" text-anchor="middle" dominant-baseline="central">${esc(n)}</text>`);
       }
       if (ov === "new") {
         parts.push(`<circle cx="${33 + s2 - inset - 2}" cy="${27 + inset + 2}" r="13" fill="${glow}" stroke="${darken(bevel, 0.45)}" stroke-width="1.5"/><text x="${33 + s2 - inset - 2}" y="${27 + inset + 3}" font-family="Inter, sans-serif" font-size="15" font-weight="900" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">!</text>`);
@@ -1351,6 +1365,82 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
           iconGroup(STOCK_ICONS.check, 33 + s2 - inset - 10, 27 + inset - 6, 16, ov === "claimable" ? darken(bevel, 0.6) : "#FFFFFF", { strokeWidth: 3 }));
       }
       return inject(track, parts.join(""));
+    }
+    case "reticle": {
+      /* targeting reticle — spatial UI, no shell, semi-transparent strokes.
+         kinds: ring (default) and brackets. */
+      const d3 = ({ s: 150, m: 190, l: 240 } as const)[size];
+      const c3 = d3 / 2;
+      const rc = hexRgba(glow, 0.85), rc2 = hexRgba(glow, 0.4);
+      const parts3: string[] = [];
+      if (opts.kind === ("brackets" as never) || opts.overlay === "brackets") {
+        const L = d3 * 0.2, o2 = d3 * 0.08;
+        const b4 = (x1: number, y1: number, hx: number, hy: number) =>
+          `<path d="M ${x1} ${y1 + hy * L} L ${x1} ${y1} L ${x1 + hx * L} ${y1}" fill="none" stroke="${rc}" stroke-width="3.5" stroke-linecap="round"/>`;
+        parts3.push(b4(o2, o2, 1, 1), b4(d3 - o2, o2, -1, 1), b4(o2, d3 - o2, 1, -1), b4(d3 - o2, d3 - o2, -1, -1));
+        parts3.push(`<circle cx="${c3}" cy="${c3}" r="3.4" fill="${rc}"/>`);
+      } else {
+        parts3.push(`<circle cx="${c3}" cy="${c3}" r="${d3 * 0.36}" fill="none" stroke="${rc}" stroke-width="3"/>`);
+        parts3.push(`<circle cx="${c3}" cy="${c3}" r="${d3 * 0.24}" fill="none" stroke="${rc2}" stroke-width="1.6" stroke-dasharray="4 6"/>`);
+        ([[c3, c3 - d3 * 0.36, c3, c3 - d3 * 0.47], [c3, c3 + d3 * 0.36, c3, c3 + d3 * 0.47], [c3 - d3 * 0.36, c3, c3 - d3 * 0.47, c3], [c3 + d3 * 0.36, c3, c3 + d3 * 0.47, c3]] as const)
+          .forEach(([x1, y1, x2, y2]) => parts3.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${rc}" stroke-width="3" stroke-linecap="round"/>`));
+        parts3.push(`<circle cx="${c3}" cy="${c3}" r="3.2" fill="${rc}"/>`);
+      }
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${d3}" height="${d3}" viewBox="0 0 ${d3} ${d3}" role="img" aria-label="reticle" style="filter: drop-shadow(0 0 5px ${hexRgba(glow, 0.5)})">${parts3.join("")}</svg>`;
+    }
+    case "minimap": {
+      /* mini-map — kinds: round compass, square radar. Well + markers. */
+      const round2 = opts.kind !== ("square" as never) && opts.overlay !== "square";
+      const d4 = ({ s: 180, m: 230, l: 290 } as const)[size];
+      const track = build(cfg, state, { x: 33, y: 27, h: d4, fs: 0, iconSize: 0, tokenH: 132 }, { iconDef: null, label: "", fixedW: d4, shapeOverride: round2 ? "pill" : "round" });
+      const inset4 = bw + 5;
+      const cx4 = 33 + d4 / 2, cy4 = 27 + d4 / 2;
+      const innerR = d4 / 2 - inset4;
+      const wellP2 = round2
+        ? `M ${cx4 - innerR} ${cy4} a ${innerR} ${innerR} 0 1 0 ${innerR * 2} 0 a ${innerR} ${innerR} 0 1 0 ${-innerR * 2} 0`
+        : roundRect(33 + inset4, 27 + inset4, d4 - inset4 * 2, d4 - inset4 * 2, 12);
+      const mp: string[] = [`<path d="${wellP2}" fill="${wellFill}" opacity="0.94"/>`];
+      mp.push(`<path d="M ${cx4 - innerR} ${cy4} H ${cx4 + innerR} M ${cx4} ${cy4 - innerR} V ${cy4 + innerR}" stroke="rgba(255,255,255,0.1)" stroke-width="1.4"/>`);
+      if (!round2) mp.push(`<path d="M ${33 + inset4} ${cy4 - innerR * 0.5} H ${33 + d4 - inset4} M ${33 + inset4} ${cy4 + innerR * 0.5} H ${33 + d4 - inset4} M ${cx4 - innerR * 0.5} ${27 + inset4} V ${27 + d4 - inset4} M ${cx4 + innerR * 0.5} ${27 + inset4} V ${27 + d4 - inset4}" stroke="rgba(255,255,255,0.06)" stroke-width="1.2"/>`);
+      // blips + player arrow
+      mp.push(`<circle cx="${cx4 - innerR * 0.42}" cy="${cy4 - innerR * 0.3}" r="5" fill="${glow}"/>`);
+      mp.push(`<circle cx="${cx4 + innerR * 0.36}" cy="${cy4 + innerR * 0.4}" r="5" fill="${hexMix(glow, "#FFFFFF", 0.4)}"/>`);
+      mp.push(`<circle cx="${cx4 + innerR * 0.5}" cy="${cy4 - innerR * 0.48}" r="4" fill="rgba(255,255,255,0.5)"/>`);
+      mp.push(`<path d="M ${cx4} ${cy4 - 11} L ${cx4 + 8} ${cy4 + 8} L ${cx4} ${cy4 + 3} L ${cx4 - 8} ${cy4 + 8} Z" fill="#FFFFFF" stroke="${darken(bevel, 0.4)}" stroke-width="1.4"/>`);
+      if (round2) mp.push(`<text x="${cx4}" y="${27 + inset4 + 11}" font-family="Inter, sans-serif" font-size="12.5" font-weight="800" fill="rgba(255,255,255,0.75)" text-anchor="middle" dominant-baseline="central">N</text>`);
+      return inject(track, mp.join(""));
+    }
+    case "ammo": {
+      /* ammo counter — magazine / reserve with round pictos, HUD strip. */
+      const h5 = 96 * k;
+      const cur = opts.label ?? "24", res = opts.max ?? "90";
+      const w5 = 132 * k + (cur.length + res.length) * 20 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h: h5, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w5, shapeOverride: sov });
+      const cy5 = 30 + h5 / 2;
+      const bullets = [0, 1, 2].map((i) =>
+        `<rect x="${(39 + 16 * k + i * 9 * k).toFixed(1)}" y="${(cy5 - 14 * k + i * 3 * k).toFixed(1)}" width="${5 * k}" height="${(28 - i * 6) * k}" rx="${2.4 * k}" fill="${hexMix(glow, "#FFFFFF", 0.25)}" stroke="${darken(bevel, 0.45)}" stroke-width="1"/>`).join("");
+      const txt = `<text x="${(39 + 48 * k).toFixed(1)}" y="${(cy5 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${34 * k}" font-weight="800" fill="#FFFFFF" dominant-baseline="central">${esc(cur)}</text>` +
+        `<text x="${(39 + 48 * k + cur.length * 21 * k + 6 * k).toFixed(1)}" y="${(cy5 + 4).toFixed(1)}" font-family="Inter, sans-serif" font-size="${18 * k}" font-weight="700" fill="rgba(255,255,255,0.5)" dominant-baseline="central">/ ${esc(res)}</text>`;
+      return inject(track, bullets + txt);
+    }
+    case "lives": {
+      /* lives — candy hearts, no container (spatial HUD). value = full/max */
+      const n5 = Math.max(1, Math.min(9, parseInt(opts.max ?? "5", 10) || 5));
+      const full = Math.max(0, Math.min(n5, parseInt(opts.label ?? "3", 10) || 3));
+      const hs = ({ s: 46, m: 58, l: 72 } as const)[size];
+      const gap5 = hs * 0.18;
+      const W5 = n5 * hs + (n5 - 1) * gap5, H5 = hs * 1.14;
+      const hearts = Array.from({ length: n5 }, (_, i) => {
+        const x0 = i * (hs + gap5);
+        const on = i < full;
+        return iconGroup(STOCK_ICONS.heart, x0, hs * 0.08, hs, on ? glow : "rgba(140,146,168,0.35)",
+          { strokeWidth: 2.4, filter: on ? `drop-shadow(0 0 6px ${hexRgba(glow, 0.6)})` : undefined });
+      }).join("");
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W5}" height="${H5}" viewBox="0 0 ${W5} ${H5}" role="img" aria-label="lives: ${full} of ${n5}">${hearts}</svg>`;
+    }
+    case "bignum": {
+      // celebratory numbers — pure display type, no container
+      return renderTypeSpecimen(cfg, opts.label ?? "+9,999");
     }
     case "ring": {
       /* Circular progress / countdown ring — the one piece not built on a

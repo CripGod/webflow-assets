@@ -20,6 +20,7 @@ const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
   { name: "Containers", ids: ["panel", "header", "tab", "dropdown"] },
   { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "ring"] },
   { name: "Controls", ids: ["toggle", "slider", "progress", "input", "segment", "checkbox", "radio", "joystick"] },
+  { name: "Combat & spatial", ids: ["reticle", "minimap", "ammo", "lives", "bignum"] },
 ];
 
 const STAGE: Record<"169" | "mobile", [number, number, string]> = {

@@ -1346,3 +1346,40 @@ button.kp-fact { cursor: pointer; }
 .kp-wkdays::before { content: ""; position: absolute; left: 7%; right: 7%; top: 44%; border-top: 2px solid var(--st-line); }
 .kp-wkday { position: relative; z-index: 1; }
 .kp-wkday .gp-piece { margin: -11px -10px; }
+
+/* ── v38: orbital hero, pattern zoom modal, spatial HUD ────────── */
+/* orbital carousel — one elliptical path, depth faked with scale/blur/
+   layering; every item runs the same keyframes at a staggered delay */
+.kp-orbit { min-height: 470px; perspective: none; }
+.kp-orbitcenter { position: absolute; left: 50%; top: 33%; transform: translate(-50%, -50%) scale(1.32); z-index: 5; }
+.kp-orbititem { position: absolute; left: 50%; top: 54%; animation: kp-orbitpath 44s linear infinite; will-change: transform, opacity, filter; }
+.kp-orbit:hover .kp-orbititem { animation-play-state: paused; }
+@keyframes kp-orbitpath {
+  0%   { transform: translate(-50%, -50%) translateX(385px) translateY(6px) scale(1.02); opacity: 1; filter: blur(0); z-index: 7; }
+  25%  { transform: translate(-50%, -50%) translateX(0px) translateY(98px) scale(1.24); opacity: 1; filter: blur(0); z-index: 9; }
+  50%  { transform: translate(-50%, -50%) translateX(-385px) translateY(6px) scale(1.02); opacity: 1; filter: blur(0); z-index: 7; }
+  75%  { transform: translate(-50%, -50%) translateX(0px) translateY(-74px) scale(0.56); opacity: .5; filter: blur(1.8px); z-index: 1; }
+  100% { transform: translate(-50%, -50%) translateX(385px) translateY(6px) scale(1.02); opacity: 1; filter: blur(0); z-index: 7; }
+}
+@media (prefers-reduced-motion: reduce) { .kp-orbititem { animation-play-state: paused !important; } }
+.kp-orbitcenter.kp-dailyb { padding: 16px 22px 14px; }
+.kp-orbitcenter .kp-dbt { font-size: 15px; }
+.kp-orbitcenter .kp-dbs { font-size: 12px; }
+
+/* pattern zoom modal — phone-true pieces at presentation size */
+.kp-patmodal { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: rgba(8, 10, 18, 0.66); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.kp-patmodal-card { width: min(1480px, 94vw); max-height: 92vh; display: flex; flex-direction: column; gap: 0; background: var(--kp-card, #fff); border: 1px solid var(--kp-line); border-radius: 20px; padding: 14px 20px 20px; box-shadow: 0 30px 90px rgba(5, 8, 16, 0.5); }
+.kp-patmodal .pat-head { padding-bottom: 12px; }
+.kp-patmodal .pat-open + .pat-open { margin-left: 18px; }
+.kp-patbig { aspect-ratio: auto; flex: 1; min-height: 0; height: min(74vh, 900px); }
+.kp-patbig .sc { zoom: 1.9; }
+
+/* weekly rhythm: numbers breathe away from the day markers */
+.kp-wkbig { margin-bottom: 16px; }
+.kp-wkdays { margin-top: 10px; }
+.kp-wkday .gp-piece { margin: -13px -12px; }
+.kp-wkday span { font-size: 11.5px; margin-top: 4px; }
+
+/* the track's node zone grew with the new size floor */
+.kp-tnodezone { height: 208px; }
+.kp-rail3 { top: 118px; }
