@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen , Upload } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx } from "@/generator/model";
 import type { GenStateName, BlendMode , PatternType } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -53,7 +53,7 @@ const GROUPS: Record<string, string[]> = {
   style: ["shape"],
   silhouette: ["silhouette"],
   color: ["mapping"],
-  material: ["structure", "surface"],
+  material: ["structure", "surface", "bars"],
   lighting: ["lighting", "gloss", "glow", "depth"],
   type: ["typography"],
   library: ["library"],
@@ -63,7 +63,7 @@ const GROUPS: Record<string, string[]> = {
 export function Rail() {
   const { sectionFilter, setSectionFilter, phase, setPhase, helpOn, setHelpOn } = useGen();
   const items = [
-    { id: "states", Icon: LayoutGrid, label: "Global & states" },
+    { id: "states", Icon: Globe, label: "Global & states" },
     { id: "style", Icon: Layers, label: "Style preset" },
     { id: "silhouette", Icon: Shapes, label: "Silhouette" },
     { id: "color", Icon: Palette, label: "Color" },
@@ -77,6 +77,8 @@ export function Rail() {
     // section groups live in the editor's inspector — leave the kit or board
     // view first so the rail keeps working everywhere
     if (phase !== "master") setPhase("master");
+    // clicking the active group again lifts the focus filter
+    if (sectionFilter === id) { setSectionFilter(null); return; }
     setSectionFilter(id);
     // open the group's sections for real, then bring the first into view
     useGen.setState((st) => ({ open: { ...st.open, ...Object.fromEntries((GROUPS[id] ?? []).map((k) => [k, true])) } }));
@@ -113,8 +115,11 @@ export function Rail() {
 function Section({ id, title, summary, right, children }: {
   id: string; title: React.ReactNode; summary?: React.ReactNode; right?: React.ReactNode; children?: React.ReactNode;
 }) {
-  const { open, toggle } = useGen();
+  const { open, toggle, sectionFilter } = useGen();
   const isOpen = !!open[id];
+  // focus mode: a rail choice means "show me this" — everything else steps
+  // back until the filter is lifted. Contextual sections always show.
+  if (sectionFilter && !(GROUPS[sectionFilter] ?? []).includes(id) && id !== "datarowsec") return null;
   return (
     <section className="sec" data-sec={id}>
       <div className="sec-head" onClick={() => toggle(id)} role="button" aria-expanded={isOpen} tabIndex={0}
@@ -242,7 +247,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, setSectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -384,6 +389,12 @@ export function Panel() {
         </div>
       )}
       {/* ── Global — whole-component adjustments per state ── */}
+      {sectionFilter && (
+        <button className="secfilterbar" onClick={() => setSectionFilter(null)}
+          title="Show every control group again">
+          Focused view — showing {sectionFilter} controls only · Show all
+        </button>
+      )}
       <Section id="state" title="Global" right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
         <div className="segmini" role="radiogroup" aria-label="State being edited">
           {STATE_NAMES.map((s) => (
@@ -661,6 +672,35 @@ export function Panel() {
       </Section>
 
       {/* ── E · Lighting ──────────────────────────────────── */}
+      <Section id="bars" title="Bars & fills" summary={<span>{cfg.barFx?.grad2.on || cfg.barFx?.glow.on || cfg.barFx?.shadow.on ? "Styled" : "Plain"}</span>}>
+        <div className="helper">Styling layers for every bar fill — progress bars, slider fills, data-row bars. One edit restyles all of them.</div>
+        <FxToggle label="Second gradient" on={cfg.barFx?.grad2.on ?? false}
+          onToggle={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.on = v; })}>
+          <Well label="From" value={cfg.barFx?.grad2.color1 ?? "#FFFFFF"} onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.color1 = v; })} />
+          <Well label="To" value={cfg.barFx?.grad2.color2 ?? "#7ADCFF"} onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.color2 = v; })} />
+          <div className="ctl">
+            <label>Blend</label>
+            <select value={cfg.barFx?.grad2.blend ?? "soft-light"} aria-label="Bar gradient blend mode"
+              onChange={(e) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.blend = e.target.value as BlendMode; })}>
+              {(["normal", "multiply", "screen", "overlay", "soft-light", "hard-light"] as const).map((bm) => <option key={bm} value={bm}>{bm}</option>)}
+            </select>
+          </div>
+          <Slider label="Opacity" value={cfg.barFx?.grad2.opacity ?? 55} min={0} max={100} unit="%" onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.opacity = v; })} />
+          <label className="checkrow"><input type="checkbox" checked={cfg.barFx?.grad2.vertical ?? true}
+            onChange={(e) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.vertical = e.target.checked; })} /> Vertical sweep</label>
+        </FxToggle>
+        <FxToggle label="Fill glow" on={cfg.barFx?.glow.on ?? false}
+          onToggle={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.on = v; })}>
+          <Well label="Color" value={cfg.barFx?.glow.color ?? "#8FF0FF"} onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.color = v; })} />
+          <Slider label="Size" value={cfg.barFx?.glow.size ?? 7} min={2} max={18} unit="px" onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.size = v; })} />
+          <Slider label="Opacity" value={cfg.barFx?.glow.opacity ?? 70} min={0} max={100} unit="%" onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.opacity = v; })} />
+        </FxToggle>
+        <FxToggle label="Inner shadow" on={cfg.barFx?.shadow.on ?? false}
+          onToggle={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.shadow.on = v; })}>
+          <Slider label="Opacity" value={cfg.barFx?.shadow.opacity ?? 40} min={0} max={90} unit="%" onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.shadow.opacity = v; })} />
+        </FxToggle>
+      </Section>
+
       <Section id="lighting" title="Lighting" summary={<span>{D.lighting.angle}°</span>}>
         <label className="check"><input type="checkbox" checked={D.lighting.tint != null}
           onChange={(e) => update((c) => { c.lighting.tint = e.target.checked ? (c.effects.Highlight ?? "#FFFFFF") : null; })} /> Tint the key light</label>
@@ -1009,6 +1049,9 @@ export function Panel() {
           </span>
         }
         summary={<span>{cfg.icon.show && cfg.icon.def ? cfg.icon.def.name : "off"}</span>}>
+        <label className="checkrow"><input type="checkbox" checked={cfg.icon.inherit ?? true}
+          onChange={(e) => update((c) => { c.icon.inherit = e.target.checked; })} /> Inherit text treatment on icon-only pieces</label>
+        <div className="helper">Icon buttons, checks and medallions mirror the label's fill (including gradients), outline and effects. Edit those under <b>Typography</b> — the icons follow. Untick to style icons independently below.</div>
         <label className="fieldbox" style={{ minWidth: 0 }}>
           <span className="fl">Icon library</span>
           <select value={browseLib} aria-label="Icon library" onChange={(e) => setBrowseLib(e.target.value)}>

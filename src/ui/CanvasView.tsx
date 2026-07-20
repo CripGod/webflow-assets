@@ -3,7 +3,7 @@ import { Hand, Minus, Plus, LayoutGrid, Grip, AlignJustify, Square, SquarePen, P
 import { useGen } from "@/generator/store";
 import type { BoardItem, LibItem } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
-import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES } from "@/generator/model";
+import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES , isDarkBg } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { KitPage } from "./KitPage";
 import { LiveArt } from "./LiveArt";
@@ -44,9 +44,10 @@ export function CanvasView() {
   const sideStates = STATE_NAMES.filter(
     (s) => s === "default" || cfg.visible[s as Exclude<GenStateName, "default">]
   );
-  const dark = cfg.canvas === "#1C1D22" || cfg.canvas === "#000000";
+  const dark = isDarkBg(cfg.canvas);
   const capColor = dark ? "rgba(235,238,255,0.62)" : undefined;
   const dotColor = dark ? "rgba(235,238,255,0.16)" : "rgba(24,28,48,0.13)";
+  const fineColor = dark ? "rgba(235,238,255,0.07)" : "rgba(24,28,48,0.06)";
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!panMode || !scroller.current) return;
@@ -73,13 +74,16 @@ export function CanvasView() {
           backgroundPosition: "center",
         } : {
           backgroundColor: cfg.canvas,
-          backgroundImage:
+          // the Kit is a document — it reads on a clean ground, never a grid
+          backgroundImage: phase === "kit" ? undefined :
             gridStyle === "dots" ? `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px)` :
             gridStyle === "lines" ? `linear-gradient(${dotColor} 1px, transparent 1px), linear-gradient(90deg, ${dotColor} 1px, transparent 1px)` :
+            gridStyle === "fine" ? `linear-gradient(${fineColor} 1px, transparent 1px), linear-gradient(90deg, ${fineColor} 1px, transparent 1px)` :
             gridStyle === "both" ? `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px), linear-gradient(${dotColor} 1px, transparent 1px), linear-gradient(90deg, ${dotColor} 1px, transparent 1px)` :
             undefined,
-          backgroundSize:
+          backgroundSize: phase === "kit" ? undefined :
             gridStyle === "lines" ? "44px 44px" :
+            gridStyle === "fine" ? "24px 24px" :
             gridStyle === "both" ? "22px 22px, 44px 44px, 44px 44px" :
             gridStyle === "dots" ? "22px 22px" : undefined,
         }}
@@ -172,6 +176,7 @@ export function CanvasView() {
           <span className="zpct">{Math.round(zoom * 100)}%</span>
           <button title="Zoom in" onClick={() => setZoom(zoom + 0.1)}><Plus size={18} strokeWidth={1.8} /></button>
           <span className="zdiv" />
+          {phase !== "kit" && (
           <div ref={gridRef} style={{ position: "relative", display: "flex" }}>
             <button className={gridStyle !== "off" ? "on" : ""} title="Grid style" aria-haspopup="menu" aria-expanded={gridPop}
               onClick={() => setGridPop(!gridPop)}>
@@ -185,6 +190,9 @@ export function CanvasView() {
                 <button className={gridStyle === "lines" ? "on" : ""} onClick={() => { setGridStyle("lines"); setGridPop(false); }}>
                   <AlignJustify size={15} strokeWidth={1.8} /> Lines
                 </button>
+                <button className={gridStyle === "fine" ? "on" : ""} onClick={() => { setGridStyle("fine"); setGridPop(false); }}>
+                  <AlignJustify size={15} strokeWidth={1.4} /> Fine lines
+                </button>
                 <button className={gridStyle === "both" ? "on" : ""} onClick={() => { setGridStyle("both"); setGridPop(false); }}>
                   <LayoutGrid size={15} strokeWidth={1.8} /> Dots + Lines
                 </button>
@@ -194,6 +202,7 @@ export function CanvasView() {
               </div>
             )}
           </div>
+          )}
           <span className="zdiv" />
           <button title="Upload a background image — see your assets on a real game screen" onClick={() => bgInput.current?.click()}
             className={bgImage ? "on" : ""}>
@@ -217,6 +226,13 @@ export function CanvasView() {
               <span style={{ background: b.id }} />
             </button>
           ))}
+          <label className={`bgdot bgcustom${CANVAS_BGS.every((b) => b.id !== cfg.canvas) ? " on" : ""}`}
+            title="Custom canvas color — the picker includes an eyedropper">
+            <span style={{ background: CANVAS_BGS.every((b) => b.id !== cfg.canvas) ? cfg.canvas : "conic-gradient(#f66,#fc6,#6f9,#6cf,#96f,#f66)" }} />
+            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(cfg.canvas) ? cfg.canvas : "#ffffff"}
+              aria-label="Custom canvas color"
+              onChange={(e) => update((c) => { c.canvas = e.target.value.toUpperCase(); })} />
+          </label>
         </div>
       </div>
 

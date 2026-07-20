@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix } from "@/generator/model";
+import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix, isDarkBg } from "@/generator/model";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize } from "@/generator/model";
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
@@ -39,6 +39,7 @@ interface PieceOpts {
   id: KitComponentId; size?: KitSize; label?: string; segments?: string[];
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string; trim?: boolean;
+  kind?: "circle" | "oval" | "strip"; tone?: "alt";
 }
 
 /** Shared plumbing for every live piece on this page. The page is always
@@ -64,6 +65,7 @@ function usePiece(p: PieceOpts) {
       // data rows follow the row model everywhere; a variant's explicit
       // label/sub still wins for its own line
       row: p.id === "datarow" ? kitRow : undefined,
+      kind: p.kind, tone: p.tone,
     },
     onEdit: () => setFocus(p.id),
   };
@@ -156,11 +158,30 @@ function Pat({ n, name, cat, comps, asms, lead, children }: {
 
 /** Shared template for terminal states — icon, title, one-line explanation,
  *  primary recovery, secondary escape. Empty and Error are the same system. */
+/** One full-screen layout starter — a device-true stage the user can delete.
+ *  These are idea starters, not rules; every piece stays live and editable. */
+function LayoutCard({ id, name, device, onHide, children }: {
+  id: string; name: string; device: "Desktop 16:9" | "Mobile landscape" | "Mobile portrait";
+  onHide: (id: string) => void; children: React.ReactNode;
+}) {
+  const cls = device === "Desktop 16:9" ? "desktop" : device === "Mobile landscape" ? "mobile-l" : "mobile-p";
+  return (
+    <article className={`lay ${cls}`}>
+      <header className="pat-head">
+        <h4 className="pat-name">{name}</h4>
+        <span className="pat-cat">{device}</span>
+        <button className="pat-open" onClick={() => onHide(id)} title="Remove this starter from your kit">Remove ×</button>
+      </header>
+      <div className="lay-view"><div className="lay-stage">{children}</div></div>
+    </article>
+  );
+}
+
 function StateScreen({ icon, title, line, action }: { icon: IconDef; title: string; line: string; action: string }) {
   return (
     <>
       <SPiece id="badge" baseState="pressed" icon={icon} scale={0.34} />
-      <SPiece id="tab" label={title} scale={0.36} />
+      <SPiece id="tab" label={title} tone="alt" scale={0.36} />
       <span className="sc-caption dim">{line}</span>
       <div className="sc-row sc-push">
         <SPiece id="small" label={action} scale={0.34} />
@@ -355,8 +376,8 @@ const ICON_SET: { key: string; name: string }[] = [
 ];
 
 export function KitPage() {
-  const { cfg, kitDesigns, setPhase } = useGen();
-  const dark = cfg.canvas === "#1C1D22" || cfg.canvas === "#000000";
+  const { cfg, kitDesigns, setPhase, kitName, setKitName } = useGen();
+  const dark = isDarkBg(cfg.canvas);
   const preset = PRESETS.find((p) => p.id === cfg.presetId);
   const sil = SHAPES.find((s) => s.id === cfg.shape)?.name.split(" — ")[0] ?? "Custom";
   const roles = EFFECT_ROLES.filter((r) => cfg.effects[r] !== undefined);
@@ -386,6 +407,15 @@ export function KitPage() {
 
   // hero disclosure + sticky-nav orientation
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [hiddenLays, setHiddenLays] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("ui-generator-hiddenlayouts") ?? "[]"); } catch { return []; }
+  });
+  const hideLay = (id: string) => setHiddenLays((h) => {
+    const next = id === "*reset*" ? [] : [...h, id];
+    try { localStorage.setItem("ui-generator-hiddenlayouts", JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+  });
   const [activeChap, setActiveChap] = useState("foundations");
   useEffect(() => {
     const scroller = document.querySelector(".canvas");
@@ -395,7 +425,7 @@ export function KitPage() {
       raf = 0;
       const marks = [...document.querySelectorAll<HTMLElement>("[data-chap]")];
       let current = "foundations";
-      for (const m of marks) if (m.getBoundingClientRect().top < 190) current = m.dataset.chap ?? current;
+      for (const m of marks) if (m.getBoundingClientRect().top < 280) current = m.dataset.chap ?? current;
       setActiveChap((prev) => (prev === current ? prev : current));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(read); };
@@ -470,7 +500,7 @@ export function KitPage() {
       <nav className="kp-tabsbar" aria-label="Kit chapters">
         {CHAPTERS.map(([id, num, name]) => (
           <button key={id} className={activeChap === id ? "on" : ""}
-            onClick={() => document.getElementById(`chap-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            onClick={() => { setActiveChap(id); document.getElementById(`chap-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
             <span className="kp-tabnum">{num}</span> {name}
           </button>
         ))}
@@ -483,7 +513,16 @@ export function KitPage() {
       <header className="kp-hero kp-hero2">
         <div className="kp-heroleft">
           <div className="kp-eyebrow"><span className="kp-verpill">Design System</span> PatternBreak</div>
-          <h1 className="kp-title">The {preset?.name ?? "Custom"} Kit</h1>
+          {renaming ? (
+            <input className="kp-titleedit" autoFocus maxLength={40} aria-label="Kit name"
+              defaultValue={kitName ?? `The ${preset?.name ?? "Custom"} Kit`}
+              onBlur={(e) => { const v = e.target.value.trim(); setKitName(v && v !== `The ${preset?.name ?? "Custom"} Kit` ? v : null); setRenaming(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setRenaming(false); }} />
+          ) : (
+            <h1 className="kp-title kp-renamable" onClick={() => setRenaming(true)} title="Click to rename this kit">
+              {kitName ?? `The ${preset?.name ?? "Custom"} Kit`} <SquarePen className="kp-renpen" size={17} strokeWidth={2.1} aria-hidden="true" />
+            </h1>
+          )}
           <p className="kp-sub">A dimensional candy interface system for fast, playful game UI — one material, five levels, everything live.</p>
           <div className="kp-facts">
             {([["5", "Levels"], [String(KIT_COMPONENTS.length) + "+", "Components"], ["20+", "Assemblies"], [sil, "Silhouette"]] as const).map(([v, l]) => (
@@ -570,10 +609,10 @@ export function KitPage() {
       {/* ── 02 · typography ── */}
       <Sec n="02" title="Typography" note="One typeface, one treatment, inherited by every component. All text is live — never outlined or rasterized.">
         <div className="kp-typo">
-          <Art svg={specimen} scale={0.62} />
-          <Art svg={alphaUp} scale={0.4} />
-          <Art svg={alphaLo} scale={0.4} />
-          <Art svg={digits} scale={0.4} />
+          <Art svg={specimen} scale={0.8} />
+          <Art svg={alphaUp} scale={0.5} />
+          <Art svg={alphaLo} scale={0.5} />
+          <Art svg={digits} scale={0.5} />
         </div>
         <SpecList rows={[
           ["Font", T.font + (T.italic ? " Italic" : "")],
@@ -603,7 +642,7 @@ export function KitPage() {
           <label>Text <input value={splash} maxLength={32} onChange={(e) => setSplash(e.target.value)} aria-label="Splash text" /></label>
           <label>Highlight phrase <input value={splashHi} maxLength={32} onChange={(e) => setSplashHi(e.target.value)} aria-label="Highlight phrase" /></label>
         </div>
-        <Art svg={splashArt} scale={0.58} className="kp-splashmain" />
+        <Art svg={splashArt} scale={0.72} className="kp-splashmain" />
         <div className="kp-splashtxts">
           {SPLASHES.map((s) => (
             <button key={s} className={`kp-splashtxt${s === splash ? " on" : ""}`} title={`Load “${s}” into the splash editor`}
@@ -735,6 +774,9 @@ export function KitPage() {
             </figure>
           ))}
         </div>
+        <div className="kp-links">
+          <a target="_blank" rel="noreferrer" href="https://lucide.dev/icons/">Lucide icon library ↗</a>
+        </div>
         <div className="kp-tray">
           <Piece id="iconbtn" caption="Icon button · Play" icon={STOCK_ICONS.play} />
           <Piece id="iconbtn" caption="Icon button · Settings" icon={STOCK_ICONS.gear} />
@@ -777,6 +819,13 @@ export function KitPage() {
           <Piece id="slot" caption="Locked" icon={STOCK_ICONS.gem} overlay="locked" scale={0.38} />
         </div>
         <Meta items={["Same footprint per size", "icon centered at 60%", "badges pin to corners", "veil states dim the well only", "captions always below"]} />
+        <div className="kp-subhead">Touch controls</div>
+        <div className="kp-tray">
+          <Piece id="joystick" caption="Joystick · drag me" scale={0.44} />
+          <Piece id="joystick" caption="Joystick · small" size="s" scale={0.44} />
+          <Piece id="joystick" caption="Disabled" baseState="disabled" scale={0.44} />
+        </div>
+        <div className="kp-meta"><span>Knob springs back on release</span><span>Deflection clamps to the travel ring</span><span>data-stick carries the geometry for engine bindings</span></div>
         <div className="kp-subhead">Progress rings & timers — click one to replay it</div>
         <div className="kp-ringrow">
           <Piece id="ring" size="s" caption="Small" value={0.3} scale={0.5} />
@@ -808,6 +857,8 @@ export function KitPage() {
                 // plus a recipe sheet describing the compositions
                 (["s", "m", "l"] as const).forEach((sz) =>
                   files.push({ path: `assemblies/containers/panel-${sz}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns.panel), "panel", sz, "default", undefined, st.kitShapes.panel, { expand: true }) }));
+                (["circle", "oval", "strip"] as const).forEach((kind) =>
+                  files.push({ path: `assemblies/containers/panel-${kind}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns.panel), "panel", "m", "default", undefined, st.kitShapes.panel, { expand: true, kind }) }));
                 ([["header", "banner"], ["tab", "section-tab"], ["datarow", "list-row"], ["resource", "hud-counter"], ["slot", "item-slot"], ["ring", "progress-ring"], ["chip", "stat-chip"], ["badge", "medallion"]] as [KitComponentId, string][]).forEach(([cid, nm]) =>
                   files.push({ path: `assemblies/pieces/${nm}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, st.kitSizes[cid] ?? "m", "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
                 files.push({
@@ -857,17 +908,6 @@ export function KitPage() {
             }}><Download size={12} strokeWidth={2.2} /> {capn}</button>
           ))}
         </div>
-        <div className="kp-subhead">Stretch systems</div>
-        <p className="kp-note">Every silhouette is procedural three-slice geometry: caps are sized by height and never distort; only the middle stretches. Magenta dashes mark the fixed caps, green marks the text-safe area.</p>
-        <div className="kp-slices">
-          <SliceDemo cfg={cfg} label="GO" fit={300} />
-          <SliceDemo cfg={cfg} label={label} fit={380} />
-          <SliceDemo cfg={cfg} label="CONTINUE YOUR ADVENTURE" fit={520} ruler />
-        </div>
-        <div className="kp-meta">
-          <span>Left cap · Fixed</span><span>Center · Stretch X</span><span>Right cap · Fixed</span>
-          <span>Panel corners · Fixed</span><span>Panel edges · Stretch</span><span>Panel center · Stretch X/Y</span>
-        </div>
         <div className="kp-subhead">Material &amp; structural layers</div>
         <div className="kp-parts">
           {layerCards.map((lc) => (
@@ -900,9 +940,31 @@ export function KitPage() {
         </div>
       </Sec>
 
+      {/* ── nine-slice & anatomy — the stretch contract, as its own chapter beat ── */}
+      <Sec n="02" title="Nine-Slice & Anatomy" note="Corners fixed, edges stretch on one axis, the center stretches on both. Every silhouette ships this contract as data (9slice.json).">
+        <p className="kp-note">Every silhouette is procedural three-slice geometry: caps are sized by height and never distort; only the middle stretches. Magenta dashes mark the fixed caps, green marks the text-safe area.</p>
+        <div className="kp-slices">
+          <SliceDemo cfg={cfg} label="GO" fit={300} />
+          <SliceDemo cfg={cfg} label={label} fit={380} />
+          <SliceDemo cfg={cfg} label="CONTINUE YOUR ADVENTURE" fit={520} ruler />
+        </div>
+        <div className="kp-meta">
+          <span>Left cap · Fixed</span><span>Center · Stretch X</span><span>Right cap · Fixed</span>
+          <span>Panel corners · Fixed</span><span>Panel edges · Stretch</span><span>Panel center · Stretch X/Y</span>
+        </div>
+        <div className="kp-meta"><span>Corners · fixed</span><span>Edges · stretch one axis</span><span>Center · stretches both</span><span>Text stays inside the green safe area</span></div>
+      </Sec>
+
       {/* ── 15 · motion ── */}
       {/* ── 11 · containers & assemblies ── */}
-      <Sec n="02" title="Containers & Assemblies" note="Compound pieces built entirely from registered components — no new materials, no one-off styling. Included in the Build Parts downloads.">
+      <Sec n="03" title="Containers & Assemblies" note="Compound pieces built entirely from registered components — no new materials, no one-off styling. Included in the Build Parts downloads.">
+        <div className="kp-subhead">Container shapes</div>
+        <div className="kp-tray">
+          <Piece id="panel" caption="Container · Panel" size="s" scale={0.4} />
+          <Piece id="panel" caption="Container · Round" kind="circle" size="s" scale={0.4} />
+          <Piece id="panel" caption="Container · Oval" kind="oval" size="s" scale={0.4} />
+          <Piece id="panel" caption="Container · Dialogue strip" kind="strip" size="s" scale={0.4} />
+        </div>
         <div className="kp-tray">
           <Piece id="panel" size="s" caption="Panel · S" />
           <Piece id="panel" size="m" caption="Panel · M" />
@@ -1007,7 +1069,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 12 · reward & objectives ── */}
-      <Sec n="03" title="Reward Track & Objectives" note="Progression assemblies. Every milestone is a registered slot; the track scrolls when it outgrows the row.">
+      <Sec n="04" title="Reward Track & Objectives" note="Progression assemblies. Every milestone is a registered slot; the track scrolls when it outgrows the row.">
         <div className="kp-subhead">Reward track</div>
         <div className="kp-track2">
           {([
@@ -1033,7 +1095,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── 13 · onboarding & map ── */}
-      <Sec n="04" title="Onboarding & Map" note="Tutorial and map primitives. The spotlight and ring point at components without changing them.">
+      <Sec n="05" title="Onboarding & Map" note="Tutorial and map primitives. The spotlight and ring point at components without changing them.">
         <div className="kp-patterns kp-assemblies">
           <div className="gp-card">
             <div className="gp-title">Speech bubble · coachmark</div>
@@ -1086,7 +1148,7 @@ export function KitPage() {
         </div>
       </Sec>
 
-      <Sec n="05" title="Motion" note="Parameterized behaviors that apply to any piece. Click a card to replay it. Reduced-motion preference disables all of them.">
+      <Sec n="06" title="Motion" note="Parameterized behaviors that apply to any piece. Click a card to replay it. Reduced-motion preference disables all of them.">
         <div className="kp-motion">
           {([
             ["Attention pulse", "mo-pulse", { id: "small" as KitComponentId, label: "CLAIM" }, "Draw the eye to an idle action", "1.26s", "ease-in-out, loops"],
@@ -1105,7 +1167,7 @@ export function KitPage() {
       </Sec>
 
       {/* ── proof of system — the chapter's conclusion ── */}
-      <Sec n="06" title="Proof of System" note="The Objective Card, assembled only from the parts above. If the rules hold here, they hold for anything you build.">
+      <Sec n="07" title="Proof of System" note="The Objective Card, assembled only from the parts above. If the rules hold here, they hold for anything you build.">
         <div className="kp-patterns kp-assemblies">
           <div className="gp-card kp-objective">
             <div className="gp-row">
@@ -1265,6 +1327,108 @@ export function KitPage() {
             </div>
           </div>
         )}
+      </Sec>
+
+      {/* ── layout starters — everything working together, at device scale ── */}
+      <Sec n="02" title="Layout Starters" wide note="Full screens at true device proportions — idea starters showing the system working together. Remove any you don't want; they're starters, not rules.">
+        {hiddenLays.length > 0 && (
+          <button className="pat-open kp-layrestore" onClick={() => hideLay("*reset*")}>Restore {hiddenLays.length} removed starter{hiddenLays.length > 1 ? "s" : ""}</button>
+        )}
+        <div className="lay-grid">
+          {!hiddenLays.includes("inventory") && (
+            <LayoutCard id="inventory" name="Inventory" device="Desktop 16:9" onHide={hideLay}>
+              <div className="lay-row lay-bar">
+                <SPiece id="resource" label="12,480" icon={STOCK_ICONS.gem} scale={0.3} />
+                <SPiece id="resource" label="4" max="5" icon={STOCK_ICONS.heart} scale={0.3} />
+                <span className="lay-spring" />
+                <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.26} />
+              </div>
+              <div className="lay-row lay-fill">
+                <div className="lay-col">
+                  <SPiece id="tab" label="WEAPONS" scale={0.3} />
+                  <div className="lay-row">
+                    <SPiece id="slot" icon={STOCK_ICONS.gem} overlay="level:3" scale={0.3} />
+                    <SPiece id="slot" icon={STOCK_ICONS.bag} overlay="count:14" scale={0.3} />
+                    <SPiece id="slot" icon={STOCK_ICONS.heart} overlay="equipped" scale={0.3} />
+                  </div>
+                  <div className="lay-row">
+                    <SPiece id="slot" icon={STOCK_ICONS.trophy} overlay="new" scale={0.3} />
+                    <SPiece id="slot" overlay="empty" scale={0.3} />
+                    <SPiece id="slot" icon={STOCK_ICONS.gem} overlay="locked" scale={0.3} />
+                  </div>
+                </div>
+                <div className="lay-col">
+                  <SPiece id="datarow" scale={0.32} value={0.4} />
+                  <SPiece id="datarow" label="Iron Golem" sub="Level 8 · Tank" value={0.7} scale={0.32} />
+                  <div className="sc-push"><SPiece id="primary" label="EQUIP" size="s" scale={0.34} /></div>
+                </div>
+              </div>
+            </LayoutCard>
+          )}
+          {!hiddenLays.includes("fight") && (
+            <LayoutCard id="fight" name="Fight Screen" device="Desktop 16:9" onHide={hideLay}>
+              <div className="lay-row lay-bar">
+                <SPiece id="progress" value={0.82} scale={0.32} />
+                <SPiece id="resource" label="48" icon={null} scale={0.28} />
+                <SPiece id="progress" value={0.55} scale={0.32} />
+              </div>
+              <div className="lay-row lay-mid">
+                <SPiece id="tab" label="ROUND 2" tone="alt" scale={0.3} />
+              </div>
+              <div className="lay-row lay-foot">
+                <SPiece id="joystick" size="s" scale={0.34} />
+                <span className="lay-spring" />
+                <SPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.3} />
+                <SPiece id="iconbtn" icon={STOCK_ICONS.play} scale={0.36} />
+              </div>
+            </LayoutCard>
+          )}
+          {!hiddenLays.includes("runner") && (
+            <LayoutCard id="runner" name="Endless Runner" device="Mobile landscape" onHide={hideLay}>
+              <div className="lay-row lay-bar">
+                <SPiece id="resource" label="1,204" icon={STOCK_ICONS.gem} scale={0.28} />
+                <span className="lay-spring" />
+                <SPiece id="chip" label="×3" icon={STOCK_ICONS.star} scale={0.26} />
+                <SPiece id="iconbtn" icon={STOCK_ICONS.pause} scale={0.24} />
+              </div>
+              <div className="lay-row lay-mid"><span className="sc-caption dim">tap to jump · hold to glide</span></div>
+              <div className="lay-row lay-foot"><SPiece id="progress" value={0.36} ambient scale={0.32} /></div>
+            </LayoutCard>
+          )}
+          {!hiddenLays.includes("word") && (
+            <LayoutCard id="word" name="Word Game" device="Mobile portrait" onHide={hideLay}>
+              <SPiece id="header" label="WORD RUSH" scale={0.22} />
+              <div className="lay-row">
+                <SPiece id="slot" icon={null} overlay="count:A" scale={0.24} />
+                <SPiece id="slot" icon={null} overlay="count:R" scale={0.24} />
+                <SPiece id="slot" icon={null} overlay="count:T" scale={0.24} />
+              </div>
+              <SPiece id="input" label="Type a word…" scale={0.26} />
+              <div className="sc-push"><SPiece id="primary" label="SUBMIT" size="s" scale={0.28} /></div>
+              <SPiece id="progress" value={0.62} ambient scale={0.26} />
+            </LayoutCard>
+          )}
+          {!hiddenLays.includes("match3") && (
+            <LayoutCard id="match3" name="Match-3" device="Mobile portrait" onHide={hideLay}>
+              <div className="lay-row lay-bar">
+                <SPiece id="resource" label="27" icon={STOCK_ICONS.heart} scale={0.24} />
+                <SPiece id="resource" label="900" icon={STOCK_ICONS.gem} scale={0.24} />
+              </div>
+              <div className="lay-row">
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} scale={0.24} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.24} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.24} />
+              </div>
+              <div className="lay-row">
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.24} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="new" scale={0.24} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.24} />
+              </div>
+              <div className="sc-push"><SPiece id="progress" value={0.44} ambient scale={0.26} /></div>
+              <SPiece id="chip" label="LEVEL 12" icon={null} scale={0.24} />
+            </LayoutCard>
+          )}
+        </div>
       </Sec>
 
       <Chapter n="05" id="resources" label="Resources" blurb="Files, formats and integration notes." />

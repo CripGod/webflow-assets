@@ -69,6 +69,12 @@ export const CANVAS_BGS = [
   { id: "#000000", name: "Black" },
 ] as const;
 export type CanvasBg = (typeof CANVAS_BGS)[number]["id"];
+/** Perceptual darkness of any canvas color — custom colors included. */
+export function isDarkBg(hex: string): boolean {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return false;
+  const p = parseInt(hex.slice(1), 16);
+  return 0.2126 * ((p >> 16) & 255) + 0.7152 * ((p >> 8) & 255) + 0.0722 * (p & 255) < 110;
+}
 
 /** Editable per-state treatment — edits apply to the selected state only. */
 export interface StateAdjust {
@@ -108,6 +114,21 @@ export const PATTERN_TYPES: { id: PatternType; name: string }[] = [
   { id: "checker", name: "Checker" },
   { id: "halftone", name: "Halftone — comic fade" },
 ];
+
+/** Extra styling layers for bar fills — progress, sliders and data-row
+ *  bars all read the same model, so one edit restyles every bar. */
+export interface BarFx {
+  grad2: { on: boolean; color1: string; color2: string; blend: BlendMode; opacity: number; vertical: boolean };
+  glow: { on: boolean; color: string; size: number; opacity: number };
+  shadow: { on: boolean; opacity: number };
+}
+export function defaultBarFx(): BarFx {
+  return {
+    grad2: { on: false, color1: "#FFFFFF", color2: "#7ADCFF", blend: "soft-light", opacity: 55, vertical: true },
+    glow: { on: false, color: "#8FF0FF", size: 7, opacity: 70 },
+    shadow: { on: false, opacity: 40 },
+  };
+}
 
 export interface CandyTokens {
   extrusion: { depth: number; darkness: number; glow: number };   // px, 0..100, 0..100 (base glow)
@@ -256,6 +277,8 @@ export interface IconDef { lib: string; name: string; viewBox: string; inner: st
 
 export interface IconCfg {
   show: boolean;
+  /** Icon-only pieces mirror the text treatment — fill, outline, effects. */
+  inherit?: boolean;
   def: IconDef | null;
   placement: "left" | "right";
   only: boolean;              // icon-only (hides the label)
@@ -353,7 +376,7 @@ export function clampWeight(caps: FontCaps, w: number): number {
   return w;
 }
 
-export type GridStyle = "dots" | "lines" | "both" | "off";
+export type GridStyle = "dots" | "lines" | "fine" | "both" | "off";
 
 /** The full visual design of one state — everything that shapes the artwork.
  *  The base config holds Default's design; other states mirror it live until
@@ -387,7 +410,9 @@ export interface GenConfig extends StateDesign {
   icon: IconCfg;
   states: Record<GenStateName, StateAdjust>;
   visible: Record<Exclude<GenStateName, "default">, boolean>;
-  canvas: CanvasBg;
+  canvas: string;
+  /** Bar-fill styling layers (see BarFx) — optional, defaults off. */
+  barFx?: BarFx;
 }
 
 export interface Preset {
@@ -577,7 +602,7 @@ export type KitComponentId =
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
   | "slider" | "progress" | "input" | "dropdown" | "panel"
-  | "resource" | "datarow" | "slot" | "ring";
+  | "resource" | "datarow" | "slot" | "ring" | "joystick";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -602,6 +627,7 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "datarow", name: "Data row" },
   { id: "slot", name: "Item slot" },
   { id: "ring", name: "Progress ring" },
+  { id: "joystick", name: "Joystick" },
 ];
 
 /* A locked component keeps a full design snapshot of its own — the master
