@@ -1318,13 +1318,18 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const ov = opts.overlay ?? (opts.icon === null ? "empty" : "");
       const dimmed = ov === "locked" || ov.startsWith("cooldown");
       const parts: string[] = [];
-      parts.push(`<path d="${roundRect(33 + inset, 27 + inset, inner, inner, 9)}" fill="${wellFill}" opacity="0.9"/>`);
+      // the well mirrors the slot's own silhouette — a round slot gets a
+      // round well, never a rectangular mask inside a circle
+      const wellPath = shapePath(sov ?? cfg.shape, 33 + inset, 27 + inset, inner, inner, Math.max(0, cfg.bevel.softness - 10));
+      parts.push(`<path d="${wellPath}" fill="${wellFill}" opacity="0.9"/>`);
       if (ov === "empty") {
-        parts.push(`<path d="${roundRect(33 + inset + 8, 27 + inset + 8, inner - 16, inner - 16, 7)}" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="2" stroke-dasharray="6 5"/>`);
+        parts.push(`<path d="${shapePath(sov ?? cfg.shape, 33 + inset + 8, 27 + inset + 8, inner - 16, inner - 16, Math.max(0, cfg.bevel.softness - 10))}" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="2" stroke-dasharray="6 5"/>`);
       } else if (opts.icon) {
-        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3, cy2 - inner * 0.3, inner * 0.6, glow, { strokeWidth: 2 }));
+        // type treatment: the outline underlay and a lit fill, like the label
+        if (cfg.type.outline.on) parts.push(iconGroup(opts.icon, cx2 - inner * 0.3, cy2 - inner * 0.3, inner * 0.6, darken(bevel, 0.5), { strokeWidth: 2 + cfg.type.outline.width * 0.7 }));
+        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3, cy2 - inner * 0.3, inner * 0.6, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2 }));
       }
-      if (dimmed) parts.push(`<path d="${roundRect(33 + inset, 27 + inset, inner, inner, 9)}" fill="rgba(6,8,16,0.62)"/>`);
+      if (dimmed) parts.push(`<path d="${wellPath}" fill="rgba(6,8,16,0.62)"/>`);
       if (ov === "locked") parts.push(iconGroup(STOCK_ICONS.lock, cx2 - 13, cy2 - 13, 26, "rgba(255,255,255,0.85)", { strokeWidth: 2.2 }));
       if (ov.startsWith("cooldown")) {
         parts.push(`<text x="${cx2.toFixed(1)}" y="${(cy2 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${inner * 0.32}" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(ov.split(":")[1] ?? "12s")}</text>`);

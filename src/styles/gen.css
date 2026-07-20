@@ -153,7 +153,8 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 .bgopt.on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--ink); }
 
 /* ── canvas + right state stack ─────────────────────────── */
-.canvas-wrap { padding: 24px 28px 28px; min-width: 0; display: grid; grid-template-columns: 1fr 264px; gap: 18px; min-height: 0; }
+.canvas-wrap { padding: 0; min-width: 0; display: grid; grid-template-columns: 1fr 272px; gap: 0; min-height: 0; }
+.canvas-wrap:not(.kitmode) .stack { padding: 18px 18px 18px 6px; }
 .canvas-wrap.kitmode { padding: 0; grid-template-columns: 1fr; }
 /* the canvas column wraps the scroller AND the floating toolbar, so the
    toolbar stays put while a long page (the Kit sheet) scrolls under it */
@@ -547,7 +548,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 /* ── v27: The Kit — guideline sheet ───────────────────────────── */
 .kitwrap { min-width: 100%; display: flex; justify-content: center; padding: 28px 22px 190px; }
 .kitpage {
-  position: relative; width: min(1560px, 100%); margin: 0 auto; padding: 24px 26px 44px;
+  position: relative; width: min(1840px, 100%); margin: 0 auto; padding: 24px 30px 44px;
   --kp-ink: #191b20; --kp-ink2: rgba(25,28,36,.64); --kp-ink3: rgba(25,28,36,.42);
   --kp-line: rgba(25,28,36,.15); --kp-card: rgba(255,255,255,.55);
   /* stage tokens — specimen grounds follow the page theme */
@@ -689,7 +690,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-state { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 0; }
 .kp-state figcaption { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--kp-ink3); }
 
-.kp-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 8px; margin-top: 10px; }
+.kp-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(98px, 1fr)); gap: 10px; margin-top: 10px; }
 .kp-icon { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px 9px; border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); color: var(--kp-ink); }
 .kp-icon svg { display: block; }
 .kp-icon figcaption { font-size: 10.5px; font-weight: 600; color: var(--kp-ink3); }
@@ -706,8 +707,8 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-banners { align-items: flex-start; }
 .kp-banners > div { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 
-.kp-parts, .kp-recipe { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 10px; margin-top: 10px; }
-.kp-recipe { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.kp-parts, .kp-recipe { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 12px; margin-top: 10px; }
+.kp-recipe { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
 .kp-part {
   display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 8px 8px;
   border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); cursor: pointer;
@@ -804,7 +805,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 @media (prefers-reduced-motion: reduce) {
   .kp-mostage, .mo-pulse, .mo-bounce, .mo-glow, .mo-shake, .mo-pop, .mo-press, .mo-slidein, .mo-rise, .kp-ringpulse { animation: none !important; }
 }
-.kp-motion { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 10px; margin-top: 10px; }
+.kp-motion { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 12px; margin-top: 10px; }
 
 /* pattern-card pieces reclaim more of their glow pad — no clipped headers */
 .kp-patterns .gp-piece { margin: -15px -6px; }
@@ -826,10 +827,10 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-chapnav button { height: 30px; padding: 0 14px; }
 
 /* slot family + ring family — strict grids, no drifting */
-.kp-slotgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-top: 10px; }
+.kp-slotgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
 .kp-slotgrid .kp-piece { border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); padding: 4px 4px 7px; }
 .kp-slotgrid .kp-live { margin: -12px -6px; }
-.kp-ringrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; margin-top: 10px; align-items: end; }
+.kp-ringrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 10px; margin-top: 10px; align-items: end; }
 .kp-ringrow .kp-piece { border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); padding: 4px 4px 7px; }
 .kp-ringrow .kp-live { margin: -6px 0; }
 
@@ -1313,3 +1314,35 @@ button.kp-fact { cursor: pointer; }
 .kp-prfoot { display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 2px; }
 .kp-prfoot .gp-piece { margin: -8px -4px; }
 @media (max-width: 1100px) { .kp-prmain { grid-template-columns: 1fr; } }
+
+/* ── v37: compact 3D hero, anchor glow, reading rhythm ─────────── */
+.kp-c3d { min-height: 430px; perspective: 1150px; }
+.kp-colplane { position: absolute; inset: 0; transform: rotateX(14deg); transform-style: preserve-3d; }
+.kp-cz-back { transform: translate(-50%, -50%) translateZ(-150px); }
+.kp-cz-mid { transform: translate(-50%, -50%) translateZ(-30px); }
+.kp-cz-front { transform: translate(-50%, -50%) translateZ(70px); }
+.kp-c3d .kp-collarcs { display: none; }
+.kp-hero2 { align-items: center; padding: 22px 0 0; }
+.kp-hero2 .kp-title { font-size: 48px; }
+
+/* "See score" reads as a link until it becomes a verdict */
+.kp-a11ybtn:not([class*="a11y-"]) b { color: #3d8edb; }
+.kp-a11ybtn:not([class*="a11y-"]):hover b { text-decoration: underline; }
+
+/* one glow pulse on the chapter you jumped to */
+.kp-glowonce .kp-chapname { animation: kp-anchorglow 1.6s ease-out 1; }
+@keyframes kp-anchorglow {
+  0% { text-shadow: 0 0 0 rgba(90,170,255,0); }
+  25% { text-shadow: 0 0 18px rgba(90,170,255,.95), 0 0 40px rgba(90,170,255,.5); color: #3d8edb; }
+  100% { text-shadow: 0 0 0 rgba(90,170,255,0); }
+}
+@media (prefers-reduced-motion: reduce) { .kp-glowonce .kp-chapname { animation: none; } }
+
+/* objective rewards as display text; weekly streak reads as a timeline */
+.kp-objxp { max-width: 150px; }
+.kp-obj { grid-template-columns: auto minmax(150px, 1.1fr) minmax(190px, 1fr) 108px minmax(120px, auto); }
+.kp-wkbig b { font-size: 52px; }
+.kp-wkdays { position: relative; padding: 6px 2px 0; }
+.kp-wkdays::before { content: ""; position: absolute; left: 7%; right: 7%; top: 44%; border-top: 2px solid var(--st-line); }
+.kp-wkday { position: relative; z-index: 1; }
+.kp-wkday .gp-piece { margin: -11px -10px; }

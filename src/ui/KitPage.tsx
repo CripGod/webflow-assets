@@ -49,7 +49,7 @@ function usePiece(p: PieceOpts) {
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
-  const size = p.size ?? (kitSizes[p.id] === "s" ? "m" : kitSizes[p.id]) ?? "m";
+  const size = p.size ?? (kitSizes[p.id] === "s" ? "m" : kitSizes[p.id]) ?? "l";
   return {
     // a locked component renders its own snapshot, not the master's style
     cfg: applyKitDesign(cfg, kitDesigns[p.id]),
@@ -186,81 +186,55 @@ function Collage() {
   const glow = cfg.effects.Glow ?? "#8FF0FF";
   const bevel = cfg.effects.Bevel ?? "#0E9CC9";
   return (
-    <div className="kp-collage" aria-label="Live component composition" style={{
+    <div className="kp-collage kp-c3d" aria-label="Live component composition" style={{
       backgroundImage: [
-        `radial-gradient(ellipse 60% 45% at 64% 30%, ${hexMix(glow, "#000000", 0)}1f, transparent 70%)`,
-        `radial-gradient(ellipse 55% 40% at 30% 72%, ${hexMix(bevel, "#000000", 0)}1a, transparent 70%)`,
+        `radial-gradient(ellipse 60% 52% at 62% 34%, ${hexMix(glow, "#000000", 0)}1f, transparent 70%)`,
+        `radial-gradient(ellipse 55% 46% at 32% 70%, ${hexMix(bevel, "#000000", 0)}1a, transparent 70%)`,
         "radial-gradient(rgba(150,160,200,0.35) 1px, transparent 1.6px)",
         "radial-gradient(rgba(150,160,200,0.22) 1px, transparent 1.4px)",
       ].join(", "),
       backgroundSize: "100% 100%, 100% 100%, 110px 110px, 66px 66px",
       backgroundPosition: "0 0, 0 0, 12px 8px, 40px 50px",
     }}>
-      <svg className="kp-collarcs" viewBox="0 0 600 540" aria-hidden="true" preserveAspectRatio="none">
-        <path d="M150 120 C 200 70, 260 60, 296 84" />
-        <path d="M452 150 C 500 196, 498 240, 452 266" />
-        <path d="M160 420 C 230 466, 330 470, 408 436" />
-        <text x="76" y="308">✦</text><text x="522" y="86">✦</text><text x="544" y="440">✦</text><text x="60" y="120">✦</text>
-      </svg>
-
-      <div className="kp-colit" style={{ left: "12%", top: "14%", transform: "translate(-50%,-50%) rotate(-5deg)" }}>
-        <SPiece id="slot" icon={STOCK_ICONS.gem} overlay="count:128" scale={0.6} />
-      </div>
-      <div className="kp-colit" style={{ left: "50%", top: "9%", transform: "translate(-50%,-50%) rotate(-1.5deg)" }}>
-        <SPiece id="header" label="LEVEL UP!" scale={0.48} />
-      </div>
-      <div className="kp-colit kp-hudtrio" style={{ left: "80%", top: "10%", transform: "translate(-50%,-50%) rotate(3deg)" }}>
-        <SPiece id="resource" label="5" max="5" icon={STOCK_ICONS.heart} scale={0.34} />
-        <SPiece id="resource" label="340" icon={STOCK_ICONS.star} scale={0.34} />
-        <SPiece id="resource" label="12.8k" icon={STOCK_ICONS.gem} scale={0.34} />
-      </div>
-      <div className="kp-colit kp-scorebd" style={{ left: "13%", top: "48%", transform: "translate(-50%,-50%) rotate(-2deg)" }}>
-        <SPiece id="tab" label="SCORE BOARD" tone="alt" scale={0.34} />
-        <div className="kp-scrows">
-          {([["1", "JellyHero", "98,428"], ["2", "GrapeKing", "87,210"], ["3", "PurplePush", "75,300"]] as const).map(([n, who, pts]) => (
-            <div className="kp-scrow" key={n}><b>{n}</b><span>{who}</span><em>{pts}</em></div>
-          ))}
+      <div className="kp-colplane">
+        {/* back row — receding */}
+        <div className="kp-colit kp-cz-back" style={{ left: "50%", top: "12%" }}>
+          <SPiece id="header" label="LEVEL UP!" scale={0.46} />
         </div>
-        <SPiece id="ghost" label="VIEW LEADERBOARD" size="s" scale={0.32} />
-      </div>
-      <div className="kp-colit" style={{ left: "50%", top: "27%", transform: "translate(-50%,-50%)" }}>
-        <SPiece id="chip" label="STAGE 06" icon={null} tone="alt" scale={0.36} />
-      </div>
-      <div className="kp-colit" style={{ left: "50%", top: "42%", transform: "translate(-50%,-50%)" }}>
-        <SPiece id="primary" label="PLAY NOW" scale={0.58} />
-      </div>
-      <div className="kp-colit" style={{ left: "49%", top: "58%", transform: "translate(-50%,-50%) rotate(-1deg)" }}>
-        <SPiece id="progress" value={0.64} ambient scale={0.48} />
-      </div>
-      <div className="kp-colit kp-dailyb" style={{ left: "81%", top: "44%", transform: "translate(-50%,-50%) rotate(2deg)" }}>
-        <span className="kp-dbt">Daily bonus</span>
-        <span className="kp-dbs">Collect your reward</span>
-        <div className="kp-dbrow">
-          <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.4} />
-          <SPiece id="small" label="CLAIM" scale={0.4} />
+        <div className="kp-colit kp-cz-back kp-loadcl" style={{ left: "13%", top: "16%" }}>
+          <SPiece id="ring" value={0.72} scale={0.4} />
+          <div className="kp-loadcol">
+            <span className="kp-dbs">Loading level…</span>
+            <SPiece id="progress" value={0.72} ambient scale={0.32} />
+          </div>
         </div>
-      </div>
-      <div className="kp-colit kp-navstrip" style={{ left: "50%", top: "76%", transform: "translate(-50%,-50%)" }}>
-        <SPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.34} />
-        <SPiece id="iconbtn" icon={STOCK_ICONS.trophy} scale={0.34} />
-        <SPiece id="iconbtn" icon={STOCK_ICONS.star} baseState="hover" scale={0.4} />
-        <SPiece id="iconbtn" icon={STOCK_ICONS.bag} scale={0.34} />
-        <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.34} />
-      </div>
-      <div className="kp-colit kp-loadcl" style={{ left: "16%", top: "84%", transform: "translate(-50%,-50%) rotate(-3deg)" }}>
-        <SPiece id="ring" value={0.72} scale={0.4} />
-        <div className="kp-loadcol">
-          <span className="kp-dbs">Loading level…</span>
-          <SPiece id="progress" value={0.72} ambient scale={0.32} />
+        <div className="kp-colit kp-cz-back kp-dailyb" style={{ left: "86%", top: "14%" }}>
+          <span className="kp-dbt">Daily bonus</span>
+          <span className="kp-dbs">Collect your reward</span>
+          <div className="kp-dbrow">
+            <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.42} />
+            <SPiece id="small" label="CLAIM" scale={0.42} />
+          </div>
         </div>
-      </div>
-      <div className="kp-colit" style={{ left: "80%", top: "80%", transform: "translate(-50%,-50%) rotate(4deg)" }}>
-        <SPiece id="joystick" size="s" scale={0.5} />
-      </div>
-      <div className="kp-colit kp-chiptrio" style={{ left: "52%", top: "90%", transform: "translate(-50%,-50%)" }}>
-        <SPiece id="chip" label="POWER UP" icon={null} scale={0.32} />
-        <SPiece id="chip" label="LIMITED" icon={null} tone="alt" scale={0.32} />
-        <SPiece id="chip" label="EPIC" icon={STOCK_ICONS.star} baseState="hover" scale={0.32} />
+        {/* mid row */}
+        <div className="kp-colit kp-cz-mid" style={{ left: "50%", top: "48%" }}>
+          <SPiece id="primary" label="PLAY NOW" scale={0.62} />
+        </div>
+        {/* front row — closest */}
+        <div className="kp-colit kp-cz-front kp-chiptrio" style={{ left: "22%", top: "80%" }}>
+          <SPiece id="chip" label="POWER UP" icon={null} scale={0.38} />
+          <SPiece id="chip" label="EPIC" icon={STOCK_ICONS.star} baseState="hover" scale={0.38} />
+        </div>
+        <div className="kp-colit kp-cz-front kp-navstrip" style={{ left: "50%", top: "82%" }}>
+          <SPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.38} />
+          <SPiece id="iconbtn" icon={STOCK_ICONS.trophy} scale={0.38} />
+          <SPiece id="iconbtn" icon={STOCK_ICONS.star} baseState="hover" scale={0.46} />
+          <SPiece id="iconbtn" icon={STOCK_ICONS.bag} scale={0.38} />
+          <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.38} />
+        </div>
+        <div className="kp-colit kp-cz-front" style={{ left: "83%", top: "78%" }}>
+          <SPiece id="joystick" size="s" scale={0.52} />
+        </div>
       </div>
     </div>
   );
@@ -490,6 +464,8 @@ export function KitPage() {
   // accessibility read — friendly, hidden behind a disclosure
   const [a11yOpen, setA11yOpen] = useState(false);
   const audit = useMemo(() => assess(cfg), [cfg]);
+  // objective rewards render as real display-text specimens, not chips
+  const xpArts = useMemo(() => new Map((["+250 XP", "+400 XP", "+350 XP", "+300 XP"] as const).map((x) => [x as string, renderTypeSpecimen(cfg, x)])), [cfg]);
 
   // screen-pattern group filter — restrained text nav, not capsules
   const [patTab, setPatTab] = useState<"all" | "core" | "outcome" | "state">("all");
@@ -589,7 +565,14 @@ export function KitPage() {
       <nav className="kp-tabsbar" aria-label="Kit chapters">
         {CHAPTERS.map(([id, num, name]) => (
           <button key={id} className={activeChap === id ? "on" : ""}
-            onClick={() => { setActiveChap(id); document.getElementById(`chap-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
+            onClick={() => {
+              setActiveChap(id);
+              const el = document.getElementById(`chap-${id}`);
+              el?.scrollIntoView({ behavior: "smooth", block: "start" });
+              // one glow pulse on arrival — "you are here"
+              el?.classList.remove("kp-glowonce"); void el?.offsetWidth; el?.classList.add("kp-glowonce");
+              window.setTimeout(() => el?.classList.remove("kp-glowonce"), 1800);
+            }}>
             <span className="kp-tabnum">{num}</span> {name}
           </button>
         ))}
@@ -1192,7 +1175,7 @@ export function KitPage() {
                     <SPiece id="progress" value={v} scale={0.34} />
                   </div>
                   <span className={`kp-objstate ${st}`}>{st === "done" ? "✓ Completed" : st === "active" ? "In progress" : "Not started"}</span>
-                  <SPiece id="chip" label={xp} icon={STOCK_ICONS.gem} scale={0.36} />
+                  <Art svg={xpArts.get(xp) ?? renderTypeSpecimen(cfg, xp)} scale={0.34} className="kp-objxp" />
                 </div>
               ))}
             </div>
@@ -1206,7 +1189,7 @@ export function KitPage() {
               <div className="kp-wkdays">
                 {(["M", "T", "W", "T", "F", "S", "S"] as const).map((d, i) => (
                   <div className="kp-wkday" key={d + i}>
-                    {i < 4 ? <SPiece id="checkbox" scale={0.3} /> : <SPiece id="radio" baseState="disabled" scale={0.3} />}
+                    {i < 4 ? <SPiece id="checkbox" scale={0.42} /> : <SPiece id="radio" baseState="disabled" scale={0.42} />}
                     <span>{d}</span>
                   </div>
                 ))}
@@ -1517,29 +1500,29 @@ export function KitPage() {
           {!hiddenLays.includes("inventory") && (
             <LayoutCard id="inventory" name="Inventory" device="Desktop 16:9" onHide={hideLay}>
               <div className="lay-row lay-bar">
-                <SPiece id="resource" label="12,480" icon={STOCK_ICONS.gem} scale={0.3} />
-                <SPiece id="resource" label="4" max="5" icon={STOCK_ICONS.heart} scale={0.3} />
+                <SPiece id="resource" label="12,480" icon={STOCK_ICONS.gem} scale={0.4} />
+                <SPiece id="resource" label="4" max="5" icon={STOCK_ICONS.heart} scale={0.4} />
                 <span className="lay-spring" />
-                <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.26} />
+                <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.46} />
               </div>
               <div className="lay-row lay-fill">
                 <div className="lay-col">
-                  <SPiece id="tab" label="WEAPONS" scale={0.3} />
+                  <SPiece id="tab" label="WEAPONS" scale={0.4} />
                   <div className="lay-row">
-                    <SPiece id="slot" icon={STOCK_ICONS.gem} overlay="level:3" scale={0.3} />
-                    <SPiece id="slot" icon={STOCK_ICONS.bag} overlay="count:14" scale={0.3} />
-                    <SPiece id="slot" icon={STOCK_ICONS.heart} overlay="equipped" scale={0.3} />
+                    <SPiece id="slot" icon={STOCK_ICONS.gem} overlay="level:3" scale={0.4} />
+                    <SPiece id="slot" icon={STOCK_ICONS.bag} overlay="count:14" scale={0.4} />
+                    <SPiece id="slot" icon={STOCK_ICONS.heart} overlay="equipped" scale={0.4} />
                   </div>
                   <div className="lay-row">
-                    <SPiece id="slot" icon={STOCK_ICONS.trophy} overlay="new" scale={0.3} />
-                    <SPiece id="slot" overlay="empty" scale={0.3} />
-                    <SPiece id="slot" icon={STOCK_ICONS.gem} overlay="locked" scale={0.3} />
+                    <SPiece id="slot" icon={STOCK_ICONS.trophy} overlay="new" scale={0.4} />
+                    <SPiece id="slot" overlay="empty" scale={0.4} />
+                    <SPiece id="slot" icon={STOCK_ICONS.gem} overlay="locked" scale={0.4} />
                   </div>
                 </div>
                 <div className="lay-col">
-                  <SPiece id="datarow" scale={0.32} value={0.4} />
-                  <SPiece id="datarow" label="Iron Golem" sub="Level 8 · Tank" value={0.7} scale={0.32} />
-                  <div className="sc-push"><SPiece id="primary" label="EQUIP" size="s" scale={0.34} /></div>
+                  <SPiece id="datarow" scale={0.42} value={0.4} />
+                  <SPiece id="datarow" label="Iron Golem" sub="Level 8 · Tank" value={0.7} scale={0.42} />
+                  <div className="sc-push"><SPiece id="primary" label="EQUIP" size="s" scale={0.44} /></div>
                 </div>
               </div>
             </LayoutCard>
@@ -1547,64 +1530,64 @@ export function KitPage() {
           {!hiddenLays.includes("fight") && (
             <LayoutCard id="fight" name="Fight Screen" device="Desktop 16:9" onHide={hideLay}>
               <div className="lay-row lay-bar">
-                <SPiece id="progress" value={0.82} scale={0.32} />
-                <SPiece id="resource" label="48" icon={null} scale={0.28} />
-                <SPiece id="progress" value={0.55} scale={0.32} />
+                <SPiece id="progress" value={0.82} scale={0.42} />
+                <SPiece id="resource" label="48" icon={null} scale={0.38} />
+                <SPiece id="progress" value={0.55} scale={0.42} />
               </div>
               <div className="lay-row lay-mid">
-                <SPiece id="tab" label="ROUND 2" tone="alt" scale={0.3} />
+                <SPiece id="tab" label="ROUND 2" tone="alt" scale={0.4} />
               </div>
               <div className="lay-row lay-foot">
-                <SPiece id="joystick" size="s" scale={0.34} />
+                <SPiece id="joystick" size="s" scale={0.44} />
                 <span className="lay-spring" />
-                <SPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.3} />
-                <SPiece id="iconbtn" icon={STOCK_ICONS.play} scale={0.36} />
+                <SPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.4} />
+                <SPiece id="iconbtn" icon={STOCK_ICONS.play} scale={0.46} />
               </div>
             </LayoutCard>
           )}
           {!hiddenLays.includes("runner") && (
             <LayoutCard id="runner" name="Endless Runner" device="Mobile landscape" onHide={hideLay}>
               <div className="lay-row lay-bar">
-                <SPiece id="resource" label="1,204" icon={STOCK_ICONS.gem} scale={0.28} />
+                <SPiece id="resource" label="1,204" icon={STOCK_ICONS.gem} scale={0.38} />
                 <span className="lay-spring" />
-                <SPiece id="chip" label="×3" icon={STOCK_ICONS.star} scale={0.26} />
-                <SPiece id="iconbtn" icon={STOCK_ICONS.pause} scale={0.24} />
+                <SPiece id="chip" label="×3" icon={STOCK_ICONS.star} scale={0.46} />
+                <SPiece id="iconbtn" icon={STOCK_ICONS.pause} scale={0.34} />
               </div>
               <div className="lay-row lay-mid"><span className="sc-caption dim">tap to jump · hold to glide</span></div>
-              <div className="lay-row lay-foot"><SPiece id="progress" value={0.36} ambient scale={0.32} /></div>
+              <div className="lay-row lay-foot"><SPiece id="progress" value={0.36} ambient scale={0.42} /></div>
             </LayoutCard>
           )}
           {!hiddenLays.includes("word") && (
             <LayoutCard id="word" name="Word Game" device="Mobile portrait" onHide={hideLay}>
-              <SPiece id="header" label="WORD RUSH" scale={0.22} />
+              <SPiece id="header" label="WORD RUSH" scale={0.32} />
               <div className="lay-row">
-                <SPiece id="slot" icon={null} overlay="count:A" scale={0.24} />
-                <SPiece id="slot" icon={null} overlay="count:R" scale={0.24} />
-                <SPiece id="slot" icon={null} overlay="count:T" scale={0.24} />
+                <SPiece id="slot" icon={null} overlay="count:A" scale={0.34} />
+                <SPiece id="slot" icon={null} overlay="count:R" scale={0.34} />
+                <SPiece id="slot" icon={null} overlay="count:T" scale={0.34} />
               </div>
-              <SPiece id="input" label="Type a word…" scale={0.26} />
-              <div className="sc-push"><SPiece id="primary" label="SUBMIT" size="s" scale={0.28} /></div>
-              <SPiece id="progress" value={0.62} ambient scale={0.26} />
+              <SPiece id="input" label="Type a word…" scale={0.46} />
+              <div className="sc-push"><SPiece id="primary" label="SUBMIT" size="s" scale={0.38} /></div>
+              <SPiece id="progress" value={0.62} ambient scale={0.46} />
             </LayoutCard>
           )}
           {!hiddenLays.includes("match3") && (
             <LayoutCard id="match3" name="Match-3" device="Mobile portrait" onHide={hideLay}>
               <div className="lay-row lay-bar">
-                <SPiece id="resource" label="27" icon={STOCK_ICONS.heart} scale={0.24} />
-                <SPiece id="resource" label="900" icon={STOCK_ICONS.gem} scale={0.24} />
+                <SPiece id="resource" label="27" icon={STOCK_ICONS.heart} scale={0.34} />
+                <SPiece id="resource" label="900" icon={STOCK_ICONS.gem} scale={0.34} />
               </div>
               <div className="lay-row">
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} scale={0.24} />
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.24} />
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.24} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} scale={0.34} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.34} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.34} />
               </div>
               <div className="lay-row">
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.24} />
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="new" scale={0.24} />
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.24} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.34} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="new" scale={0.34} />
+                <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.34} />
               </div>
-              <div className="sc-push"><SPiece id="progress" value={0.44} ambient scale={0.26} /></div>
-              <SPiece id="chip" label="LEVEL 12" icon={null} scale={0.24} />
+              <div className="sc-push"><SPiece id="progress" value={0.44} ambient scale={0.46} /></div>
+              <SPiece id="chip" label="LEVEL 12" icon={null} scale={0.34} />
             </LayoutCard>
           )}
         </div>
