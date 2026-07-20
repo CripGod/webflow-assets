@@ -32,7 +32,7 @@ export function CanvasView() {
   // the hero previews the focused component at its kit-selected size, with its
   // own vertical text nudge — the same key the Typography panel edits, so the
   // slider responds live on the surface the user is actually looking at
-  const fSize = focus ? (kitSizes[focus] ?? "m") : "m";
+  const fSize = focus ? (kitSizes[focus] ?? "l") : "l";
   const fOy = focus ? kitTextOy[`${focus}:${fSize}`] : undefined;
   const heroSvg = useMemo(
     () => (focus ? renderKit(cfg, focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined }) : renderBevel(cfg, displayed)),

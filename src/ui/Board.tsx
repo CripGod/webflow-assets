@@ -73,7 +73,7 @@ export function BoardView({ playing }: { playing: boolean }) {
   /* the exact svg a board item shows — shared by display, export and PNG */
   const svgOf = (b: BoardItem): { svg: string; cfg: GenConfig } => {
     if (b.kitId) {
-      return { svg: renderKit(cfg, b.kitId, kitSizes[b.kitId] ?? "m", "default", undefined, kitShapes[b.kitId], { row: b.kitId === "datarow" ? kitRow : undefined }), cfg };
+      return { svg: renderKit(cfg, b.kitId, kitSizes[b.kitId] ?? "l", "default", undefined, kitShapes[b.kitId], { row: b.kitId === "datarow" ? kitRow : undefined }), cfg };
     }
     const item = library.find((l) => l.id === b.libId);
     if (!item) return { svg: "", cfg };
@@ -311,7 +311,7 @@ function StagePiece({ b, playing, fit, selected, svgOf, onSelect, onDragStart, o
       <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }}>
         {b.kitId ? (
           <LiveArt cfg={cfg} playing={playing} anchorContent
-            kit={{ id: b.kitId, size: kitSizes[b.kitId] ?? "m", shape: kitShapes[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }} />
+            kit={{ id: b.kitId, size: kitSizes[b.kitId] ?? "l", shape: kitShapes[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }} />
         ) : (
           <LiveArt cfg={item!.cfg} playing={playing} anchorContent
             kit={item!.kit ? { id: item!.kit.id, size: item!.kit.size, shape: item!.kit.shape } : undefined} />
