@@ -204,6 +204,9 @@ interface GenStore {
    *  group, plus slot toggles. Too intricate for the generic text controls. */
   kitRow: RowCfg;
   setKitRow: (patch: Partial<RowCfg>) => void;
+  /** Custom kit name for the guidelines page (null = derived from preset). */
+  kitName: string | null;
+  setKitName: (v: string | null) => void;
   /** Imported flat-vector silhouettes — see the spec in the Silhouette panel. */
   userShapes: UserShape[];
   addUserShape: (u: UserShape) => void;
@@ -364,7 +367,9 @@ export const useGen = create<GenStore>((set, get) => ({
     set({ board });
   },
   focus: null,
-  setFocus: (f) => set({ focus: f, phase: "master" }),
+  // choosing a piece to edit lifts any rail focus filter — the user asked
+  // for THIS component, so every relevant section must be reachable
+  setFocus: (f) => set({ focus: f, phase: "master", sectionFilter: null }),
   styleLib: loadJson<StyleItem[]>("ui-generator-styles", []),
   saveStyle: (name) => {
     markTouched();
@@ -410,6 +415,8 @@ export const useGen = create<GenStore>((set, get) => ({
     saveJson("ui-generator-kitdesigns", kitDesigns);
     set({ kitDesigns });
   },
+  kitName: loadJson<string | null>("ui-generator-kitname", null),
+  setKitName: (v) => { markTouched(); saveJson("ui-generator-kitname", v); set({ kitName: v }); },
   userShapes: (() => { const l = loadJson<UserShape[]>("ui-generator-usershapes", []); setUserShapes(l); return l; })(),
   addUserShape: (u) => {
     markTouched();

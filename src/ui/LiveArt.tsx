@@ -25,6 +25,10 @@ export interface LiveKit {
   overlay?: string;
   /** Data-row content model (see KitOpts.row). */
   row?: import("@/generator/store").RowCfg;
+  /** Container variant for panels (circle / oval / dialogue strip). */
+  kind?: "circle" | "oval" | "strip";
+  /** Alt tone — muted material; the piece ignores hover and press. */
+  tone?: "alt";
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -62,6 +66,8 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const [pval, setPval] = useState(clamp01(kit?.value ?? 0.62));    // progress
   const [sel, setSel] = useState(Math.round(kit?.value ?? 1));      // segment
   const [open, setOpen] = useState(kit?.baseState === "pressed");   // dropdown / badge award
+  const [stick, setStick] = useState<[number, number]>([0, 0]);  // joystick
+  const stickDrag = useRef<{ x: number; y: number; sx: number; sy: number } | null>(null);
   const sliding = useRef(false);
   const raf = useRef(0);
   const pvalRef = useRef(pval);
@@ -69,8 +75,10 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
-  // a piece resting in "disabled" is inert — it never reacts or changes
+  // a piece resting in "disabled" is inert — it never reacts or changes.
+  // alt-tone pieces (muted titles) render live but ignore hover and press.
   const disabled = kit?.baseState === "disabled";
+  const inert = disabled || kit?.tone === "alt";
   const value = id === "toggle" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
     : id === "progress" || id === "ring" ? (playing && !disabled ? pval : kit?.value)
@@ -88,13 +96,13 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   // hosts pass fresh kit literals every render — key on the fields, not the
   // object, so the (string-building) renderer only runs when something changed
   const kitKey = kit
-    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}`
+    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}|${kit.kind ?? ""}|${kit.tone ?? ""}`
     : "";
   const svg = useMemo(
     () => kit
-      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, row: kit.row })
+      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
       : renderBevel(cfg, state),
-    [cfg, kitKey, state, value] // eslint-disable-line react-hooks/exhaustive-deps
+    [cfg, kitKey, state, value, id === "joystick" ? stick : null] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // natural width × scale — uniform physical scale across every piece, so a
@@ -186,12 +194,17 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
       if (c) setSel(c.thirds);
     }
   };
-  const playHandlers = disabled ? {} : {
+  const playHandlers = inert ? {} : {
     onPointerEnter: (e: React.PointerEvent) => setLive(e.buttons === 1 ? "pressed" : "hover"),
     onPointerLeave: (e: React.PointerEvent) => { if (e.buttons !== 1) { setLive("default"); sliding.current = false; } pressedHere.current = false; },
     onPointerDown: (e: React.PointerEvent) => {
       pressedHere.current = true;
       setLive("pressed");
+      if (id === "joystick") {
+        sliding.current = true;
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        stickDrag.current = { x: e.clientX, y: e.clientY, sx: stick[0], sy: stick[1] };
+      }
       if (id === "slider") {
         sliding.current = true;
         (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -204,15 +217,32 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
         const c = trackCoord(e);
         if (c) setVal(c.u);
       }
+      if (id === "joystick" && sliding.current && stickDrag.current) {
+        // relative drag mapped through the stamped travel radius — exact at
+        // any display scale, no absolute geometry needed
+        const el = ref.current?.querySelector("svg") as SVGSVGElement | null;
+        const stamp = el?.getAttribute("data-stick")?.split(" ").map(Number);
+        const r = el?.getBoundingClientRect();
+        if (!el || !stamp || !r?.width) return;
+        const pxPerUnit = r.width / el.viewBox.baseVal.width;
+        const maxPx = stamp[2] * pxPerUnit;
+        if (!maxPx) return;
+        const d = stickDrag.current;
+        const nx = d.sx + (e.clientX - d.x) / maxPx;
+        const ny = d.sy + (e.clientY - d.y) / maxPx;
+        const mag = Math.hypot(nx, ny), f = mag > 1 ? 1 / mag : 1;
+        setStick([nx * f, ny * f]);
+      }
     },
     onPointerUp: (e: React.PointerEvent) => {
       setLive("hover");
       const wasDrag = sliding.current;
       sliding.current = false;
+      if (id === "joystick") { stickDrag.current = null; setStick([0, 0]); }
       if (pressedHere.current && !wasDrag) activate(e);
       pressedHere.current = false;
     },
-    onPointerCancel: () => { setLive("default"); sliding.current = false; pressedHere.current = false; },
+    onPointerCancel: () => { setLive("default"); sliding.current = false; pressedHere.current = false; if (id === "joystick") { stickDrag.current = null; setStick([0, 0]); } },
     // focusing on mousedown can scroll a partially-visible element into view —
     // suppress it; keyboard users still reach pieces through tab order
     onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
@@ -236,7 +266,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
 
   const anchorStyle = trimStyle ?? (anchorContent && pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined);
   // draggable pieces own their gestures — a slider drag must never pan the page
-  const gestureStyle = id === "slider" || id === "segment" ? { touchAction: "none" as const } : undefined;
+  const gestureStyle = id === "slider" || id === "segment" || id === "joystick" ? { touchAction: "none" as const } : undefined;
   return (
     <div ref={ref} className={className} title={title}
       style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle, ...gestureStyle }}

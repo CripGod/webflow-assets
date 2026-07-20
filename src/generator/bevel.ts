@@ -530,9 +530,13 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const visDepth = Math.max(0, depth);
   const lift = adj.lift;
 
-  // the canvas height also follows the deepest state — a pressed or hover
-  // fork with more extrusion must not change the element's footprint
-  const maxDepth = Math.max(depth, ...forks.map((f) => f.candy.extrusion.depth * K * (secondary ? 0.55 : 1)));
+  // the canvas reserves the extrusion slider's FULL travel, not just the
+  // deepest current state: the base line stays fixed while depth edits and
+  // state forks raise or sink the face (buttons rise from the ground, they
+  // don't grow downward), and nothing on a live page ever changes footprint.
+  const depthCap = 48 * K * (secondary ? 0.55 : 1);
+  const maxDepth = Math.max(depth, depthCap, ...forks.map((f) => f.candy.extrusion.depth * K * (secondary ? 0.55 : 1)));
+  const riseDy = Math.max(0, maxDepth - depth);
   const vw = x * 2 + w, vh = y * 2 + h + Math.ceil(maxDepth) + 40; // generous room so big shadows never clip
 
   /* The state aura blurs far past the shell (σ up to 30 → ~2.5σ visible reach),
@@ -784,7 +788,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const iconFilter = iFilters.length ? iFilters.join(" ") : undefined;
   // explicit kit icons (icon button) inherit the typography treatment:
   // same fill resolution and the same effect filter as the label
-  const inheritTypo = opts.iconDef !== undefined && !!iconDef && !showText;
+  const inheritTypo = (cfg.icon.inherit ?? true) && opts.iconDef !== undefined && !!iconDef && !showText;
   const iconColor = disabled ? "#A7AAB4"
     : inheritTypo ? (T2.fillMode === "auto" ? autoLabel : P(T2.fill))
     : cfg.icon.color ? P(cfg.icon.color) : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
@@ -905,7 +909,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   <filter id="${id}gb2" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="30"/></filter>` : ""}
   ${noise ? `<filter id="${id}nz" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="${nzFreq}" numOctaves="2" seed="7" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="2.6" intercept="-0.8"/><feFuncG type="linear" slope="2.6" intercept="-0.8"/><feFuncB type="linear" slope="2.6" intercept="-0.8"/></feComponentTransfer></filter>` : ""}
 </defs>
-<g opacity="${(adj.opacity / 100).toFixed(2)}">
+<g opacity="${(adj.opacity / 100).toFixed(2)}" transform="translate(0 ${riseDy.toFixed(1)})">
   ${castShadow ? `<g id="${id}_cast-shadow">${castShadow}</g>` : ""}
   ${contact ? `<g id="${id}_contact-shadow">${contact}</g>` : ""}
   ${aura ? `<g id="${id}_outer-glow">${aura}</g>` : ""}
@@ -931,8 +935,12 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${showText ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="${tAnchor}" dominant-baseline="central"${textFilter}>${textInner}</text>` : ""}
       ${showText && T2.stripes?.on ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tst)" opacity="${clamp((T2.stripes.opacity ?? 30) / 100, 0, 1).toFixed(2)}" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
       ${showText && T2.inflate?.on ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle("mix-blend-mode:screen")} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tif)" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
-      ${iconDef ? (inheritTypo && prims.length
-        ? `<g filter="url(#${id}tf)">${iconGroup(iconDef, iconX, iconY, iconSize, iconColor, { strokeWidth: cfg.icon.strokeWidth / 10 })}</g>`
+      ${iconDef ? (inheritTypo
+        ? `<g${prims.length ? ` filter="url(#${id}tf)"` : ""}>${
+            T2.outline.on && !disabled
+              ? iconGroup(iconDef, iconX, iconY, iconSize, T2.outline.color2 ? `url(#${id}og)` : P(T2.outline.color), { strokeWidth: cfg.icon.strokeWidth / 10 + T2.outline.width * 0.85 })
+              : ""
+          }${iconGroup(iconDef, iconX, iconY, iconSize, !disabled && T2.fillMode === "gradient" ? `url(#${id}tg)` : iconColor, { strokeWidth: cfg.icon.strokeWidth / 10 })}</g>`
         : iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
             strokeWidth: cfg.icon.strokeWidth / 10,
             opacity: (cfg.icon.opacity / 100),
@@ -951,8 +959,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
  *  same value for every state of a component; exports that measure content
  *  insets (nine-slice caps) subtract it. */
 export function glowPadOf(cfg: GenConfig): number {
+  // the pad reserves the slider's FULL travel whenever any glow is on, so
+  // dragging glow strength never resizes the canvas (no page reflow) — and
+  // every piece keeps generous, stable air around it
   const maxGlow = Math.max(cfg.states.default.glow, cfg.states.hover.glow, cfg.states.pressed.glow, cfg.states.disabled.glow);
-  return maxGlow > 0.5 ? Math.round(26 + 64 * Math.min(1, maxGlow / 100)) : 0;
+  return maxGlow > 0.5 ? 90 : 0;
 }
 
 /** Master component — width follows the label. Margins are 1.5× so large
@@ -1027,6 +1038,12 @@ function stampTrack(svg: string, x: number, w: number): string {
  *  `overlay` is a stackable status layer: "locked" | "new" | "check" |
  *  "equipped" | "count:N" | "level:N" | "cooldown:N" | "claimable" | "empty". */
 export interface KitOpts {
+  /** Container variant for panels — circle, oval, dialogue strip. */
+  kind?: "circle" | "oval" | "strip";
+  /** Alt tone — muted variant for empty/error titles; inert to hover. */
+  tone?: "alt";
+  /** Joystick deflection, each axis −1..1. */
+  stick?: [number, number];
   label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string;
   /** Data-row content model — independent size/tracking/placement per text
@@ -1040,6 +1057,15 @@ export interface KitOpts {
 }
 
 export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, state: GenStateName = "default", value?: number, shapeOv?: Shape, opts: KitOpts = {}): string {
+  if (opts.tone === "alt") {
+    // muted variant — same material, drained of celebration
+    cfg = JSON.parse(JSON.stringify(cfg)) as GenConfig;
+    (["Inner Fill", "Bevel", "Glow"] as const).forEach((key) => {
+      const c0 = cfg.effects[key];
+      if (c0) cfg.effects[key] = desaturate(hexMix(c0, "#6A7080", 0.42), 0.3);
+    });
+    for (const st of Object.values(cfg.states)) { st.glow = Math.min(st.glow, 8); }
+  }
   const k = SIZE_K[size];
   const bw = cfg.bevel.width;
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
@@ -1047,6 +1073,25 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   const font = cfg.type.font;
   const wellOf = (w: number, h: number, inset: number) =>
     shapePath(cfg.shape, 39 + inset, 30 + inset, w - inset * 2, h - inset * 2, Math.max(0, cfg.bevel.softness - 10));
+  /* bar-fill styling layers (BarFx): second gradient with a blend mode,
+     outer glow, inner shadow — identical on progress, sliders and rows */
+  const BFX = cfg.barFx;
+  const barFx = (gid: string, bx2: number, by2: number, fw2: number, bh2: number, r2: number) => {
+    let defs = "", over = "", open = "", close = "";
+    if (fw2 > 1 && BFX?.grad2.on) {
+      defs += `<linearGradient id="${gid}g2" x1="0" y1="0" x2="${BFX.grad2.vertical ? 0 : 1}" y2="${BFX.grad2.vertical ? 1 : 0}"><stop offset="0" stop-color="${BFX.grad2.color1}"/><stop offset="1" stop-color="${BFX.grad2.color2}"/></linearGradient>`;
+      over += `<path d="${roundRect(bx2, by2, fw2, bh2, r2)}" fill="url(#${gid}g2)" opacity="${(BFX.grad2.opacity / 100).toFixed(2)}"${BFX.grad2.blend !== "normal" ? ` style="mix-blend-mode:${BFX.grad2.blend}"` : ""}/>`;
+    }
+    if (fw2 > 1 && BFX?.shadow.on) {
+      defs += `<linearGradient id="${gid}is" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000814" stop-opacity="${(BFX.shadow.opacity / 100).toFixed(2)}"/><stop offset="0.6" stop-color="#000814" stop-opacity="0"/></linearGradient>`;
+      over += `<path d="${roundRect(bx2, by2, fw2, bh2, r2)}" fill="url(#${gid}is)"/>`;
+    }
+    if (fw2 > 1 && BFX?.glow.on && state !== "disabled") {
+      defs += `<filter id="${gid}bg" x="-60%" y="-160%" width="220%" height="420%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="0" stdDeviation="${(BFX.glow.size * 0.6).toFixed(1)}" flood-color="${BFX.glow.color}" flood-opacity="${(BFX.glow.opacity / 100).toFixed(2)}"/></filter>`;
+      open = `<g filter="url(#${gid}bg)">`; close = "</g>";
+    }
+    return { defs, over, open, close };
+  };
   // style is global; the silhouette can differ per component (user override
   // wins, then the curated default, then the master's shape)
   const sov: Shape | undefined = shapeOv ?? KIT_SHAPE[id];
@@ -1120,10 +1165,11 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const knobX = 39 + Math.max(kr + 1.5, Math.min(w - kr - 1.5, inset + gapPad + trackW * v01));
       const fillW = Math.max(0, knobX - bx);
       const knobY = 30 + h / 2;
+      const sfx = barFx(gid, bx, by, fillW, bh, Math.min(bh / 2, fillW / 2));
       return stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
-         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
-         ${fillW > 1 ? `<path d="${roundRect(bx, by, fillW, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>` : ""}` +
+         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${sfx.defs}</defs>
+         ${fillW > 1 ? `${sfx.open}<path d="${roundRect(bx, by, fillW, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${sfx.close}${sfx.over}` : ""}` +
         candyKnob(knobX, knobY, kr, bevel)), bx, trackW);
     }
     case "progress": {
@@ -1136,11 +1182,12 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const trackW = w - inset * 2 - gapPad * 2;
       const fw = trackW * clamp(value ?? 0.62, 0, 1);
       const gid = "pg" + UID++;
+      const pfx = barFx(gid, bx, by, fw, bh, bh / 2);
       return stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
-         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
-         ${fw > 1 ? `<path d="${roundRect(bx, by, fw, bh, bh / 2)}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
-         <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>` : ""}`), bx, trackW);
+         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${pfx.defs}</defs>
+         ${fw > 1 ? `${pfx.open}<path d="${roundRect(bx, by, fw, bh, bh / 2)}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${pfx.close}
+         <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${pfx.over}` : ""}`), bx, trackW);
     }
     case "input": {
       const w = 460 * k, h = 108 * k;
@@ -1159,9 +1206,14 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     case "panel": {
       // container shell — same recipe, bigger canvas. tokenH keeps walls,
       // rim and depth at component scale instead of scaling with the height.
-      const dims: Record<KitSize, [number, number]> = { s: [430, 290], m: [580, 380], l: [780, 470] };
+      // kinds: circle (medallion dialogs), oval (50s-modern), strip (dialogue)
+      const dims: Record<KitSize, [number, number]> =
+        opts.kind === "circle" ? { s: [300, 300], m: [380, 380], l: [470, 470] }
+        : opts.kind === "oval" ? { s: [420, 258], m: [540, 330], l: [680, 415] }
+        : opts.kind === "strip" ? { s: [540, 100], m: [700, 124], l: [880, 152] }
+        : { s: [430, 290], m: [580, 380], l: [780, 470] };
       const [pw, ph2] = dims[size];
-      return build(cfg, state, { x: 42, y: 33, h: ph2, fs: 0, iconSize: 0, tokenH: 150 }, { iconDef: null, label: "", fixedW: pw, shapeOverride: sov });
+      return build(cfg, state, { x: 42, y: 33, h: ph2, fs: 0, iconSize: 0, tokenH: 150 }, { iconDef: null, label: "", fixedW: pw, shapeOverride: opts.kind ? "pill" : sov });
     }
     case "resource": {
       /* HUD counter — icon medallion, numeric value, optional /max, optional
@@ -1221,12 +1273,12 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
             iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 })
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + (R2.titleDy ?? 0) * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsT.toFixed(1)}" font-weight="800" letter-spacing="${((R2.titleTrack ?? 0) / 100).toFixed(3)}em" fill="#FFFFFF" opacity="${dim}">${esc(title)}</text>` +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + (R2.subDy ?? 0) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + ((R2.titleDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsT.toFixed(1)}" font-weight="800" letter-spacing="${((R2.titleTrack ?? 0) / 100).toFixed(3)}em" fill="#FFFFFF" opacity="${dim}">${esc(title)}</text>` +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + ((R2.subDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
         `</g>` +
         (showBar
-          ? `<path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
-            (fillW2 > 1 ? `<path d="${roundRect(tx, barY, fillW2, 10 * k, 5 * k)}" fill="url(#${gid2})" opacity="${dim}"/>` : "")
+          ? (() => { const rfx = barFx(gid2, tx, barY, fillW2, 10 * k, 5 * k); return `<defs>${rfx.defs}</defs><path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
+            (fillW2 > 1 ? `${rfx.open}<path d="${roundRect(tx, barY, fillW2, 10 * k, 5 * k)}" fill="url(#${gid2})" opacity="${dim}"/>${rfx.close}${rfx.over}` : ""); })()
           : "") +
         (!showAction ? ""
           : ov === "locked"
@@ -1237,6 +1289,23 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
                 ? iconGroup(STOCK_ICONS.warning, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2.2 })
                 : iconGroup(STOCK_ICONS.forward, 39 + w - 48 * k, 30 + h / 2 - 12 * k, 24 * k, "rgba(255,255,255,0.6)", { strokeWidth: 2.4 }));
       return inject(track, parts);
+    }
+    case "joystick": {
+      // mobile touch stick: circular well, dashed travel ring, candy knob.
+      // opts.stick deflects the knob; data-stick lets the host drive it live.
+      const d2 = ({ s: 210, m: 270, l: 340 } as const)[size];
+      const track = build(cfg, state, { x: 33, y: 27, h: d2, fs: 0, iconSize: 0, tokenH: 132 }, { iconDef: null, label: "", fixedW: d2, shapeOverride: "pill" });
+      const inset2 = bw + 5;
+      const cx2 = 33 + d2 / 2, cy2 = 27 + d2 / 2;
+      const kr2 = d2 * 0.3;
+      const maxOff = d2 / 2 - inset2 - kr2 - 7;
+      const sx2 = clamp(opts.stick?.[0] ?? 0, -1, 1), sy3 = clamp(opts.stick?.[1] ?? 0, -1, 1);
+      const mag = Math.hypot(sx2, sy3), f2 = mag > 1 ? 1 / mag : 1;
+      const svg2 = inject(track,
+        `<path d="${roundRect(33 + inset2, 27 + inset2, d2 - inset2 * 2, d2 - inset2 * 2, (d2 - inset2 * 2) / 2)}" fill="${wellFill}" opacity="0.94"/>
+         <circle cx="${cx2}" cy="${cy2}" r="${(maxOff + kr2 * 0.5).toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="2" stroke-dasharray="3 8"/>` +
+        candyKnob(cx2 + sx2 * f2 * maxOff, cy2 + sy3 * f2 * maxOff, kr2, bevel, state === "disabled" ? "#A7AAB4" : glow));
+      return svg2.replace("<svg ", `<svg data-stick="${cx2} ${cy2} ${maxOff.toFixed(1)}" `);
     }
     case "slot": {
       /* Portrait / item slot — square frame with stackable status overlays.
