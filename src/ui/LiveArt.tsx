@@ -79,7 +79,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   // alt-tone pieces (muted titles) render live but ignore hover and press.
   const disabled = kit?.baseState === "disabled";
   const inert = disabled || kit?.tone === "alt";
-  const value = id === "toggle" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
+  const value = id === "toggle" || id === "checkbox" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
     : id === "progress" || id === "ring" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
@@ -90,6 +90,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const held = (id === "dropdown" || id === "badge") && (playing ? open : kit?.baseState === "pressed");
   const state: GenStateName = disabled ? "disabled"
     : held ? "pressed"
+    : id === "checkbox" ? (kit?.baseState ?? "default") // checks light up, they never grow
     : playing ? (live === "default" ? (kit?.baseState ?? "default") : live)
     : (kit?.baseState ?? "default");
 
@@ -186,7 +187,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
      so pointerup on it is the reliable activation signal. */
   const pressedHere = useRef(false);
   const activate = (e: React.PointerEvent) => {
-    if (id === "toggle") setOn((v) => !v);
+    if (id === "toggle" || id === "checkbox") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
     else if (id === "progress" || id === "ring") playProgress();
     else if (id === "segment") {

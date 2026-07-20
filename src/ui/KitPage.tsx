@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix, isDarkBg } from "@/generator/model";
@@ -136,14 +137,21 @@ function Pat({ n, name, cat, comps, asms, lead, children }: {
   lead: KitComponentId; children: React.ReactNode;
 }) {
   const { setFocus } = useGen();
+  const [big, setBig] = useState(false);
+  useEffect(() => {
+    if (!big) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setBig(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [big]);
   return (
     <article className="pat">
       <header className="pat-head">
         <span className="pat-num">{n}</span>
         <h4 className="pat-name">{name}</h4>
         <span className="pat-cat">{cat}</span>
-        <button className="pat-open" onClick={() => setFocus(lead)}
-          title={`Open ${name}'s lead component in the editor — restyle it and the whole pattern follows`}>
+        <button className="pat-open" onClick={() => setBig(true)}
+          title={`Inspect ${name} at presentation size`}>
           Open pattern →
         </button>
       </header>
@@ -153,6 +161,21 @@ function Pat({ n, name, cat, comps, asms, lead, children }: {
         <span>{asms} {asms === 1 ? "assembly" : "assemblies"}</span>
         <span>Fully editable</span>
       </footer>
+      {big && createPortal(
+        <div className="kp-patmodal" role="dialog" aria-modal="true" aria-label={`${name} — enlarged`} onClick={() => setBig(false)}>
+          <div className="kp-patmodal-card" onClick={(e) => e.stopPropagation()}>
+            <header className="pat-head">
+              <span className="pat-num">{n}</span>
+              <h4 className="pat-name">{name}</h4>
+              <span className="pat-cat">{cat} · phone-true sizes, shown big for desktop review</span>
+              <button className="pat-open" onClick={() => { setBig(false); setFocus(lead); }}>Edit in editor →</button>
+              <button className="pat-open" onClick={() => setBig(false)}>Close ✕</button>
+            </header>
+            <div className="pat-view kp-patbig"><div className="sc">{children}</div></div>
+          </div>
+        </div>,
+        document.body
+      )}
     </article>
   );
 }
@@ -181,61 +204,49 @@ function LayoutCard({ id, name, device, onHide, children }: {
 /* ── hero composition — a structured screen-like collage of live pieces
    on a starfield, unbounded by any card. Deliberate slots, not random:
    headline column center, meta clusters left and right, dashed arcs. */
+const ORBIT: { p: PieceOpts; s: number }[] = [
+  { p: { id: "primary", label: "PLAY NOW" }, s: 0.5 },
+  { p: { id: "ring", value: 0.72 }, s: 0.5 },
+  { p: { id: "header", label: "LEVEL UP!" }, s: 0.38 },
+  { p: { id: "lives", label: "3", max: "5" }, s: 0.72 },
+  { p: { id: "joystick", size: "s" }, s: 0.46 },
+  { p: { id: "toggle", value: 1 }, s: 0.4 },
+  { p: { id: "slot", icon: STOCK_ICONS.gem, overlay: "level:42" }, s: 0.44 },
+  { p: { id: "reticle" }, s: 0.6 },
+];
+
+/* ── hero — an orbital carousel: pieces circle a glass centerpiece on one
+   shared elliptical path, recessed into depth on the far side. Pure CSS
+   3D illusion (scale + blur + layering), auto-animating, hover to pause,
+   still under prefers-reduced-motion. */
 function Collage() {
   const { cfg } = useGen();
   const glow = cfg.effects.Glow ?? "#8FF0FF";
   const bevel = cfg.effects.Bevel ?? "#0E9CC9";
   return (
-    <div className="kp-collage kp-c3d" aria-label="Live component composition" style={{
+    <div className="kp-collage kp-orbit" aria-label="Live component carousel" style={{
       backgroundImage: [
-        `radial-gradient(ellipse 60% 52% at 62% 34%, ${hexMix(glow, "#000000", 0)}1f, transparent 70%)`,
-        `radial-gradient(ellipse 55% 46% at 32% 70%, ${hexMix(bevel, "#000000", 0)}1a, transparent 70%)`,
+        `radial-gradient(ellipse 62% 54% at 50% 42%, ${hexMix(glow, "#000000", 0)}1c, transparent 70%)`,
+        `radial-gradient(ellipse 50% 44% at 30% 72%, ${hexMix(bevel, "#000000", 0)}17, transparent 70%)`,
         "radial-gradient(rgba(150,160,200,0.35) 1px, transparent 1.6px)",
         "radial-gradient(rgba(150,160,200,0.22) 1px, transparent 1.4px)",
       ].join(", "),
       backgroundSize: "100% 100%, 100% 100%, 110px 110px, 66px 66px",
       backgroundPosition: "0 0, 0 0, 12px 8px, 40px 50px",
     }}>
-      <div className="kp-colplane">
-        {/* back row — receding */}
-        <div className="kp-colit kp-cz-back" style={{ left: "50%", top: "12%" }}>
-          <SPiece id="header" label="LEVEL UP!" scale={0.46} />
-        </div>
-        <div className="kp-colit kp-cz-back kp-loadcl" style={{ left: "13%", top: "16%" }}>
-          <SPiece id="ring" value={0.72} scale={0.4} />
-          <div className="kp-loadcol">
-            <span className="kp-dbs">Loading level…</span>
-            <SPiece id="progress" value={0.72} ambient scale={0.32} />
-          </div>
-        </div>
-        <div className="kp-colit kp-cz-back kp-dailyb" style={{ left: "86%", top: "14%" }}>
-          <span className="kp-dbt">Daily bonus</span>
-          <span className="kp-dbs">Collect your reward</span>
-          <div className="kp-dbrow">
-            <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.42} />
-            <SPiece id="small" label="CLAIM" scale={0.42} />
-          </div>
-        </div>
-        {/* mid row */}
-        <div className="kp-colit kp-cz-mid" style={{ left: "50%", top: "48%" }}>
-          <SPiece id="primary" label="PLAY NOW" scale={0.62} />
-        </div>
-        {/* front row — closest */}
-        <div className="kp-colit kp-cz-front kp-chiptrio" style={{ left: "22%", top: "80%" }}>
-          <SPiece id="chip" label="POWER UP" icon={null} scale={0.38} />
-          <SPiece id="chip" label="EPIC" icon={STOCK_ICONS.star} baseState="hover" scale={0.38} />
-        </div>
-        <div className="kp-colit kp-cz-front kp-navstrip" style={{ left: "50%", top: "82%" }}>
-          <SPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.38} />
-          <SPiece id="iconbtn" icon={STOCK_ICONS.trophy} scale={0.38} />
-          <SPiece id="iconbtn" icon={STOCK_ICONS.star} baseState="hover" scale={0.46} />
-          <SPiece id="iconbtn" icon={STOCK_ICONS.bag} scale={0.38} />
-          <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.38} />
-        </div>
-        <div className="kp-colit kp-cz-front" style={{ left: "83%", top: "78%" }}>
-          <SPiece id="joystick" size="s" scale={0.52} />
+      <div className="kp-orbitcenter kp-dailyb">
+        <span className="kp-dbt">Daily bonus</span>
+        <span className="kp-dbs">Collect your reward</span>
+        <div className="kp-dbrow">
+          <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.52} />
+          <SPiece id="small" label="CLAIM" scale={0.5} />
         </div>
       </div>
+      {ORBIT.map((o, i) => (
+        <div className="kp-orbititem" key={i} style={{ animationDelay: `${((-44 / ORBIT.length) * i).toFixed(2)}s` }}>
+          <SPiece {...o.p} scale={o.s} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -895,6 +906,21 @@ export function KitPage() {
           <Piece id="joystick" caption="Disabled" baseState="disabled" scale={0.44} />
         </div>
         <div className="kp-meta"><span>Knob springs back on release</span><span>Deflection clamps to the travel ring</span><span>data-stick carries the geometry for engine bindings</span></div>
+        <div className="kp-subhead">Combat & spatial HUD</div>
+        <div className="kp-tray">
+          <Piece id="reticle" caption="Reticle · ring" scale={0.55} />
+          <Piece id="reticle" caption="Reticle · brackets" overlay="brackets" scale={0.55} />
+          <Piece id="minimap" caption="Mini-map · compass" scale={0.46} />
+          <Piece id="minimap" caption="Mini-map · radar" overlay="square" scale={0.46} />
+          <Piece id="ammo" caption="Ammo counter" label="24" max="90" scale={0.5} />
+          <Piece id="lives" caption="Lives" label="3" max="5" scale={0.72} />
+          <Piece id="joystick" caption="Joystick · ghost overlay" overlay="ghost" scale={0.44} />
+        </div>
+        <div className="kp-meta"><span>Reticles and lives are shell-free spatial UI</span><span>Badges double as spatial markers — pair one with the pulse ring from Onboarding & Map</span><span>Ghost joystick overlays gameplay at 48% opacity</span></div>
+        <div className="kp-subhead">Celebration numbers</div>
+        <div className="kp-tray">
+          <Piece id="bignum" caption="Big number · full type treatment, no container" label="+12,450" scale={0.6} />
+        </div>
         <div className="kp-subhead">Progress rings & timers — click one to replay it</div>
         <div className="kp-ringrow">
           <Piece id="ring" size="m" caption="Standard" value={0.62} scale={0.5} />
@@ -1142,17 +1168,17 @@ export function KitPage() {
         <div className="kp-track3">
           <span className="kp-rail3" aria-hidden="true"><i /><em /></span>
           {([
-            ["Claimed", "5,000 XP", "done", <SPiece key="a" id="slot" size="s" icon={STOCK_ICONS.check} overlay="check" scale={0.74} />, false],
-            ["Claimable", "10,000 XP", "done", <SPiece key="b" id="slot" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.84} />, true],
-            ["Current", "20,000 XP", "current", <SPiece key="c" id="slot" shape="pill" icon={STOCK_ICONS.gem} overlay="new" baseState="hover" scale={1.12} />, false],
-            ["Upcoming", "30,000 XP", "next", <SPiece key="d" id="slot" size="s" icon={STOCK_ICONS.lock} overlay="locked" scale={0.74} />, false],
-            ["Final reward", "50,000 XP", "next", <SPiece key="e" id="slot" icon={STOCK_ICONS.trophy} overlay="locked" scale={0.95} />, false],
+            ["Claimed", "5,000 XP", "done", <SPiece key="a" id="slot" icon={STOCK_ICONS.check} overlay="check" scale={0.84} />, false],
+            ["Claimable", "10,000 XP", "done", <SPiece key="b" id="slot" icon={STOCK_ICONS.bag} overlay="claimable" baseState="hover" scale={0.95} />, true],
+            ["Current", "20,000 XP", "current", <SPiece key="c" id="slot" shape="pill" icon={STOCK_ICONS.gem} overlay="new" baseState="hover" scale={1.25} />, false],
+            ["Upcoming", "30,000 XP", "next", <SPiece key="d" id="slot" icon={STOCK_ICONS.lock} overlay="locked" scale={0.84} />, false],
+            ["Final reward", "50,000 XP", "next", <SPiece key="e" id="slot" icon={STOCK_ICONS.trophy} overlay="locked" scale={1.05} />, false],
           ] as [string, string, string, React.ReactNode, boolean][]).map(([capn, xp, st, node, claim]) => (
             <div className={`kp-tstop3 ${st}`} key={capn}>
               <div className={`kp-tnodezone${st === "current" ? " current" : ""}`}>{node}</div>
               <span className="kp-tstate"><i className={`kp-tdot ${st}`} />{capn}</span>
               <span className="kp-txp">{xp}</span>
-              {claim && <SPiece id="ghost" label="CLAIM REWARD" size="s" scale={0.34} />}
+              {claim && <SPiece id="primary" label="CLAIM REWARD" scale={0.34} />}
             </div>
           ))}
         </div>
@@ -1189,7 +1215,7 @@ export function KitPage() {
               <div className="kp-wkdays">
                 {(["M", "T", "W", "T", "F", "S", "S"] as const).map((d, i) => (
                   <div className="kp-wkday" key={d + i}>
-                    {i < 4 ? <SPiece id="checkbox" scale={0.42} /> : <SPiece id="radio" baseState="disabled" scale={0.42} />}
+                    <SPiece id="checkbox" value={i < 4 ? 1 : 0} scale={0.54} />
                     <span>{d}</span>
                   </div>
                 ))}
