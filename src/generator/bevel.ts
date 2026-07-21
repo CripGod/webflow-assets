@@ -113,7 +113,20 @@ export function transformPath(d: string, vb: [number, number, number, number], x
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
   if (shape.startsWith("user:")) {
     const us = userShapes().find((u) => u.id === shape);
-    if (us) return transformPath(us.d, us.vb, x, y, w, h);
+    if (us) {
+      // Imported artwork keeps its character: fill the frame, but never
+      // distort the drawn proportions by more than ~1.4× in either axis.
+      // Beyond that, the silhouette scales true-to-shape and centers.
+      const [, , vw, vh] = us.vb;
+      const natural = (vw || 1) / (vh || 1);
+      const target = w / h;
+      const stretch = target / natural;
+      const MAXS = 1.42;
+      let w2 = w, h2 = h;
+      if (stretch > MAXS) w2 = h * natural * MAXS;        // frame far wider than the art
+      else if (stretch < 1 / MAXS) h2 = (w / natural) * MAXS; // frame far taller than the art
+      return transformPath(us.d, us.vb, x + (w - w2) / 2, y + (h - h2) / 2, w2, h2);
+    }
     return roundRect(x, y, w, h, 4 + softness * 0.52); // registry miss — neutral fallback
   }
   if (shape === "pill") return roundRect(x, y, w, h, h / 2);
@@ -1106,6 +1119,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   }
   const k = SIZE_K[size];
   const bw = cfg.bevel.width;
+  // content text on kit pieces (counters, rows, segments) follows the global
+  // type Size and vertical nudge exactly like built labels do
+  const typeK = clamp(cfg.type.size / 52, 0.5, 2.2);
+  const typeOyK = (opts.textOy ?? cfg.type.oy ?? 0);
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
   // the dragger ball can carry its own color; null follows the Bevel role
   const knobC = cfg.knob?.color ?? bevel;
@@ -1167,7 +1184,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const selX = 39 + bw + segW * sel;
       const well = `<path d="${roundRect(selX + 4, 30 + bw + 4, segW - 8, h - bw * 2 - 8, (h - bw * 2 - 8) * 0.3)}" fill="rgba(255,255,255,0.25)" stroke="rgba(255,255,255,0.35)" stroke-width="1"/>`;
       const t = (label: string, cx: number, op: number) =>
-        `<text x="${cx.toFixed(1)}" y="${cy}" font-family="'${font}', Inter, sans-serif" font-size="${30 * k}" font-weight="800" fill="#FFFFFF" fill-opacity="${op}" text-anchor="middle" dominant-baseline="central">${esc(label)}</text>`;
+        `<text x="${cx.toFixed(1)}" y="${(cy + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(30 * k * typeK).toFixed(1)}" font-weight="${Math.max(700, cfg.type.weight)}" fill="#FFFFFF" fill-opacity="${op}" text-anchor="middle" dominant-baseline="central">${esc(label)}</text>`;
       const caps = opts.segments && opts.segments.length === 3 ? opts.segments : ["ONE", "TWO", "THREE"];
       return stampTrack(inject(track, well + caps.map((cap, i) => t(cap, 39 + bw + segW * (i + 0.5), i === sel ? 1 : 0.55)).join("")), 39 + bw, w - bw * 2);
     }
@@ -1285,8 +1302,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const parts =
         candyKnob(39 + 6 * k + medR, cy, medR, bevel) +
         iconGroup(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), { strokeWidth: 2.4 }) +
-        `<text x="${(39 + 20 * k + medR * 2).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsV}" font-weight="800" fill="#FFFFFF" opacity="${dim}" dominant-baseline="central">${esc(val)}</text>` +
-        (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * 0.62).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsV * 0.8}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(maxTxt)}</text>` : "") +
+        `<text x="${(39 + 20 * k + medR * 2).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK).toFixed(1)}" font-weight="${Math.max(700, cfg.type.weight)}" fill="#FFFFFF" opacity="${dim}" dominant-baseline="central">${esc(val)}</text>` +
+        (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * typeK * 0.62).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK * 0.8).toFixed(1)}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(maxTxt)}</text>` : "") +
         (opts.addBtn ? candyKnob(39 + w - 8 * k - h * 0.32, cy, h * 0.32, glow) +
           `<text x="${(39 + w - 8 * k - h * 0.32).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="Inter, sans-serif" font-size="${26 * k}" font-weight="800" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">+</text>` : "");
       return inject(track, parts);
@@ -1496,13 +1513,13 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       /* ammo counter — magazine / reserve with round pictos, HUD strip. */
       const h5 = 96 * k;
       const cur = opts.label ?? "24", res = opts.max ?? "90";
-      const w5 = 132 * k + (cur.length + res.length) * 20 * k;
+      const w5 = 132 * k + (cur.length + res.length) * 20 * k * clamp(cfg.type.size / 52, 0.5, 2.2);
       const track = build(cfg, state, { x: 39, y: 30, h: h5, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w5, shapeOverride: sov });
       const cy5 = 30 + h5 / 2;
       const bullets = [0, 1, 2].map((i) =>
         `<rect x="${(39 + 16 * k + i * 9 * k).toFixed(1)}" y="${(cy5 - 14 * k + i * 3 * k).toFixed(1)}" width="${5 * k}" height="${(28 - i * 6) * k}" rx="${2.4 * k}" fill="${hexMix(glow, "#FFFFFF", 0.25)}" stroke="${darken(bevel, 0.45)}" stroke-width="1"/>`).join("");
-      const txt = `<text x="${(39 + 48 * k).toFixed(1)}" y="${(cy5 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${34 * k}" font-weight="800" fill="#FFFFFF" dominant-baseline="central">${esc(cur)}</text>` +
-        `<text x="${(39 + 48 * k + cur.length * 21 * k + 6 * k).toFixed(1)}" y="${(cy5 + 4).toFixed(1)}" font-family="Inter, sans-serif" font-size="${18 * k}" font-weight="700" fill="rgba(255,255,255,0.5)" dominant-baseline="central">/ ${esc(res)}</text>`;
+      const txt = `<text x="${(39 + 48 * k).toFixed(1)}" y="${(cy5 + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(34 * k * typeK).toFixed(1)}" font-weight="${Math.max(700, cfg.type.weight)}" fill="#FFFFFF" dominant-baseline="central">${esc(cur)}</text>` +
+        `<text x="${(39 + 48 * k + cur.length * 21 * k * typeK + 6 * k).toFixed(1)}" y="${(cy5 + 4 + typeOyK * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(18 * k * Math.max(0.8, typeK * 0.85 + 0.15)).toFixed(1)}" font-weight="700" fill="rgba(255,255,255,0.5)" dominant-baseline="central">/ ${esc(res)}</text>`;
       return inject(track, bullets + txt);
     }
     case "lives": {
