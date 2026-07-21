@@ -90,6 +90,105 @@ export function downloadPng(svg: string, name: string, scale = 2): Promise<void>
 
 /** Self-contained HTML page: the button in every visible state, rendered by
  *  the exact same engine as the canvas. Opens locally with a double-click. */
+/* ── labeled PNG sprite sheet ─────────────────────────────────────
+   Every asset rasterized at 2x onto one transparent canvas, name labels
+   beneath, kit title on top. The display face is embedded into each SVG
+   as a data-URI @font-face so sprite text rasterizes true. */
+
+const FONT_CACHE = new Map<string, string | null>();
+
+/** Trim most of a render's glow reserve so sprites pack tight. */
+function cropSheetPad(svg: string, keep = 0.3): string {
+  // CSS drop-shadow style filters mis-rasterize in image context (solid
+  // blocks) — sheet sprites ship without them
+  svg = svg.replace(/ style="filter:[^"]*"/g, "");
+  const vb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(svg);
+  if (!vb) return svg;
+  const pad = Math.max(0, -+vb[1]);
+  if (pad < 4) return svg;
+  const cut = pad * (1 - keep);
+  const nw = +vb[3] - cut * 2, nh = +vb[4] - cut * 2;
+  return svg
+    .replace(vb[0], `viewBox="${(+vb[1] + cut).toFixed(1)} ${(+vb[2] + cut).toFixed(1)} ${nw.toFixed(1)} ${nh.toFixed(1)}"`)
+    .replace(/width="([\d.]+)"/, `width="${nw.toFixed(1)}"`)
+    .replace(/height="([\d.]+)"/, `height="${nh.toFixed(1)}"`);
+}
+
+/** Resolve a Google face to a base64 woff2 data URI (cached; null on failure). */
+export async function fontDataUri(family: string, cssQuery: string | null): Promise<string | null> {
+  if (FONT_CACHE.has(family)) return FONT_CACHE.get(family) ?? null;
+  let uri: string | null = null;
+  try {
+    if (cssQuery) {
+      const css = await (await fetch(`https://fonts.googleapis.com/css2?family=${cssQuery}&display=swap`)).text();
+      const m = /url\((https:[^)]+\.woff2)\)/.exec(css);
+      if (m) {
+        const buf = await (await fetch(m[1])).arrayBuffer();
+        let bin = "";
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        uri = `data:font/woff2;base64,${btoa(bin)}`;
+      }
+    }
+  } catch { uri = null; }
+  FONT_CACHE.set(family, uri);
+  return uri;
+}
+
+export async function downloadSpriteSheet(
+  entries: { name: string; svg: string }[],
+  title: string,
+  fontFamily: string,
+  fontCss: string | null,
+): Promise<void> {
+  const fontUri = await fontDataUri(fontFamily, fontCss);
+  const faceCss = fontUri ? `<defs><style>@font-face{font-family:'${fontFamily}';src:url(${fontUri}) format('woff2');}</style></defs>` : "";
+  const imgs = await Promise.all(entries.map((e) => new Promise<{ name: string; img: HTMLImageElement; w: number; h: number } | null>((resolve) => {
+    const cropped = cropSheetPad(e.svg);
+    const svg = faceCss ? cropped.replace(/(<svg[^>]*>)/, `$1${faceCss}`) : cropped;
+    const w = +(/width="([\d.]+)"/.exec(svg)?.[1] ?? 200);
+    const h = +(/height="([\d.]+)"/.exec(svg)?.[1] ?? 100);
+    const img = new Image();
+    img.onload = () => resolve({ name: e.name, img, w, h });
+    img.onerror = () => resolve(null);
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  })));
+  const ok = imgs.filter((x): x is NonNullable<typeof x> => !!x);
+  /* pack rows into a 2560-wide sheet — up to 2x, capped so no sprite
+     dominates a row and the sheet stays a sane length */
+  const SHEET_W = 2560, PAD = 28, LABEL = 44, HEADER = 96;
+  type Placed = { name: string; img: HTMLImageElement; x: number; y: number; w: number; h: number };
+  const placed: Placed[] = [];
+  let x = PAD, y = HEADER, rowH = 0;
+  for (const it of ok) {
+    const S = Math.min(2, 430 / it.h, 1400 / it.w);
+    const w = Math.round(it.w * S), h = Math.round(it.h * S);
+    if (x + w + PAD > SHEET_W && x > PAD) { x = PAD; y += rowH + LABEL + PAD; rowH = 0; }
+    placed.push({ name: it.name, img: it.img, x, y, w, h });
+    rowH = Math.max(rowH, h);
+    x += w + PAD;
+  }
+  const SHEET_H = y + rowH + LABEL + PAD;
+  const cv = document.createElement("canvas");
+  cv.width = SHEET_W; cv.height = SHEET_H;
+  const ctx = cv.getContext("2d");
+  if (!ctx) return;
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#8b93a3";
+  ctx.font = "700 34px Inter, sans-serif";
+  ctx.fillText(title, PAD, 54);
+  ctx.font = "500 20px Inter, sans-serif";
+  ctx.fillText(`${ok.length} assets · rendered live from the kit · @2x`, PAD, 82);
+  ctx.textAlign = "center";
+  for (const pl of placed) {
+    ctx.drawImage(pl.img, pl.x, pl.y, pl.w, pl.h);
+    ctx.fillStyle = "#8b93a3";
+    ctx.font = "600 19px Inter, sans-serif";
+    ctx.fillText(pl.name.toUpperCase(), pl.x + pl.w / 2, pl.y + pl.h + 30, pl.w + PAD);
+  }
+  await new Promise<void>((resolve) => cv.toBlob((blob) => { if (blob) download("kit-sprite-sheet.png", blob); resolve(); }, "image/png"));
+}
+
 export function buildHtml(cfg: GenConfig): string {
   const font = fontByName(cfg.type.font);
   const fontLink = font.css
