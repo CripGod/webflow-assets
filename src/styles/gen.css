@@ -555,6 +555,9 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   --st-bg1: #eef1f8; --st-bg2: #e2e6f2; --st-line: rgba(25,28,44,.15);
   --st-ink: rgba(22,26,40,.9); --st-ink2: rgba(22,26,40,.55); --st-well: rgba(255,255,255,.5);
   --kp-editink: #ffffff;
+  /* v55: connector/pulse accent that survives a light page — deep teal in
+     light mode, the airy glow cyan in dark */
+  --kp-glowline: #12849E;
 }
 .kitpage.dark {
   --kp-ink: #f1f3fa; --kp-ink2: rgba(235,238,255,.66); --kp-ink3: rgba(235,238,255,.4);
@@ -562,6 +565,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   --st-bg1: #171923; --st-bg2: #0c0d15; --st-line: rgba(235,238,255,.13);
   --st-ink: rgba(235,238,255,.88); --st-ink2: rgba(235,238,255,.55); --st-well: rgba(10,12,22,.5);
   --kp-editink: #0f1119;
+  --kp-glowline: rgba(160,240,255,.75);
 }
 .kitpage .makekit.kitback {
   display: flex; position: absolute; top: -6px; left: 0; align-items: center; gap: 8px; height: 40px;
@@ -732,7 +736,8 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-part .kp-art { margin: -12px 0 -8px; }
 .kp-splashchip .kp-art { margin: -8px -4px; }
 .kp-piece { gap: 0; }
-.kp-cap { margin-top: -2px; }
+/* v55: captions breathe — open, airy documentation rhythm */
+.kp-cap { margin-top: 7px; }
 .kp-icon { padding: 8px 4px 6px; }
 .kp-splashmain { margin: -6px 0 -4px; }
 .kp-assemblies .gp-card { height: auto; min-height: 0; padding: 46px 18px 22px; gap: 10px; }
@@ -772,7 +777,10 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   font-size: 14.5px; font-weight: 600; line-height: 1.45; border-radius: 14px; padding: 13px 16px;
 }
 .kp-bubble::before { content: ""; position: absolute; left: -7px; top: 50%; transform: translateY(-50%); border: 7px solid transparent; border-right-color: rgba(235,238,255,.94); border-left-width: 0; }
-.kp-coach { display: flex; flex-direction: column; align-items: center; gap: 8px; border: 1px solid rgba(235,238,255,.2); border-radius: 14px; padding: 16px 14px 12px; background: rgba(10,12,22,.5); width: 94%; margin-top: 10px; }
+.kp-coach { display: flex; flex-direction: column; align-items: center; gap: 8px; border: 1px solid rgba(235,238,255,.2); border-radius: 14px; padding: 16px 14px 12px; background: rgba(10,12,22,.78); width: 94%; margin-top: 10px; }
+/* coach + spotlight are ALWAYS-dark demo surfaces — their labels keep light
+   ink no matter which theme the page is in */
+.kp-coach .gp-label, .kp-dim .gp-label { color: rgba(235,238,255,.86); }
 .kp-step { font-size: 12px; font-weight: 800; letter-spacing: .12em; color: rgba(235,238,255,.55); }
 .kp-dim { position: relative; width: 94%; border-radius: 14px; background: rgba(4,6,12,.78); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 28px 14px 18px; }
 .kp-dim + .kp-dim { margin-top: 12px; }
@@ -784,11 +792,12 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-map { position: relative; width: 94%; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 10px 0 4px; }
 .kp-nodes { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; position: relative; z-index: 1; }
 .kp-node { display: flex; flex-direction: column; align-items: center; position: relative; }
-.kp-node span:last-child { font-size: 12.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: rgba(235,238,255,.5); margin-top: 6px; }
+.kp-node span:last-child { font-size: 12.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--st-ink2); margin-top: 6px; }
 .kp-node .gp-piece { margin: -6px -6px 0; }
 .kp-node.sel .kp-ringpulse { inset: auto; top: 2px; left: 50%; width: 92px; height: 92px; margin-left: -46px; }
-.kp-line { position: absolute; top: 88px; left: 20%; width: 26%; border-top: 3px dashed rgba(235,238,255,.25); }
-.kp-line.done { border-top-style: solid; border-top-color: rgba(160,240,255,.7); }
+.kp-line { position: absolute; top: 88px; left: 20%; width: 26%; border-top: 3px dashed var(--st-ink2); opacity: .55; }
+.kp-line.done { border-top-style: solid; border-top-color: var(--kp-glowline); opacity: 1; }
+.kp-node.sel .kp-ringpulse { border-color: var(--kp-glowline); }
 .kp-line + .kp-line { left: 52%; }
 
 /* motion behaviors — parameterized via CSS vars; applied to any piece */
@@ -811,8 +820,15 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 @keyframes kp-press { 0% { transform: translateY(0) scale(1); } 40% { transform: translateY(3px) scale(calc(1 - .04 * var(--mo-mag))); } 100% { transform: translateY(0) scale(1); } }
 @keyframes kp-slidein { 0% { transform: translateX(60px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
 @keyframes kp-rise { 0% { transform: translateY(26px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+/* v55: the shine — a light band the renderer clips to the component face
+   (addShine); CSS sweeps it across the viewBox on a calm loop. Percentages
+   resolve against the svg viewBox via transform-box, so one rule fits every
+   component width. */
+.kit-shine { transform-box: view-box; animation: kit-shine 3.2s cubic-bezier(.33,.1,.3,1) infinite; }
+@keyframes kit-shine { 0% { transform: translateX(0); } 42% { transform: translateX(175%); } 100% { transform: translateX(175%); } }
 @media (prefers-reduced-motion: reduce) {
-  .kp-mostage, .mo-pulse, .mo-bounce, .mo-glow, .mo-shake, .mo-pop, .mo-press, .mo-slidein, .mo-rise, .kp-ringpulse { animation: none !important; }
+  .kp-mostage, .mo-pulse, .mo-bounce, .mo-glow, .mo-shake, .mo-pop, .mo-press, .mo-slidein, .mo-rise, .kp-ringpulse, .kit-shine { animation: none !important; }
+  .kit-shine { opacity: 0; }
 }
 .kp-motion { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 10px; }
 @media (max-width: 1400px) { .kp-motion { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -914,6 +930,20 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   box-shadow: 0 8px 22px rgba(9,10,18,.14);
 }
 .pat-grid.three .pat-view { aspect-ratio: 1.32 / 1; }
+/* v55: every screen sits on its own atmospheric gradient, like Proof of
+   System — five hue washes cycle through each grid so neighbours never
+   repeat. Built over the stage tokens, so both page themes keep contrast. */
+.pat-view {
+  background:
+    radial-gradient(140% 120% at 14% -4%, color-mix(in srgb, var(--sc-tint, #7c6cff) 20%, transparent), transparent 56%),
+    radial-gradient(120% 100% at 100% 108%, color-mix(in srgb, var(--sc-tint2, #2bd4d4) 13%, transparent), transparent 52%),
+    linear-gradient(170deg, color-mix(in srgb, var(--st-bg1) 91%, var(--sc-tint, #7c6cff)), color-mix(in srgb, var(--st-bg2) 86%, var(--sc-tint2, #2bd4d4)) 70%);
+}
+.pat:nth-child(5n+1) .pat-view { --sc-tint: #7c6cff; --sc-tint2: #2bd4d4; }
+.pat:nth-child(5n+2) .pat-view { --sc-tint: #ff7ab8; --sc-tint2: #8a5cff; }
+.pat:nth-child(5n+3) .pat-view { --sc-tint: #35c98f; --sc-tint2: #3f8cff; }
+.pat:nth-child(5n+4) .pat-view { --sc-tint: #ffb054; --sc-tint2: #ff5e79; }
+.pat:nth-child(5n) .pat-view { --sc-tint: #4fb3ff; --sc-tint2: #b66bff; }
 .pat-foot { display: flex; align-items: center; padding: 9px 2px 0; font-size: 11.5px; color: var(--kp-ink3); }
 .pat-foot span { display: inline-flex; align-items: center; white-space: nowrap; }
 .pat-foot span + span::before { content: ""; width: 1px; height: 10px; background: var(--kp-line); margin: 0 10px; }
@@ -1013,6 +1043,12 @@ button.kp-fact { cursor: pointer; }
 .kp-roleline { display: flex; flex-wrap: wrap; gap: 5px 16px; margin-top: 18px; }
 .kp-roledot { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--kp-ink3); }
 .kp-roledot i { width: 13px; height: 13px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.16); }
+/* v55: calm reveal for everything a link expands — the grid-rows trick
+   eases open to the content's real height; reduced motion snaps. */
+.kp-reveal { display: grid; animation: kp-reveal .5s cubic-bezier(.22,.61,.36,1); }
+.kp-reveal > div { min-height: 0; overflow: hidden; }
+@keyframes kp-reveal { from { grid-template-rows: 0fr; opacity: 0; transform: translateY(-4px); } to { grid-template-rows: 1fr; opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .kp-reveal { animation: none !important; } }
 .kp-about { margin-top: 16px; border: 0; background: none; padding: 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--kp-ink2); cursor: pointer; border-bottom: 1px solid var(--kp-line); width: fit-content; }
 .kp-about:hover { color: var(--kp-ink); }
 .kp-aboutbody { max-width: 480px; }
@@ -1386,8 +1422,11 @@ button.kp-fact { cursor: pointer; }
 /* ── v38/v39: pattern zoom modal, spatial HUD ────────────────── */
 
 /* pattern zoom modal — phone-true pieces at presentation size */
-.kp-patmodal { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: rgba(8, 10, 18, 0.66); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.kp-patmodal-card { width: min(1480px, 94vw); max-height: 92vh; display: flex; flex-direction: column; gap: 0; background: var(--kp-card, #fff); border: 1px solid var(--kp-line); border-radius: 20px; padding: 14px 20px 20px; box-shadow: 0 30px 90px rgba(5, 8, 16, 0.5); }
+.kp-patmodal { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: rgba(8, 10, 18, 0.66); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: kp-fadein .3s ease-out; }
+.kp-patmodal-card { width: min(1480px, 94vw); max-height: 92vh; display: flex; flex-direction: column; gap: 0; background: var(--kp-card, #fff); border: 1px solid var(--kp-line); border-radius: 20px; padding: 14px 20px 20px; box-shadow: 0 30px 90px rgba(5, 8, 16, 0.5); animation: kp-modalin .45s cubic-bezier(.22,.61,.36,1); }
+@keyframes kp-fadein { from { opacity: 0; } to { opacity: 1; } }
+@keyframes kp-modalin { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .kp-patmodal, .kp-patmodal-card { animation: none !important; } }
 .kp-patmodal .pat-head { padding-bottom: 12px; }
 .kp-patmodal .pat-open + .pat-open { margin-left: 18px; }
 .kp-patbig { aspect-ratio: auto; flex: 1; min-height: 0; height: min(74vh, 900px); }
@@ -1523,13 +1562,22 @@ button.kp-fact { cursor: pointer; }
 .resetall:hover { background: rgba(214, 69, 93, .1); color: #d6455d; border-color: #d6455d; }
 
 /* ── inventory pattern — complex-system proof, all theme pieces ── */
-.sc-inv { display: flex; flex-direction: column; gap: 8px; width: 100%; align-items: stretch; }
-.sc-invtop { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 10px; }
+.sc-inv { display: flex; flex-direction: column; gap: 6px; width: 100%; align-items: stretch; }
+/* the inventory is the densest screen — give it the full stage width so
+   the three panels never spill into each other */
+.sc:has(.sc-inv) { width: 94%; }
+.sc-invtop { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 2px; }
 .sc-invtop .sc-spring { flex: 1; }
 .sc-invbody { display: grid; grid-template-columns: auto 1fr auto; gap: 22px; width: 100%; align-items: start; }
 .sc-invcol, .sc-invside { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
 .sc-invcol { min-width: 158px; }
-.sc-invgrid, .sc-invgrid2 { margin-top: 8px; }
+/* v55: ground the three zones as real screen panels — nothing floats */
+.sc-invcol, .sc-invmain, .sc-invside { background: var(--st-well); border: 1px solid var(--st-line); border-radius: 12px; padding: 9px 12px 8px; }
+.sc-wire { display: block; }
+.sc-invhero { width: 64px; margin: 1px 0; }
+.sc-invgem { width: 54px; margin: 4px 0 2px; }
+.kitpage.dark .sc-wire { filter: drop-shadow(0 0 7px rgba(140,220,255,.3)); }
+.sc-invgrid, .sc-invgrid2 { margin-top: 4px; }
 .sc-invmain { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
 .sc-invtabs { display: flex; gap: 3px; }
 .sc-invgrid { display: grid; grid-template-columns: repeat(4, auto); gap: 0; justify-content: center; }

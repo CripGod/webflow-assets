@@ -623,7 +623,8 @@ export type KitComponentId =
   | "slider" | "progress" | "input" | "dropdown" | "panel"
   | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
-  | "flipclock" | "stopwatch" | "timerdigits";
+  | "flipclock" | "stopwatch" | "timerdigits"
+  | "speedo" | "speedo2" | "circuit";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -658,6 +659,9 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "ammo", name: "Ammo counter" },
   { id: "lives", name: "Lives" },
   { id: "bignum", name: "Big number" },
+  { id: "speedo", name: "Speedometer" },
+  { id: "speedo2", name: "Speedo · HUD" },
+  { id: "circuit", name: "Race circuit" },
 ];
 
 /* A locked component keeps a full design snapshot of its own — the master
