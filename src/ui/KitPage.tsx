@@ -49,7 +49,7 @@ function tightenV(svg: string, px: number, oy = 0): string {
     .replace(/height="([\d.]+)"/, `height="${h.toFixed(1)}"`);
 }
 
-function Art({ svg, scale, className }: { svg: string; scale: number; className?: string }) {
+function Art({ svg, scale, className, hug = true }: { svg: string; scale: number; className?: string; hug?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState<number | undefined>(() => {
     const m = svg.match(/width="([\d.]+)"/);
@@ -59,6 +59,7 @@ function Art({ svg, scale, className }: { svg: string; scale: number; className?
      renderer's char estimate leaves right-side slack — measured cropping
      centers title art truly on any stage, in any browser. */
   useEffect(() => {
+    if (!hug) return;
     const el = ref.current?.querySelector("svg") as SVGGraphicsElement | null;
     if (!el) return;
     try {
@@ -72,14 +73,14 @@ function Art({ svg, scale, className }: { svg: string; scale: number; className?
       el.setAttribute("width", (x1 - x0).toFixed(1));
       setW((x1 - x0) * scale);
     } catch { /* not laid out yet */ }
-  }, [svg, scale]);
+  }, [svg, scale, hug]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div ref={ref} className={`kp-art${className ? " " + className : ""}`} style={{ width: w }} dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 interface PieceOpts {
   id: KitComponentId; size?: KitSize; label?: string; segments?: string[];
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
-  sub?: string; max?: string; addBtn?: boolean; overlay?: string; trim?: boolean;
+  sub?: string; max?: string; addBtn?: boolean; overlay?: string; iconScale?: number; trim?: boolean;
   kind?: "circle" | "oval" | "strip"; tone?: "alt"; shape?: Shape;
 }
 
@@ -102,7 +103,7 @@ function usePiece(p: PieceOpts) {
     kit: {
       id: p.id, size, shape: p.shape ?? kitShapes[p.id], label: p.label, segments: p.segments,
       icon: p.icon, value: p.value, baseState: p.baseState,
-      sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay,
+      sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay, iconScale: p.iconScale,
       // explicit per-component vertical text adjustment (0 is a valid value)
       textOy: kitTextOy[`${p.id}:${size}`],
       // data rows follow the row model everywhere; a variant's explicit
@@ -416,7 +417,7 @@ function SliceDemo({ cfg, label, size = "m", fit = 520, ruler }: { cfg: GenConfi
   return (
     <div>
       <div className="kp-slice">
-        <Art svg={svg} scale={scale} />
+        <Art svg={svg} scale={scale} hug={false} />
         {geo && (
           <>
             <span className="kp-guide cap" style={{ left: `${geo.capL}%` }} />
@@ -737,8 +738,9 @@ export function KitPage() {
               <b><ShieldCheck size={14} strokeWidth={2.4} /> {a11yOpen ? audit.level : "See score"}</b><span>Accessibility</span>
             </button>
           </div>
-          <button className="kp-editkit" onClick={() => setPhase("master")} title="Open this kit in the editor — every control shapes it live">
-            <PenTool size={19} strokeWidth={2.3} /> Edit this Kit
+          <button className="kp-editkit" onClick={() => setPhase("master")} title="Open this kit in the editor — every control shapes it live"
+            style={{ background: cfg.effects.Bevel ?? "#0E9CC9", color: isDarkBg(cfg.effects.Bevel ?? "#0E9CC9") ? "#ffffff" : "#0d0f16" }}>
+            <PenTool size={16} strokeWidth={2.3} /> Edit this Kit
           </button>
           <button className="kp-dlall" onClick={downloadAllAssets} disabled={sheetBusy} title="Every asset on one labeled PNG sprite sheet">
             <Download size={15} strokeWidth={2.2} /> {sheetBusy ? "Building the sheet…" : "Download all assets — PNG sprite sheet"}
@@ -893,7 +895,7 @@ export function KitPage() {
               </label>
               <label className="kp-tytog">Treatment
                 <button className={`kp-tyswitch${treatOn ? " on" : ""}`} role="switch" aria-checked={treatOn} aria-label="Treatment on or off"
-                  onClick={() => setTreatOn(!treatOn)}><i>{treatOn ? "ON" : "OFF"}</i></button>
+                  onClick={() => setTreatOn(!treatOn)}><i /></button>
               </label>
               <p className="kp-tymap">The highlight rides the matched phrase — position follows the text itself.</p>
             </div>
@@ -1099,7 +1101,7 @@ export function KitPage() {
         </div>
         <div className="kp-meta"><span>Knob springs back on release</span><span>Deflection clamps to the travel ring</span><span>data-stick carries the geometry for engine bindings</span></div>
         <div className="kp-subhead">Combat & spatial HUD</div>
-        <div className="kp-tray">
+        <div className="kp-tray kp-axis">
           <Piece id="reticle" caption="Reticle · ring" scale={0.55} />
           <Piece id="reticle" caption="Reticle · brackets" overlay="brackets" scale={0.55} />
           <Piece id="minimap" caption="Mini-map · compass" scale={0.46} />
@@ -1482,7 +1484,7 @@ export function KitPage() {
               <span className="kp-line" />
               <div className="kp-nodes">
                 <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.check} scale={0.5} /><span>Done</span></div>
-                <div className="kp-node sel"><span className="kp-ringpulse" /><PPiece id="badge" label="4" scale={0.55} baseState="hover" /><span>Current</span></div>
+                <div className="kp-node sel"><span className="kp-ringpulse" /><PPiece id="badge" label="4" scale={0.5} baseState="hover" /><span>Current</span></div>
                 <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.lock} scale={0.5} /><span>Locked</span></div>
               </div>
               <div className="gp-row center">
@@ -1664,6 +1666,69 @@ export function KitPage() {
                 <SPiece id="primary" label="BUY NOW" size="s" scale={0.38} />
                 <SPiece id="ghost" label="Cancel" size="s" scale={0.3} />
               </Pat>
+              <Pat n="07" name="Inventory" cat="Core Screen" comps={11} asms={5} lead="slot">
+                <div className="sc-inv">
+                  <div className="sc-invtop">
+                    <SPiece id="chip" label="INVENTORY" icon={null} tone="alt" scale={0.3} />
+                    <SPiece id="resource" label="1,250" icon={STOCK_ICONS.gem} scale={0.26} />
+                    <SPiece id="resource" label="24,580" icon={STOCK_ICONS.star} scale={0.26} />
+                    <span className="sc-spring" />
+                    <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.22} />
+                    <SPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.22} />
+                  </div>
+                  <div className="sc-invbody">
+                    <div className="sc-invcol">
+                      <SPiece id="slot" size="m" icon={STOCK_ICONS.user} overlay="level:42" scale={0.4} />
+                      <span className="sc-invname">SHADOW KNIGHT</span>
+                      <div className="sc-invgrid2">
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.star} overlay="equipped" scale={0.3} />
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.heart} scale={0.3} />
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.bag} scale={0.3} />
+                        <SPiece id="slot" size="m" icon={null} scale={0.3} />
+                      </div>
+                      <SPiece id="small" label="STATS" scale={0.26} />
+                    </div>
+                    <div className="sc-invmain">
+                      <div className="sc-invtabs">
+                        <SPiece id="tab" label="GEAR" baseState="pressed" scale={0.26} />
+                        <SPiece id="tab" label="ITEMS" scale={0.26} />
+                        <SPiece id="tab" label="RUNES" scale={0.26} />
+                      </div>
+                      <div className="sc-invgrid">
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.star} overlay="count:2" scale={0.28} />
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="count:14" scale={0.28} />
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.heart} scale={0.28} />
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.bag} overlay="new" scale={0.28} />
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.trophy} scale={0.28} />
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="count:9" scale={0.28} />
+                        <SPiece id="slot" size="m" icon={null} scale={0.28} />
+                        <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="locked" scale={0.28} />
+                      </div>
+                      <div className="sc-invcap">
+                        <SPiece id="progress" value={0.68} scale={0.3} />
+                        <span className="sc-invsub">82 / 120</span>
+                      </div>
+                    </div>
+                    <div className="sc-invside">
+                      <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="equipped" baseState="hover" scale={0.42} />
+                      <span className="sc-invname">ECLIPSE GEM</span>
+                      <span className="sc-invsub">EPIC · WEAPON</span>
+                      <div className="sc-invstat"><span>ATTACK</span><SPiece id="progress" value={0.85} scale={0.24} /></div>
+                      <div className="sc-invstat"><span>CRIT</span><SPiece id="progress" value={0.55} scale={0.24} /></div>
+                      <div className="sc-invstat"><span>SPEED</span><SPiece id="progress" value={0.4} scale={0.24} /></div>
+                      <SPiece id="primary" label="EQUIP" size="s" scale={0.28} />
+                      <SPiece id="ghost" label="Dismantle" size="s" scale={0.26} />
+                    </div>
+                  </div>
+                  <div className="sc-invdock">
+                    <SPiece id="chip" label="QUICK SLOTS" icon={null} tone="alt" scale={0.24} />
+                    <SPiece id="slot" size="m" icon={STOCK_ICONS.heart} overlay="count:12" scale={0.26} />
+                    <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="count:28" scale={0.26} />
+                    <SPiece id="slot" size="m" icon={STOCK_ICONS.star} scale={0.26} />
+                    <SPiece id="badge" label="+" scale={0.24} />
+                  </div>
+                </div>
+              </Pat>
             </div>
           </div>
         )}
@@ -1675,7 +1740,7 @@ export function KitPage() {
               <p>System feedback, progress and end-state compositions.</p>
             </div>
             <div className="pat-grid three">
-              <Pat n="07" name="Confirmation" cat="Outcome Screen" comps={3} asms={1} lead="small">
+              <Pat n="08" name="Confirmation" cat="Outcome Screen" comps={3} asms={1} lead="small">
                 <div className="sc-modal">
                   <SPiece id="header" label="ARE YOU SURE?" scale={0.26} />
                   <span className="sc-caption">Quitting now will forfeit the match.</span>
@@ -1685,12 +1750,12 @@ export function KitPage() {
                   </div>
                 </div>
               </Pat>
-              <Pat n="08" name="Loading" cat="Outcome Screen" comps={2} asms={1} lead="progress">
+              <Pat n="09" name="Loading" cat="Outcome Screen" comps={2} asms={1} lead="progress">
                 <Art svg={loadingArt} scale={0.32} />
                 <SPiece id="progress" value={0.72} ambient scale={0.48} />
                 <span className="sc-caption dim sc-push">Tip: locked doors remember you.</span>
               </Pat>
-              <Pat n="09" name="Results — Victory" cat="Outcome Screen" comps={4} asms={2} lead="primary">
+              <Pat n="10" name="Results — Victory" cat="Outcome Screen" comps={4} asms={2} lead="primary">
                 <Art svg={splashArt} scale={0.28} />
                 <div className="sc-cluster sc-push">
                   <span className="sc-caption dim">Score</span>
@@ -1712,10 +1777,10 @@ export function KitPage() {
               <p>Empty, offline and error handling — one template, two intents.</p>
             </div>
             <div className="pat-grid">
-              <Pat n="10" name="Empty State" cat="State Screen" comps={4} asms={1} lead="small">
+              <Pat n="11" name="Empty State" cat="State Screen" comps={4} asms={1} lead="small">
                 <StateScreen icon={STOCK_ICONS.search} title="NO ITEMS YET" line="Complete levels to fill your bag." action="BROWSE STORE" />
               </Pat>
-              <Pat n="11" name="Connection Error" cat="State Screen" comps={4} asms={1} lead="small">
+              <Pat n="12" name="Connection Error" cat="State Screen" comps={4} asms={1} lead="small">
                 <StateScreen icon={STOCK_ICONS.warning} title="CONNECTION LOST" line="We can’t reach the server." action="RETRY" />
               </Pat>
             </div>
@@ -1817,8 +1882,8 @@ export function KitPage() {
                 ] as const).map((row, ri) => (
                   <div className="lay-row lay-board" key={ri}>
                     {row.map((ic, ci) => (
-                      <SPiece key={ci} id="slot" size="s" icon={STOCK_ICONS[ic]}
-                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.5} />
+                      <SPiece key={ci} id="slot" size="s" icon={STOCK_ICONS[ic]} iconScale={1.35}
+                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.54} />
                     ))}
                   </div>
                 ))}
