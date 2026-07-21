@@ -622,7 +622,8 @@ export type KitComponentId =
   | "checkbox" | "radio" | "toggle"
   | "slider" | "progress" | "input" | "dropdown" | "panel"
   | "resource" | "datarow" | "slot" | "ring" | "joystick"
-  | "reticle" | "minimap" | "ammo" | "lives" | "bignum";
+  | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
+  | "timer" | "timerbar";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -647,6 +648,8 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "datarow", name: "Data row" },
   { id: "slot", name: "Item slot" },
   { id: "ring", name: "Progress ring" },
+  { id: "timer", name: "Countdown timer" },
+  { id: "timerbar", name: "Round timer" },
   { id: "joystick", name: "Joystick" },
   { id: "reticle", name: "Reticle" },
   { id: "minimap", name: "Mini-map" },
@@ -672,6 +675,20 @@ export function applyKitDesign(cfg: GenConfig, kd?: KitDesign | null): GenConfig
   };
 }
 
+/** Per-component text color — the answer to "changing text color changes it
+ *  everywhere". A piece with an override renders every glyph it draws in its
+ *  own solid color while the global Typography keeps driving the rest of the
+ *  kit. State forks inherit the override too, so hover/pressed stay on-color. */
+export function applyKitTextFill(cfg: GenConfig, fill?: string | null): GenConfig {
+  if (!fill) return cfg;
+  const next: GenConfig = { ...cfg, type: { ...cfg.type, fillMode: "solid", fill } };
+  if (cfg.stateDesigns) {
+    next.stateDesigns = Object.fromEntries(Object.entries(cfg.stateDesigns).map(([s, d]) =>
+      [s, d ? { ...d, type: { ...d.type, fillMode: "solid" as const, fill } } : d]));
+  }
+  return next;
+}
+
 /* Style is global; silhouettes are per-component. These are the curated
    defaults — the master's silhouette everywhere else, and each component
    can be overridden individually while focused. */
@@ -684,6 +701,7 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   resource: "pill",
   datarow: "kenneyRect",
   slot: "kenneyRect",
+  timer: "pill",
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the
@@ -714,5 +732,6 @@ export const STOCK_ICONS: Record<string, IconDef> = {
   trophy: { lib: "lucide", name: "Trophy", viewBox: "0 0 24 24", inner: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>', mode: "stroke" },
   cart: { lib: "lucide", name: "ShoppingCart", viewBox: "0 0 24 24", inner: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>', mode: "stroke" },
   gem: { lib: "lucide", name: "Gem", viewBox: "0 0 24 24", inner: '<path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/>', mode: "stroke" },
+  clock: { lib: "lucide", name: "Clock", viewBox: "0 0 24 24", inner: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', mode: "stroke" },
   heart: { lib: "lucide", name: "Heart", viewBox: "0 0 24 24", inner: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>', mode: "stroke" },
 };
