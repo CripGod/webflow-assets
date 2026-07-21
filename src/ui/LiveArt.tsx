@@ -1,0 +1,338 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
+import { renderBevel, renderKit } from "@/generator/bevel";
+
+/** What a piece of live art is: the master button (no kit), or one kit
+ *  component with optional per-instance overrides. */
+export interface LiveKit {
+  id: KitComponentId;
+  size?: KitSize;
+  shape?: Shape;
+  label?: string;
+  segments?: string[];
+  icon?: IconDef | null;
+  /** Starting value — toggle on/off (1/0), slider/progress fill, segment index. */
+  value?: number;
+  /** Resting state when idle — e.g. an awarded badge or an open dropdown. */
+  baseState?: GenStateName;
+  /** Per-component vertical text adjustment (explicit; 0 is valid). */
+  textOy?: number;
+  /** Mobile-game piece slots: secondary label, /max value, add button,
+   *  stackable status overlay. */
+  sub?: string;
+  max?: string;
+  addBtn?: boolean;
+  overlay?: string;
+  /** Slot icon emphasis — >1 makes the icon the star of the tile. */
+  iconScale?: number;
+  /** Data-row content model (see KitOpts.row). */
+  row?: import("@/generator/store").RowCfg;
+  /** Container variant for panels (circle / oval / dialogue strip). */
+  kind?: "circle" | "oval" | "strip";
+  /** Alt tone — muted material; the piece ignores hover and press. */
+  tone?: "alt";
+}
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+/** One living piece of art. Design mode: a plain render (click = edit when the
+ *  host wires it). Play mode: hover/press states, toggles flip, sliders drag,
+ *  segments switch, progress animates, dropdowns open, badges award — every
+ *  interaction the component implies, all through the same pure renderer. */
+export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient, className, style, title, onDesignClick }: {
+  cfg: GenConfig;
+  kit?: LiveKit;
+  playing: boolean;
+  /** Display scale — 1 renders at the SVG's natural pixel size. */
+  scale?: number;
+  /** Anchor the shell, not the glow pad: pulls the art up-left by the pad so
+   *  top-left-positioned hosts (the board) keep their saved layouts. */
+  anchorContent?: boolean;
+  /** Screen-composition mode: reclaim the invisible canvas around the shell
+   *  (glow pad + fixed insets) with computed negative margins, so pieces
+   *  stack at believable interface rhythm at any display scale. The glow
+   *  still draws — it just overlaps neighbours like it would on a real
+   *  screen instead of reserving blank layout space. */
+  trim?: boolean;
+  /** Progress bars quietly re-fill on their own — the page breathes. */
+  ambient?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  title?: string;
+  onDesignClick?: () => void;
+}) {
+  const id = kit?.id;
+  const [live, setLive] = useState<GenStateName>("default");
+  const [on, setOn] = useState((kit?.value ?? 1) > 0.5);            // toggle
+  const [val, setVal] = useState(clamp01(kit?.value ?? 0.62));      // slider
+  const [pval, setPval] = useState(clamp01(kit?.value ?? 0.62));    // progress
+  const [sel, setSel] = useState(Math.round(kit?.value ?? 1));      // segment
+  const [typed, setTyped] = useState<string | null>(null);          // input
+  const [editing, setEditing] = useState(false);                    // input focus
+  const [open, setOpen] = useState(kit?.baseState === "pressed");   // dropdown / badge award
+  const [stick, setStick] = useState<[number, number]>([0, 0]);  // joystick
+  const stickDrag = useRef<{ x: number; y: number; sx: number; sy: number } | null>(null);
+  const sliding = useRef(false);
+  const raf = useRef(0);
+  const pvalRef = useRef(pval);
+  pvalRef.current = pval;
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+
+  // a piece resting in "disabled" is inert — it never reacts or changes.
+  // alt-tone pieces (muted titles) render live but ignore hover and press.
+  const disabled = kit?.baseState === "disabled";
+  const inert = disabled || kit?.tone === "alt";
+  const value = id === "toggle" || id === "checkbox" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
+    : id === "slider" ? (playing && !disabled ? val : kit?.value)
+    : id === "progress" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" ? (playing && !disabled ? pval : kit?.value)
+    : id === "segment" ? (playing && !disabled ? sel : kit?.value)
+    : kit?.value;
+
+  // dropdown-open and badge-awarded override the pointer state; a piece's
+  // authored baseState is its RESTING state even while the page is alive
+  const held = (id === "dropdown" || id === "badge") && (playing ? open : kit?.baseState === "pressed");
+  const state: GenStateName = disabled ? "disabled"
+    : held ? "pressed"
+    : id === "input" && editing ? "hover" // focused input shows the caret
+    // switches light up when flipped, they never grow — hover/press stays off
+    // checkboxes, toggles and radios so the value change IS the feedback
+    : id === "checkbox" || id === "toggle" || id === "radio" || id === "orb" ? (kit?.baseState ?? "default")
+    : playing ? (live === "default" ? (kit?.baseState ?? "default") : live)
+    : (kit?.baseState ?? "default");
+
+  // hosts pass fresh kit literals every render — key on the fields, not the
+  // object, so the (string-building) renderer only runs when something changed
+  const kitKey = kit
+    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.iconScale ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}|${kit.kind ?? ""}|${kit.tone ?? ""}`
+    : "";
+  const svg = useMemo(
+    () => kit
+      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: id === "input" ? (typed ?? kit.label) : kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, iconScale: kit.iconScale, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
+      : renderBevel(cfg, state),
+    [cfg, kitKey, state, value, id === "joystick" ? stick : null, id === "input" ? typed : null] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // natural width × scale — uniform physical scale across every piece, so a
+  // chip and a header sit in true proportion on the guideline page
+  const width = useMemo(() => {
+    if (scale === undefined) return undefined;
+    const m = svg.match(/width="([\d.]+)"/);
+    return m ? +m[1] * scale : undefined;
+  }, [svg, scale]);
+
+  // the glow pad the renderer added — read back from the viewBox origin
+  const pad = useMemo(() => {
+    if (!anchorContent && !trim) return 0;
+    const m = svg.match(/viewBox="(-?[\d.]+)/);
+    return m ? -+m[1] : 0;
+  }, [svg, anchorContent, trim]);
+
+  /* Screen-composition trim: the renderer's canvas = glow pad + x/y margins
+     + depth-and-shadow allowance below the shell. Reclaim the pad exactly
+     plus a conservative share of the fixed insets (top ~14, sides ~12,
+     bottom ~22 viewBox units — the bottom keeps room for extrusion depth
+     and the cast shadow), all at display scale. Shells then stack at real
+     UI rhythm while glows draw freely over the gaps. */
+  // shell-free pieces (reticles, hearts, big numbers, the overlay stick)
+  // render edge-to-edge on their own canvas — no pad exists to reclaim,
+  // and trimming them collides art with neighbours and captions
+  const shellFree = !!kit && (kit.id === "reticle" || kit.id === "lives" || kit.id === "bignum" ||
+    (kit.id === "joystick" && kit.overlay === "ghost"));
+  const trimStyle = useMemo(() => {
+    if (!trim || scale === undefined || shellFree) return undefined;
+    const s = scale;
+    return {
+      marginTop: -Math.round((pad + 14) * s),
+      marginRight: -Math.round((pad + 12) * s),
+      marginBottom: -Math.round((pad + 22) * s),
+      marginLeft: -Math.round((pad + 12) * s),
+    };
+  }, [trim, scale, pad, shellFree]);
+
+  /* Map a pointer to the control's track using the exact geometry the renderer
+     stamped on the svg (viewBox units) — precise at any scale or glow pad. */
+  const trackCoord = (e: React.PointerEvent): { u: number; thirds: number } | null => {
+    const el = ref.current?.querySelector("svg") as SVGSVGElement | null;
+    const track = el?.getAttribute("data-track")?.split(" ").map(Number);
+    if (!el || !track || track.length !== 2 || !track[1]) return null;
+    const r = el.getBoundingClientRect();
+    if (!r.width) return null;
+    const vb = el.viewBox.baseVal;
+    const cx = vb.x + ((e.clientX - r.left) / r.width) * vb.width;
+    const t = (cx - track[0]) / track[1];
+    return { u: clamp01(t), thirds: Math.max(0, Math.min(2, Math.floor(t * 3))) };
+  };
+
+  /* Progress demo playback — resets to 0, then fills to the component's own
+     configured value over ~1.2s. Clicking mid-animation restarts cleanly;
+     reduced-motion users jump straight to the target. */
+  const target = clamp01(kit?.value ?? 0.62);
+  const playProgress = () => {
+    cancelAnimationFrame(raf.current);
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPval(target);
+      return;
+    }
+    setPval(0);
+    const t0 = performance.now();
+    const step = (t: number) => {
+      const u = Math.min(1, (t - t0) / 1200);
+      const e = 1 - (1 - u) ** 3;
+      setPval(target * e);
+      if (u < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+  };
+
+  /* Timer demo playback — refills to the target, then drains LINEARLY to
+     zero (time is linear) over ~3.2s; the renderer derives the mm:ss
+     readout from the value, so the clock visibly ticks down. */
+  const playTimer = () => {
+    cancelAnimationFrame(raf.current);
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPval(target);
+      return;
+    }
+    setPval(target);
+    const t0 = performance.now();
+    const step = (t: number) => {
+      const u = Math.min(1, (t - t0) / 3200);
+      setPval(target * (1 - u));
+      if (u < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+  };
+  const isTimer = id === "flipclock" || id === "stopwatch" || id === "timerdigits";
+
+  // ambient progress: bars, rings and timers quietly replay on their own beat
+  const beat = useRef(4600 + Math.random() * 2400);
+  useEffect(() => {
+    if (!ambient || (id !== "progress" && id !== "ring" && !isTimer) || !playing) return;
+    const t = window.setInterval(isTimer ? playTimer : playProgress, beat.current);
+    return () => window.clearInterval(t);
+  }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Activation runs on pointerup, NOT on click. State changes swap the svg's
+     innerHTML between pointerdown and pointerup, which detaches the browser's
+     click target — a native `click` never fires. The wrapper div is stable,
+     so pointerup on it is the reliable activation signal. */
+  const pressedHere = useRef(false);
+  const activate = (e: React.PointerEvent) => {
+    if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
+    else if (id === "toggle" || id === "checkbox" || id === "orb") setOn((v) => !v);
+    else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
+    else if (id === "progress" || id === "ring") playProgress();
+    else if (isTimer) playTimer();
+    else if (id === "segment") {
+      const c = trackCoord(e);
+      if (c) setSel(c.thirds);
+    }
+  };
+  const playHandlers = inert ? {} : {
+    onPointerEnter: (e: React.PointerEvent) => setLive(e.buttons === 1 ? "pressed" : "hover"),
+    onPointerLeave: (e: React.PointerEvent) => { if (e.buttons !== 1) { setLive("default"); sliding.current = false; } pressedHere.current = false; },
+    onPointerDown: (e: React.PointerEvent) => {
+      pressedHere.current = true;
+      setLive("pressed");
+      if (id === "joystick") {
+        sliding.current = true;
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        stickDrag.current = { x: e.clientX, y: e.clientY, sx: stick[0], sy: stick[1] };
+      }
+      if (id === "slider") {
+        sliding.current = true;
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        const c = trackCoord(e);
+        if (c) setVal(c.u);
+      }
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      if (id === "slider" && sliding.current) {
+        const c = trackCoord(e);
+        if (c) setVal(c.u);
+      }
+      if (id === "joystick" && sliding.current && stickDrag.current) {
+        // relative drag mapped through the stamped travel radius — exact at
+        // any display scale, no absolute geometry needed
+        const el = ref.current?.querySelector("svg") as SVGSVGElement | null;
+        const stamp = el?.getAttribute("data-stick")?.split(" ").map(Number);
+        const r = el?.getBoundingClientRect();
+        if (!el || !stamp || !r?.width) return;
+        const pxPerUnit = r.width / el.viewBox.baseVal.width;
+        const maxPx = stamp[2] * pxPerUnit;
+        if (!maxPx) return;
+        const d = stickDrag.current;
+        const nx = d.sx + (e.clientX - d.x) / maxPx;
+        const ny = d.sy + (e.clientY - d.y) / maxPx;
+        const mag = Math.hypot(nx, ny), f = mag > 1 ? 1 / mag : 1;
+        setStick([nx * f, ny * f]);
+      }
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      setLive("hover");
+      const wasDrag = sliding.current;
+      sliding.current = false;
+      if (id === "joystick") { stickDrag.current = null; setStick([0, 0]); }
+      if (pressedHere.current && !wasDrag) activate(e);
+      pressedHere.current = false;
+    },
+    onPointerCancel: () => { setLive("default"); sliding.current = false; pressedHere.current = false; if (id === "joystick") { stickDrag.current = null; setStick([0, 0]); } },
+    // focusing on mousedown can scroll a partially-visible element into view —
+    // suppress it; keyboard users still reach pieces through tab order
+    onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
+    // keyboard operation for the stateful pieces
+    ...(id === "input" ? {
+      role: "textbox" as const,
+      tabIndex: 0,
+      "aria-label": "Type into the input",
+      onFocus: () => setEditing(true),
+      onBlur: () => setEditing(false),
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (!editing && e.key.length === 1) { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); }
+        if (e.key === "Backspace") { e.preventDefault(); setTyped((t) => (t ?? kit?.label ?? "").slice(0, -1)); }
+        else if (e.key === "Escape" || e.key === "Enter") { (e.currentTarget as HTMLElement).blur(); }
+        else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          // the renderer stamps how many characters fit the text-safe zone
+          const cap = Number(ref.current?.querySelector("svg")?.getAttribute("data-maxchars")) || 24;
+          setTyped((t) => ((t ?? kit?.label ?? "") + e.key).slice(0, Math.min(cap, 40)));
+        }
+      },
+    } : id === "toggle" ? {
+      role: "switch" as const,
+      "aria-checked": on,
+      tabIndex: 0,
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOn((v) => !v); }
+      },
+    } : id === "progress" || id === "ring" || isTimer ? {
+      role: "button" as const,
+      tabIndex: 0,
+      "aria-label": isTimer ? "Restart the timer" : "Play progress demo",
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (isTimer ? playTimer : playProgress)(); }
+      },
+    } : {}),
+  };
+
+  const anchorStyle = trimStyle ?? (anchorContent && pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined);
+  // choice controls render pinned to their resting pose — the hover answer
+  // is a light-up on the wrapper (brightness), never a re-render that grows
+  const choice = id === "checkbox" || id === "radio" || id === "toggle" || id === "orb";
+  const choiceHover = playing && !inert && choice
+    ? { transition: "filter .16s ease", filter: live !== "default" ? "brightness(1.14) saturate(1.05)" : "none" }
+    : undefined;
+  // draggable pieces own their gestures — a slider drag must never pan the page
+  const gestureStyle = id === "slider" || id === "segment" || id === "joystick" ? { touchAction: "none" as const } : undefined;
+  return (
+    <div ref={ref} className={shellFree ? `${className ?? ""} kp-shellfree` : className} title={title}
+      style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle, ...gestureStyle, ...choiceHover }}
+      {...(playing ? playHandlers
+        : onDesignClick ? {
+            onClick: onDesignClick, role: "button", tabIndex: 0,
+            onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onDesignClick(); } },
+          } : {})}
+      dangerouslySetInnerHTML={{ __html: svg }} />
+  );
+}
