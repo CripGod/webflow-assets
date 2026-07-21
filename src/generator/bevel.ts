@@ -1063,6 +1063,7 @@ export function renderTypeSpecimen(cfg: GenConfig, text: string, opts: SpecimenO
 
 /* ── kit components ────────────────────────────────────────────── */
 const SIZE_K: Record<KitSize, number> = { s: 0.72, m: 1, l: 1.22 };
+const cxOf = (w: number) => w / 2;
 
 /** Dimensional candy ball — knobs for toggles, switches and sliders. */
 function candyKnob(cx: number, cy: number, r: number, base: string, dot?: string): string {
@@ -1080,6 +1081,22 @@ function candyKnob(cx: number, cy: number, r: number, base: string, dot?: string
 
 function inject(track: string, extra: string): string {
   return track.replace("</g>\n</svg>", extra + "</g>\n</svg>");
+}
+
+/** Overlay a specular shine band, clipped to the component's face (the
+ *  `…fc` clipPath every shell render carries). The band itself is static —
+ *  gen.css sweeps `.kit-shine` across the viewBox and reduced-motion turns
+ *  it off. Components without a face clip come back unchanged. */
+export function addShine(svg: string): string {
+  const fc = /clip-path="url\(#([A-Za-z0-9]+)fc\)"/.exec(svg);
+  const vb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(svg);
+  if (!fc || !vb) return svg;
+  const id = fc[1];
+  const [, vx, vy, vw, vh] = vb.map(Number);
+  const bw = vw * 0.3;
+  const grad = `<linearGradient id="${id}shn" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.4"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>`;
+  const band = `<g clip-path="url(#${id}fc)"><g transform="skewX(-14)"><rect class="kit-shine" x="${(vx - bw).toFixed(1)}" y="${(vy - vh).toFixed(1)}" width="${bw.toFixed(1)}" height="${(vh * 3).toFixed(1)}" fill="url(#${id}shn)"/></g></g>`;
+  return inject(svg.replace("</defs>", grad + "</defs>"), band);
 }
 
 /* Stamp the draggable run of a control (slider, progress, segment) onto the
@@ -1108,6 +1125,9 @@ export interface KitOpts {
   label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number;
   /** Slot icon emphasis — >1 makes the icon the star of the tile. */
   iconScale?: number;
+  /** Atomic-part render for the engine export: "face" | "needle" |
+   *  "segment" | "track" — draws only that layer of a gauge/circuit. */
+  part?: string;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string;
   /** Data-row content model — independent size/tracking/placement per text
    *  group and slot toggles. Explicit label/sub/value still win per instance. */
@@ -1724,6 +1744,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          sweep hand plus remaining-time arc, digital readout under center. */
       const d2 = ({ s: 156, m: 196, l: 248 } as Record<KitSize, number>)[size] * k;
       const pad2 = 46; // real air — neighbouring watches must never kiss
+      const padB = 96; // v55: generous open ground under the watch — the
+                       // caption below must never crowd the body
       const v3 = clamp(value ?? 0.62, 0, 1);
       const secs = Math.max(0, Math.round(v3 * 90));
       const tLabel = opts.label ?? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
@@ -1731,7 +1753,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const alarm = hexMix("#FF4D5A", bevel, 0.18);
       const dim = state === "disabled" ? 0.45 : 1;
       const crownH = 26 * k;
-      const W2 = d2 + pad2 * 2, H2 = d2 + crownH + pad2 * 2;
+      const W2 = d2 + pad2 * 2, H2 = d2 + crownH + pad2 + padB;
       const cx3 = W2 / 2, cy3 = pad2 + crownH + d2 / 2;
       const r0 = d2 / 2;
       const gid6 = "sw" + UID++;
@@ -1779,6 +1801,107 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const tLabel = opts.label ?? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
       const urgent = v3 <= 0.25 && state !== "disabled" && !opts.label;
       return renderTypeSpecimen(cfg, tLabel).replace("<svg ", `<svg data-timer="digits"${urgent ? ' data-urgent="1"' : ""} `);
+    }
+    case "speedo": {
+      /* Classic speedometer — dial, tick ring, red zone, needle. value is
+         the speed fraction; the readout derives km/h so hosts rev it live.
+         No numerals on the dial: scale marks are geometry, numbers live in
+         the readout (engine-replaceable). */
+      const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
+      const pad2 = 46;
+      const v3 = clamp(value ?? 0.62, 0, 1);
+      const W2 = d2 + pad2 * 2, H2 = d2 + pad2 * 2;
+      const cx3 = W2 / 2, cy3 = H2 / 2, r0 = d2 / 2;
+      const gid8 = "sp" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI; // 270°, opening at the bottom
+      const ang = A0 + v3 * SWEEP;
+      const alarm = hexMix("#FF4D5A", bevel, 0.18);
+      const part = opts.part;
+      let ticks = "";
+      for (let i = 0; i <= 27; i++) {
+        const major = i % 3 === 0;
+        const a = A0 + (i / 27) * SWEEP;
+        const rO = r0 - 12 * k, rI = rO - (major ? 13 * k : 7 * k);
+        const red = i / 27 > 0.78;
+        ticks += `<line x1="${(cx3 + Math.cos(a) * rI).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rI).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rO).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rO).toFixed(1)}" stroke="${red ? alarm : "#FFFFFF"}" stroke-width="${major ? 3 : 1.4}" opacity="${red ? 0.9 : major ? 0.75 : 0.32}"/>`;
+      }
+      const needle = `<g${part === "needle" ? "" : ` transform="rotate(0)"`}>` +
+        `<line x1="${(cx3 - Math.cos(ang) * 16 * k).toFixed(1)}" y1="${(cy3 - Math.sin(ang) * 16 * k).toFixed(1)}" x2="${(cx3 + Math.cos(ang) * (r0 - 30 * k)).toFixed(1)}" y2="${(cy3 + Math.sin(ang) * (r0 - 30 * k)).toFixed(1)}" stroke="${alarm}" stroke-width="${(4 * k).toFixed(1)}" stroke-linecap="round"/>` +
+        candyKnob(cx3, cy3, 9 * k, bevel) + `</g>`;
+      const readout = contentText(String(Math.round(v3 * 280)), cx3, cy3 + r0 * 0.52, Math.min(d2 * 0.17, r0 * 0.44) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
+        `<text x="${cx3}" y="${(cy3 + r0 * 0.72).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">KM/H</text>`;
+      const face =
+        `<circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gid8})" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>` +
+        `<circle cx="${cx3}" cy="${cy3}" r="${(r0 - 9 * k).toFixed(1)}" fill="${wellFill}"/>` + ticks;
+      const inner2 = part === "needle" ? needle : part === "face" ? face : face + needle + readout;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="speedometer" data-race="speedo">
+<defs><linearGradient id="${gid8}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
+<g opacity="${dim}">${inner2}</g>
+</svg>`;
+    }
+    case "speedo2": {
+      /* Futuristic HUD speedometer — an open arc of segments lighting up to
+         the value, digital readout center. Pure light, no body. */
+      const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
+      const pad2 = 46;
+      const v3 = clamp(value ?? 0.62, 0, 1);
+      const W2 = d2 + pad2 * 2, H2 = d2 + pad2 * 2;
+      const cx3 = W2 / 2, cy3 = H2 / 2, r0 = d2 / 2;
+      const gid8 = "s2" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI;
+      const N = 24;
+      const part = opts.part;
+      let segs = "";
+      for (let i = 0; i < N; i++) {
+        const a = A0 + ((i + 0.5) / N) * SWEEP;
+        const lit = part === "face" ? false : (i + 0.5) / N <= v3;
+        const rO = r0, rI = r0 - 20 * k;
+        // unlit segments must survive a light canvas too — white dies there
+        const col = lit ? hexMix(bevel, glow, i / N) : isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.35);
+        segs += `<line x1="${(cx3 + Math.cos(a) * rI).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rI).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rO).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rO).toFixed(1)}" stroke="${col}" stroke-width="${(8 * k).toFixed(1)}" stroke-linecap="round" opacity="${lit ? 0.95 : isDarkBg(cfg.canvas) ? 0.14 : 0.3}"${lit ? ` filter="url(#${gid8}g)"` : ""}/>`;
+      }
+      if (part === "segment") {
+        const segW = 10 * k, segH = 26 * k;
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${(segW * 2).toFixed(0)}" height="${(segH + 12).toFixed(0)}" viewBox="0 0 ${(segW * 2).toFixed(0)} ${(segH + 12).toFixed(0)}"><line x1="${segW}" y1="6" x2="${segW}" y2="${segH + 6}" stroke="${glow}" stroke-width="${segW.toFixed(1)}" stroke-linecap="round"/></svg>`;
+      }
+      const arc = `<circle cx="${cx3}" cy="${cy3}" r="${(r0 - 30 * k).toFixed(1)}" fill="none" stroke="${hexRgba(glow, 0.25)}" stroke-width="1.5" stroke-dasharray="3 7"/>`;
+      const readout = part === "face" ? "" :
+        contentText(String(Math.round(v3 * 280)), cx3, cy3 + 2, Math.min(d2 * 0.24, r0 * 0.6) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
+        `<text x="${cx3}" y="${(cy3 + r0 * 0.34).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">KM/H</text>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="HUD speedometer" data-race="speedo2">
+<defs><filter id="${gid8}g" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="0" stdDeviation="${(4 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.7"/></filter></defs>
+<g opacity="${dim}">${segs}${arc}${readout}</g>
+</svg>`;
+    }
+    case "circuit": {
+      /* Race circuit mini-map — a stylized Spa-Francorchamps line with live
+         position markers. Shell-free spatial UI, like the reticles. */
+      const w = 250 * k, h = 175 * k, pad2 = 34;
+      const W2 = w + pad2 * 2, H2 = h + pad2 * 2;
+      const gid9 = "cc" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const sx3 = w / 220, sy3 = h / 150;
+      // stylized Spa: La Source hairpin, Eau Rouge climb, Kemmel, Les Combes,
+      // Pouhon sweep, Blanchimont, Bus Stop — drawn as one closed line
+      const d3 = `M ${(30 * sx3 + pad2).toFixed(1)} ${(118 * sy3 + pad2).toFixed(1)} L ${(24 * sx3 + pad2).toFixed(1)} ${(106 * sy3 + pad2).toFixed(1)} Q ${(20 * sx3 + pad2).toFixed(1)} ${(96 * sy3 + pad2).toFixed(1)} ${(28 * sx3 + pad2).toFixed(1)} ${(92 * sy3 + pad2).toFixed(1)} L ${(60 * sx3 + pad2).toFixed(1)} ${(78 * sy3 + pad2).toFixed(1)} Q ${(66 * sx3 + pad2).toFixed(1)} ${(75 * sy3 + pad2).toFixed(1)} ${(64 * sx3 + pad2).toFixed(1)} ${(68 * sy3 + pad2).toFixed(1)} L ${(46 * sx3 + pad2).toFixed(1)} ${(34 * sy3 + pad2).toFixed(1)} Q ${(43 * sx3 + pad2).toFixed(1)} ${(26 * sy3 + pad2).toFixed(1)} ${(50 * sx3 + pad2).toFixed(1)} ${(22 * sy3 + pad2).toFixed(1)} L ${(74 * sx3 + pad2).toFixed(1)} ${(12 * sy3 + pad2).toFixed(1)} Q ${(82 * sx3 + pad2).toFixed(1)} ${(8 * sy3 + pad2).toFixed(1)} ${(88 * sx3 + pad2).toFixed(1)} ${(14 * sy3 + pad2).toFixed(1)} L ${(102 * sx3 + pad2).toFixed(1)} ${(30 * sy3 + pad2).toFixed(1)} Q ${(106 * sx3 + pad2).toFixed(1)} ${(36 * sy3 + pad2).toFixed(1)} ${(114 * sx3 + pad2).toFixed(1)} ${(34 * sy3 + pad2).toFixed(1)} L ${(168 * sx3 + pad2).toFixed(1)} ${(22 * sy3 + pad2).toFixed(1)} Q ${(178 * sx3 + pad2).toFixed(1)} ${(20 * sy3 + pad2).toFixed(1)} ${(182 * sx3 + pad2).toFixed(1)} ${(28 * sy3 + pad2).toFixed(1)} L ${(196 * sx3 + pad2).toFixed(1)} ${(62 * sy3 + pad2).toFixed(1)} Q ${(199 * sx3 + pad2).toFixed(1)} ${(70 * sy3 + pad2).toFixed(1)} ${(192 * sx3 + pad2).toFixed(1)} ${(76 * sy3 + pad2).toFixed(1)} L ${(160 * sx3 + pad2).toFixed(1)} ${(100 * sy3 + pad2).toFixed(1)} Q ${(130 * sx3 + pad2).toFixed(1)} ${(122 * sy3 + pad2).toFixed(1)} ${(96 * sx3 + pad2).toFixed(1)} ${(128 * sy3 + pad2).toFixed(1)} L ${(48 * sx3 + pad2).toFixed(1)} ${(136 * sy3 + pad2).toFixed(1)} Q ${(36 * sx3 + pad2).toFixed(1)} ${(138 * sy3 + pad2).toFixed(1)} ${(32 * sx3 + pad2).toFixed(1)} ${(128 * sy3 + pad2).toFixed(1)} Z`;
+      const track =
+        `<path d="${d3}" fill="none" stroke="${darken(bevel, 0.45)}" stroke-width="${(9 * k).toFixed(1)}" stroke-linejoin="round" opacity="0.9"/>` +
+        `<path d="${d3}" fill="none" stroke="${glow}" stroke-width="${(4 * k).toFixed(1)}" stroke-linejoin="round" filter="url(#${gid9}g)"/>` +
+        `<line x1="${(26 * sx3 + pad2).toFixed(1)}" y1="${(110 * sy3 + pad2 - 6).toFixed(1)}" x2="${(36 * sx3 + pad2).toFixed(1)}" y2="${(114 * sy3 + pad2 + 4).toFixed(1)}" stroke="${isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.5)}" stroke-width="3" stroke-dasharray="3 3" opacity="0.9"/>`;
+      if (opts.part === "track") {
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}"><defs><filter id="${gid9}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.55"/></filter></defs>${track}</svg>`;
+      }
+      const markers =
+        `<circle cx="${(64 * sx3 + pad2).toFixed(1)}" cy="${(68 * sy3 + pad2).toFixed(1)}" r="${(6.5 * k).toFixed(1)}" fill="${glow}" filter="url(#${gid9}g)"/>` +
+        `<circle cx="${(150 * sx3 + pad2).toFixed(1)}" cy="${(107 * sy3 + pad2).toFixed(1)}" r="${(5 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.55)}" opacity="0.85"/>` +
+        `<circle cx="${(114 * sx3 + pad2).toFixed(1)}" cy="${(34 * sy3 + pad2).toFixed(1)}" r="${(5 * k).toFixed(1)}" fill="${hexMix("#FF4D5A", bevel, 0.18)}" opacity="0.9"/>`;
+      const tag = `<text x="${(cxOf(W2)).toFixed(1)}" y="${(H2 - 12).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".3em" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.3)}" text-anchor="middle" opacity="${dim}">SPA · GP CIRCUIT</text>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="race circuit map" data-race="circuit">
+<defs><filter id="${gid9}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.55"/></filter></defs>
+<g opacity="${dim}">${track}${markers}${tag}</g>
+</svg>`;
     }
     case "dropdown": {
       const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy });

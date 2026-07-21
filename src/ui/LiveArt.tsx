@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
-import { renderBevel, renderKit } from "@/generator/bevel";
+import { addShine, renderBevel, renderKit } from "@/generator/bevel";
 
 /** What a piece of live art is: the master button (no kit), or one kit
  *  component with optional per-instance overrides. */
@@ -39,7 +39,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
  *  host wires it). Play mode: hover/press states, toggles flip, sliders drag,
  *  segments switch, progress animates, dropdowns open, badges award — every
  *  interaction the component implies, all through the same pure renderer. */
-export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, ambient, className, style, title, onDesignClick }: {
+export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, ambient, shine, className, style, title, onDesignClick }: {
   cfg: GenConfig;
   kit?: LiveKit;
   playing: boolean;
@@ -59,6 +59,9 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   trim?: boolean;
   /** Progress bars quietly re-fill on their own — the page breathes. */
   ambient?: boolean;
+  /** Specular shine band sweeping across the component face on a loop —
+   *  the motion-asset treatment. CSS drives (and reduced-motion stops) it. */
+  shine?: boolean;
   className?: string;
   style?: React.CSSProperties;
   title?: string;
@@ -88,7 +91,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   const inert = disabled || kit?.tone === "alt";
   const value = id === "toggle" || id === "checkbox" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
-    : id === "progress" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" ? (playing && !disabled ? pval : kit?.value)
+    : id === "progress" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" || id === "speedo" || id === "speedo2" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
     : kit?.value;
 
@@ -110,10 +113,13 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
     ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.iconScale ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}|${kit.kind ?? ""}|${kit.tone ?? ""}`
     : "";
   const svg = useMemo(
-    () => kit
-      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: id === "input" ? (typed ?? kit.label) : kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, iconScale: kit.iconScale, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
-      : renderBevel(cfg, state),
-    [cfg, kitKey, state, value, id === "joystick" ? stick : null, id === "input" ? typed : null] // eslint-disable-line react-hooks/exhaustive-deps
+    () => {
+      const raw = kit
+        ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: id === "input" ? (typed ?? kit.label) : kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, iconScale: kit.iconScale, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
+        : renderBevel(cfg, state);
+      return shine ? addShine(raw) : raw;
+    },
+    [cfg, kitKey, state, value, shine, id === "joystick" ? stick : null, id === "input" ? typed : null] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // natural width × scale — uniform physical scale across every piece, so a
@@ -208,11 +214,12 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
     raf.current = requestAnimationFrame(step);
   };
   const isTimer = id === "flipclock" || id === "stopwatch" || id === "timerdigits";
+  const isGauge = id === "speedo" || id === "speedo2"; // clicking revs the dial
 
-  // ambient progress: bars, rings and timers quietly replay on their own beat
+  // ambient progress: bars, rings, timers and gauges quietly replay on their own beat
   const beat = useRef(4600 + Math.random() * 2400);
   useEffect(() => {
-    if (!ambient || (id !== "progress" && id !== "ring" && !isTimer) || !playing) return;
+    if (!ambient || (id !== "progress" && id !== "ring" && !isTimer && !isGauge) || !playing) return;
     const t = window.setInterval(isTimer ? playTimer : playProgress, beat.current);
     return () => window.clearInterval(t);
   }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -226,7 +233,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
     if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
     else if (id === "toggle" || id === "checkbox" || id === "orb") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
-    else if (id === "progress" || id === "ring") playProgress();
+    else if (id === "progress" || id === "ring" || isGauge) playProgress();
     else if (isTimer) playTimer();
     else if (id === "segment") {
       const c = trackCoord(e);

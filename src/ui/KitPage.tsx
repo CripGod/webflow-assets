@@ -139,7 +139,7 @@ interface PieceOpts {
   id: KitComponentId; size?: KitSize; label?: string; segments?: string[];
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string; iconScale?: number; trim?: boolean; tight?: boolean;
-  kind?: "circle" | "oval" | "strip"; tone?: "alt"; shape?: Shape;
+  kind?: "circle" | "oval" | "strip"; tone?: "alt"; shape?: Shape; shine?: boolean;
 }
 
 /** Shared plumbing for every live piece on this page. The page is always
@@ -218,7 +218,7 @@ function PPiece(p: PieceOpts & { ambient?: boolean }) {
   const { cfg, name, kit } = usePiece({ ...p, size: p.size ?? "m" });
   return (
     <LiveArt cfg={cfg} playing scale={p.scale ?? PATTERN_SCALE} className="gp-piece"
-      kit={kit} title={name} ambient={p.ambient} trim={p.trim} tight={p.tight} />
+      kit={kit} title={name} ambient={p.ambient} trim={p.trim} tight={p.tight} shine={p.shine} />
   );
 }
 
@@ -226,6 +226,42 @@ function PPiece(p: PieceOpts & { ambient?: boolean }) {
  *  render canvas is trimmed away so pieces stack at interface rhythm. */
 function SPiece(p: PieceOpts & { ambient?: boolean }) {
   return <PPiece {...p} trim={p.trim ?? true} />;
+}
+
+/** v55: simple wireframe line drawings for complex screens — the character
+ *  stand and item render an inventory needs to read as a real scene. Pure
+ *  theme-tinted outlines, never real game art; strokes restyle with the kit. */
+function WireArt({ kind, stroke, className }: { kind: "hero" | "gem"; stroke: string; className?: string }) {
+  const cls = `sc-wire${className ? " " + className : ""}`;
+  if (kind === "gem") {
+    return (
+      <svg className={cls} viewBox="0 0 84 74" role="img" aria-label="item wireframe" data-wire="gem">
+        <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.9">
+          <path d="M14 26 L28 10 H56 L70 26 L42 64 Z" />
+          <path d="M14 26 H70 M28 10 L34 26 L42 64 L50 26 L56 10 M34 26 H50" opacity="0.62" />
+          <path d="M75 12 v10 M70 17 h10" opacity="0.55" />
+        </g>
+      </svg>
+    );
+  }
+  return (
+    <svg className={cls} viewBox="0 0 120 214" role="img" aria-label="character wireframe" data-wire="hero">
+      <g fill="none" stroke={stroke} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.9">
+        <circle cx="60" cy="24" r="14" />
+        <path d="M60 40 V50" />
+        <path d="M34 58 Q60 46 86 58" />
+        <path d="M34 58 L30 84 L36 112 Q60 122 84 112 L90 84 L86 58" />
+        <path d="M36 78 Q60 88 84 78" strokeDasharray="4 5" opacity="0.55" />
+        <path d="M40 108 Q60 116 80 108" strokeDasharray="4 5" opacity="0.55" />
+        <path d="M34 60 L18 92 L20 124 M86 60 L102 92 L100 124" />
+        <circle cx="20" cy="131" r="5" />
+        <circle cx="100" cy="131" r="5" />
+        <path d="M46 120 L42 168 L40 196 M74 120 L78 168 L80 196" />
+        <path d="M40 196 L28 202 M80 196 L92 202" />
+        <ellipse cx="60" cy="206" rx="36" ry="6" strokeDasharray="5 6" opacity="0.5" />
+      </g>
+    </svg>
+  );
 }
 
 /** One screen-pattern specimen: identification above the viewport, the dark
@@ -437,7 +473,7 @@ function MotionDemo({ name, cls, piece, purpose, dur, ease }: {
       onPointerUp={() => setTick((t) => t + 1)}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTick((t) => t + 1); } }}>
       <span key={tick} className={`kp-mostage ${cls}`}>
-        <PPiece {...piece} scale={piece.scale ?? 0.52} />
+        <PPiece {...piece} scale={piece.scale ?? 0.52} shine />
       </span>
       <span className="kp-partname">{name}</span>
       <span className="kp-mopurpose">{purpose}</span>
@@ -838,19 +874,23 @@ export function KitPage() {
           </div>
           <button className="kp-about" aria-expanded={aboutOpen} onClick={() => setAboutOpen((v) => !v)}>About this kit {aboutOpen ? "–" : "+"}</button>
           {aboutOpen && (
-            <p className="kp-note kp-aboutbody">
-              {sil} silhouette · {T.font}. One material recipe at five levels: foundations, finished
-              components, Build Parts with containers and assemblies, screen patterns and resources.
-              Every specimen is a live render from the same engine that draws the editor canvas;
-              each opens in the editor via the ✎ next to its name. Nothing on this page is a mockup.
-            </p>
+            <div className="kp-reveal"><div>
+              <p className="kp-note kp-aboutbody">
+                {sil} silhouette · {T.font}. One material recipe at five levels: foundations, finished
+                components, Build Parts with containers and assemblies, screen patterns and resources.
+                Every specimen is a live render from the same engine that draws the editor canvas;
+                each opens in the editor via the ✎ next to its name. Nothing on this page is a mockup.
+              </p>
+            </div></div>
           )}
           {a11yOpen && (
-            <div className={`kp-a11y ${audit.level.toLowerCase()}`} role="status">
-              <b>{audit.level === "Strong" ? "Strong — reads clearly." : audit.level === "Fair" ? "Fair — solid, with a couple of watch-outs." : "Risky — worth a tweak before shipping."}</b>
-              <ul>{audit.notes.map((n) => <li key={n}>{n}</li>)}</ul>
-              <div className="kp-a11yhow">Computed locally from WCAG contrast ratios and type metrics — no AI involved, nothing leaves the page.</div>
-            </div>
+            <div className="kp-reveal"><div>
+              <div className={`kp-a11y ${audit.level.toLowerCase()}`} role="status">
+                <b>{audit.level === "Strong" ? "Strong — reads clearly." : audit.level === "Fair" ? "Fair — solid, with a couple of watch-outs." : "Risky — worth a tweak before shipping."}</b>
+                <ul>{audit.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+                <div className="kp-a11yhow">Computed locally from WCAG contrast ratios and type metrics — no AI involved, nothing leaves the page.</div>
+              </div>
+            </div></div>
           )}
         </div>
         <HeroGL />
@@ -1223,6 +1263,13 @@ export function KitPage() {
           <Piece id="timerdigits" caption="Timer digits · pure type, no container" value={0.75} scale={0.5} ambient />
         </div>
         <div className="kp-meta"><span>Time derives from the value — hosts tick the value, the readout follows</span><span>Click any timer to replay its drain</span><span>Below 25% remaining, digits, hand and tiles switch to the alarm tint</span></div>
+        <div className="kp-subhead">Racing HUD — click a gauge to rev it</div>
+        <div className="kp-tray kp-axis">
+          <Piece id="speedo" caption="Speedometer · classic dial" value={0.62} scale={0.5} ambient />
+          <Piece id="speedo2" caption="Speedometer · HUD segments" value={0.62} scale={0.5} ambient />
+          <Piece id="circuit" caption="Race circuit · Spa, live positions" scale={0.5} />
+        </div>
+        <div className="kp-meta"><span>Speed derives from the value — 0 to 280 across the sweep</span><span>Past 78% the dial enters the red zone and the readout takes the alarm tint</span><span>The circuit map tracks three markers: you (glow), a rival (white) and the leader (alarm)</span></div>
       </Sec>
 
       <Chapter n="03" id="parts" label="Build Parts" blurb="The construction vocabulary: parts, containers, assemblies and motion — with downloads." />
@@ -1769,8 +1816,9 @@ export function KitPage() {
                   </div>
                   <div className="sc-invbody">
                     <div className="sc-invcol">
-                      <SPiece id="slot" size="m" icon={STOCK_ICONS.user} overlay="level:42" scale={0.4} />
                       <span className="sc-invname">SHADOW KNIGHT</span>
+                      <span className="sc-invsub">LV 42</span>
+                      <WireArt kind="hero" className="sc-invhero" stroke={dark ? (cfg.effects.Glow ?? "#8FF0FF") : hexMix(cfg.effects.Bevel ?? "#0E9CC9", "#0A0C14", 0.3)} />
                       <div className="sc-invgrid2">
                         <SPiece id="slot" size="m" icon={STOCK_ICONS.star} overlay="equipped" scale={0.3} />
                         <SPiece id="slot" size="m" icon={STOCK_ICONS.heart} scale={0.3} />
@@ -1801,7 +1849,7 @@ export function KitPage() {
                       </div>
                     </div>
                     <div className="sc-invside">
-                      <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="equipped" baseState="hover" scale={0.42} />
+                      <WireArt kind="gem" className="sc-invgem" stroke={dark ? (cfg.effects.Glow ?? "#8FF0FF") : hexMix(cfg.effects.Bevel ?? "#0E9CC9", "#0A0C14", 0.3)} />
                       <span className="sc-invname">ECLIPSE GEM</span>
                       <span className="sc-invsub">EPIC · WEAPON</span>
                       <div className="sc-invstat"><span>ATTACK</span><SPiece id="progress" value={0.85} scale={0.24} /></div>
