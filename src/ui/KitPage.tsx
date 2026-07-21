@@ -1018,12 +1018,11 @@ export function KitPage() {
         </div>
         <div className="kp-subhead">Progress rings & timers — click one to replay it</div>
         <div className="kp-ringrow">
-          <Piece id="ring" size="m" caption="Standard" value={0.62} scale={0.5} />
-          <Piece id="ring" size="l" caption="Large" value={0.62} scale={0.5} />
-          <Piece id="ring" size="m" caption="Countdown" value={0.72} label="0:42" scale={0.5} ambient />
-          <Piece id="ring" size="m" caption="Nearly done" value={0.94} scale={0.5} />
-          <Piece id="ring" size="m" caption="Complete" value={1} label="✓" scale={0.5} />
-          <Piece id="ring" size="m" caption="Expired" value={0} label="0:00" baseState="disabled" scale={0.5} />
+          <Piece id="ring" size="l" caption="Standard" value={0.62} scale={0.56} />
+          <Piece id="ring" size="l" caption="Countdown" value={0.72} label="0:42" scale={0.56} ambient />
+          <Piece id="ring" size="l" caption="Nearly done" value={0.94} scale={0.56} />
+          <Piece id="ring" size="l" caption="Complete" value={1} label="✓" scale={0.56} />
+          <Piece id="ring" size="l" caption="Expired" value={0} label="0:00" baseState="disabled" scale={0.56} />
         </div>
       </Sec>
 
