@@ -553,7 +553,7 @@ export function Panel() {
           over arc segments — arcs can distort under stretch. Boolean-union overlapping
           shapes before export; counter-holes are fine.
         </div>
-        {D.shape !== "pill" && (
+        {(focus ? (kitShapes[focus] ?? KIT_SHAPE[focus] ?? D.shape) : D.shape) !== "pill" && (
           <Slider label="Corner softness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
         )}
         {focus && <div className="helper">Picking a silhouette here reshapes only <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the style stays global.</div>}
