@@ -621,7 +621,7 @@ export type KitComponentId =
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
   | "slider" | "progress" | "input" | "dropdown" | "panel"
-  | "resource" | "datarow" | "slot" | "ring" | "joystick"
+  | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
   | "flipclock" | "stopwatch" | "timerdigits";
 export type KitSize = "s" | "m" | "l";
@@ -647,6 +647,7 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "resource", name: "HUD counter" },
   { id: "datarow", name: "Data row" },
   { id: "slot", name: "Item slot" },
+  { id: "orb", name: "Glow orb" },
   { id: "ring", name: "Progress ring" },
   { id: "flipclock", name: "Flip countdown" },
   { id: "stopwatch", name: "Stopwatch" },

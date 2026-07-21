@@ -247,7 +247,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem, replaceConfig } = useGen();
+  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem, replaceConfig, resetAll } = useGen();
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
@@ -1224,6 +1224,13 @@ export function Panel() {
           </button>
         </div>
       )}
+      <button className="resetall"
+        title="Wipe the design, locks, per-piece overrides, library, board and presets — back to the factory kit"
+        onClick={() => {
+          if (window.confirm("Reset everything?\n\nThis clears the kit design, all locks and per-piece overrides, the library, the board and your saved presets, then restores the factory kit. This cannot be undone.")) resetAll();
+        }}>
+        Reset everything — back to the factory kit
+      </button>
     </aside>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
@@ -50,11 +50,30 @@ function tightenV(svg: string, px: number, oy = 0): string {
 }
 
 function Art({ svg, scale, className }: { svg: string; scale: number; className?: string }) {
-  const w = useMemo(() => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState<number | undefined>(() => {
     const m = svg.match(/width="([\d.]+)"/);
     return m ? +m[1] * scale : undefined;
+  });
+  /* Hug the real glyphs: engines measure display faces differently and the
+     renderer's char estimate leaves right-side slack — measured cropping
+     centers title art truly on any stage, in any browser. */
+  useEffect(() => {
+    const el = ref.current?.querySelector("svg") as SVGGraphicsElement | null;
+    if (!el) return;
+    try {
+      const box = el.getBBox();
+      const vb = (el as unknown as SVGSVGElement).viewBox.baseVal;
+      const padX = 18;
+      const x0 = Math.max(vb.x, box.x - padX);
+      const x1 = Math.min(vb.x + vb.width, box.x + box.width + padX);
+      if (x1 - x0 < 40 || x1 - x0 >= vb.width - 1) return;
+      el.setAttribute("viewBox", `${x0.toFixed(1)} ${vb.y} ${(x1 - x0).toFixed(1)} ${vb.height}`);
+      el.setAttribute("width", (x1 - x0).toFixed(1));
+      setW((x1 - x0) * scale);
+    } catch { /* not laid out yet */ }
   }, [svg, scale]);
-  return <div className={`kp-art${className ? " " + className : ""}`} style={{ width: w }} dangerouslySetInnerHTML={{ __html: svg }} />;
+  return <div ref={ref} className={`kp-art${className ? " " + className : ""}`} style={{ width: w }} dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 interface PieceOpts {
@@ -523,6 +542,7 @@ export function KitPage() {
         rk("toggle", "Toggle · Disabled", {}, 1, "disabled"),
         rk("checkbox", "Checkbox · Off", {}, 0),
         rk("radio", "Radio · Off", {}, 0),
+        rk("orb", "Glow orb · Off", {}, 0),
         rk("segment", "Segment · First", {}, 0),
         rk("slider", "Slider · Low", {}, 0.15),
         rk("progress", "Progress · Full", {}, 1),
@@ -717,6 +737,9 @@ export function KitPage() {
               <b><ShieldCheck size={14} strokeWidth={2.4} /> {a11yOpen ? audit.level : "See score"}</b><span>Accessibility</span>
             </button>
           </div>
+          <button className="kp-editkit" onClick={() => setPhase("master")} title="Open this kit in the editor — every control shapes it live">
+            <PenTool size={19} strokeWidth={2.3} /> Edit this Kit
+          </button>
           <button className="kp-dlall" onClick={downloadAllAssets} disabled={sheetBusy} title="Every asset on one labeled PNG sprite sheet">
             <Download size={15} strokeWidth={2.2} /> {sheetBusy ? "Building the sheet…" : "Download all assets — PNG sprite sheet"}
           </button>
@@ -930,6 +953,8 @@ export function KitPage() {
           <Piece id="radio" caption="Radio" />
           <Piece id="toggle" caption="Toggle · On" value={1} />
           <Piece id="toggle" caption="Toggle · Off" value={0} />
+          <Piece id="orb" caption="Glow orb · lit" value={1} scale={0.56} />
+          <Piece id="orb" caption="Glow orb · off" value={0} scale={0.56} />
         </div>
         <StateStrip variants={[
           { cap: "Off", piece: { id: "toggle", value: 0 } },
@@ -1396,7 +1421,7 @@ export function KitPage() {
               <div className="kp-wkdays">
                 {(["M", "T", "W", "T", "F", "S", "S"] as const).map((d, i) => (
                   <div className="kp-wkday" key={d + i}>
-                    <SPiece id="checkbox" value={i < 4 ? 1 : 0} scale={0.44} />
+                    <SPiece id="orb" value={i < 4 ? 1 : 0} scale={0.5} />
                     <span>{d}</span>
                   </div>
                 ))}
@@ -1421,15 +1446,15 @@ export function KitPage() {
           <div className="gp-card">
             <div className="gp-title">Speech bubble · coachmark</div>
             <div className="kp-bubblerow">
-              <PPiece id="iconbtn" icon={STOCK_ICONS.user} scale={0.26} />
+              <PPiece id="iconbtn" icon={STOCK_ICONS.user} scale={0.6} />
               <div className="kp-bubble">Tap the glowing button to start your first quest!</div>
             </div>
             <div className="kp-coach">
               <span className="kp-step">1 / 3</span>
               <span className="gp-label">This is your energy meter.</span>
               <div className="gp-row center">
-                <PPiece id="small" label="NEXT" scale={0.26} />
-                <PPiece id="ghost" label="Skip" size="s" scale={0.24} />
+                <PPiece id="small" label="NEXT" scale={0.56} />
+                <PPiece id="ghost" label="Skip" size="s" scale={0.5} />
               </div>
             </div>
           </div>
@@ -1456,13 +1481,13 @@ export function KitPage() {
               <span className="kp-line done" />
               <span className="kp-line" />
               <div className="kp-nodes">
-                <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.check} scale={0.24} /><span>Done</span></div>
-                <div className="kp-node sel"><span className="kp-ringpulse" /><PPiece id="badge" label="4" scale={0.26} baseState="hover" /><span>Current</span></div>
-                <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.lock} scale={0.24} /><span>Locked</span></div>
+                <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.check} scale={0.5} /><span>Done</span></div>
+                <div className="kp-node sel"><span className="kp-ringpulse" /><PPiece id="badge" label="4" scale={0.55} baseState="hover" /><span>Current</span></div>
+                <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.lock} scale={0.5} /><span>Locked</span></div>
               </div>
               <div className="gp-row center">
-                <PPiece id="iconbtn" icon={STOCK_ICONS.search} scale={0.18} />
-                <PPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.18} />
+                <PPiece id="iconbtn" icon={STOCK_ICONS.search} scale={0.4} />
+                <PPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.4} />
               </div>
             </div>
           </div>
@@ -1606,7 +1631,7 @@ export function KitPage() {
                   <div className="sc-set"><span className="sc-lab">Haptics</span><SPiece id="toggle" value={1} scale={0.26} /></div>
                   <div className="sc-set"><span className="sc-lab">Notifications</span><SPiece id="toggle" value={0} scale={0.26} /></div>
                 </div>
-                <div className="sc-push"><SPiece id="small" label="DONE" scale={0.34} /></div>
+                <div className="sc-push"><SPiece id="small" label="DONE" scale={0.68} /></div>
               </Pat>
               <Pat n="04" name="Profile" cat="Core Screen" comps={4} asms={3} lead="progress">
                 <div className="sc-row sc-id">
@@ -1784,16 +1809,19 @@ export function KitPage() {
                 <SPiece id="resource" label="900" icon={STOCK_ICONS.gem} scale={0.34} />
               </div>
               <div className="lay-boardwrap">
-                <div className="lay-row lay-board">
-                  <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} scale={0.74} />
-                  <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.74} />
-                  <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.74} />
-                </div>
-                <div className="lay-row lay-board">
-                  <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.74} />
-                  <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="new" scale={0.74} />
-                  <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.74} />
-                </div>
+                {([
+                  ["gem", "heart", "star", "gem", "bag"],
+                  ["star", "gem", "heart", "bag", "heart"],
+                  ["heart", "bag", "gem", "star", "gem"],
+                  ["gem", "star", "heart", "gem", "star"],
+                ] as const).map((row, ri) => (
+                  <div className="lay-row lay-board" key={ri}>
+                    {row.map((ic, ci) => (
+                      <SPiece key={ci} id="slot" size="s" icon={STOCK_ICONS[ic]}
+                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.5} />
+                    ))}
+                  </div>
+                ))}
               </div>
               <div className="sc-push"><SPiece id="progress" value={0.44} ambient scale={0.46} /></div>
               <SPiece id="chip" label="LEVEL 12" icon={null} scale={0.34} />
