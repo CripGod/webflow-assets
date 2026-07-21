@@ -39,7 +39,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
  *  host wires it). Play mode: hover/press states, toggles flip, sliders drag,
  *  segments switch, progress animates, dropdowns open, badges award — every
  *  interaction the component implies, all through the same pure renderer. */
-export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient, className, style, title, onDesignClick }: {
+export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, ambient, className, style, title, onDesignClick }: {
   cfg: GenConfig;
   kit?: LiveKit;
   playing: boolean;
@@ -48,6 +48,9 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   /** Anchor the shell, not the glow pad: pulls the art up-left by the pad so
    *  top-left-positioned hosts (the board) keep their saved layouts. */
   anchorContent?: boolean;
+  /** Dense-grid trim: reclaim the FULL fixed insets, not the conservative
+   *  share — gem boards want tiles nearly touching. */
+  tight?: boolean;
   /** Screen-composition mode: reclaim the invisible canvas around the shell
    *  (glow pad + fixed insets) with computed negative margins, so pieces
    *  stack at believable interface rhythm at any display scale. The glow
@@ -142,13 +145,14 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const trimStyle = useMemo(() => {
     if (!trim || scale === undefined || shellFree) return undefined;
     const s = scale;
+    const ins = tight ? { t: 27, x: 33, b: 58 } : { t: 14, x: 12, b: 22 };
     return {
-      marginTop: -Math.round((pad + 14) * s),
-      marginRight: -Math.round((pad + 12) * s),
-      marginBottom: -Math.round((pad + 22) * s),
-      marginLeft: -Math.round((pad + 12) * s),
+      marginTop: -Math.round((pad + ins.t) * s),
+      marginRight: -Math.round((pad + ins.x) * s),
+      marginBottom: -Math.round((pad + ins.b) * s),
+      marginLeft: -Math.round((pad + ins.x) * s),
     };
-  }, [trim, scale, pad, shellFree]);
+  }, [trim, scale, pad, shellFree, tight]);
 
   /* Map a pointer to the control's track using the exact geometry the renderer
      stamped on the svg (viewBox units) — precise at any scale or glow pad. */
@@ -315,6 +319,18 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
       },
     } : {}),
   };
+
+  useEffect(() => {
+    if (id !== "input") return;
+    const root = ref.current?.querySelector("svg");
+    const caret = root?.querySelector("[data-caret]");
+    const val = root?.querySelector("[data-value]") as SVGGraphicsElement | null;
+    if (!root || !caret || !val) return;
+    try {
+      const b = val.getBBox();
+      if (b.width > 0) caret.setAttribute("x", (b.x + b.width + 6).toFixed(1));
+    } catch { /* not laid out yet */ }
+  }, [svg, id]);
 
   const anchorStyle = trimStyle ?? (anchorContent && pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined);
   // choice controls render pinned to their resting pose — the hover answer

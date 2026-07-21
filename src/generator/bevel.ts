@@ -1325,7 +1325,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       return inject(track.replace("<svg ", `<svg data-maxchars="${maxChars}" `),
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.9"/>` +
         `<defs><clipPath id="${gidIn}"><rect x="${(39 + inset + 6 * k).toFixed(1)}" y="${30 + 2}" width="${(w - inset * 2 - 12 * k).toFixed(1)}" height="${h - 4}"/></clipPath></defs>` +
-        `<g clip-path="url(#${gidIn})">` + ph + caret + `</g>`);
+        `<g clip-path="url(#${gidIn})"><g data-value="1">` + ph + `</g>` + caret.replace("<rect ", '<rect data-caret="1" ') + `</g>`);
     }
     case "header": {
       // resolve the label explicitly: build() treats a missing label with an
