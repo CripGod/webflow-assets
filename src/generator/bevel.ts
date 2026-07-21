@@ -230,8 +230,9 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       + `Q ${x.toFixed(1)} ${(y + bow * 0.8).toFixed(1)} ${(x + r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} Z`;
   }
   if (shape === "kenneyRect") {
-    // measured from Kenney UI Pack 2.0 button_rectangle_flat.svg: r = 6/64 h
-    return roundRect(x, y, w, h, h * 0.094);
+    // measured from Kenney UI Pack 2.0 (r = 6/64 h at the shipped softness);
+    // Corner softness now drives the radius — 0 is near-sharp, 100 is plush
+    return roundRect(x, y, w, h, h * 0.12 * clamp(softness, 0, 100) / 100);
   }
   if (shape === "kenneyTag") {
     // Kenney slide_hangle.svg rotated to read horizontally: 45° shoulders,
@@ -1722,7 +1723,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       /* Classic stopwatch — crown on top, candy ring body, tick face, a
          sweep hand plus remaining-time arc, digital readout under center. */
       const d2 = ({ s: 156, m: 196, l: 248 } as Record<KitSize, number>)[size] * k;
-      const pad2 = 30;
+      const pad2 = 46; // real air — neighbouring watches must never kiss
       const v3 = clamp(value ?? 0.62, 0, 1);
       const secs = Math.max(0, Math.round(v3 * 90));
       const tLabel = opts.label ?? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;

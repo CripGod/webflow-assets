@@ -950,7 +950,7 @@ export function KitPage() {
 
       {/* ── 04 · choice controls ── */}
       <Sec n="02" title="Choice Controls" note="Checks, radios and switches share the shell. Toggles flip on click and on Enter or Space.">
-        <div className="kp-tray">
+        <div className="kp-tray kp-axis">
           <Piece id="checkbox" caption="Checkbox" />
           <Piece id="radio" caption="Radio" />
           <Piece id="toggle" caption="Toggle · On" value={1} />
@@ -1274,77 +1274,77 @@ export function KitPage() {
         <div className="kp-patterns kp-assemblies">
           <div className="gp-card">
             <div className="gp-title">Titled panel</div>
-            <PPiece id="tab" label="INVENTORY" scale={0.3} />
-            <PPiece id="panel" size="s" scale={0.42} />
+            <PPiece id="tab" label="INVENTORY" scale={0.48} />
+            <PPiece id="panel" size="s" scale={0.62} />
           </div>
           <div className="gp-card">
             <div className="gp-title">Confirmation modal</div>
-            <PPiece id="header" label="ARE YOU SURE?" scale={0.26} />
+            <PPiece id="header" label="ARE YOU SURE?" scale={0.42} />
             <span className="gp-label">This can’t be undone.</span>
             <div className="gp-row center">
-              <PPiece id="small" label="YES" scale={0.3} />
-              <PPiece id="ghost" label="Cancel" size="s" scale={0.3} />
+              <PPiece id="small" label="YES" scale={0.48} />
+              <PPiece id="ghost" label="Cancel" size="s" scale={0.48} />
             </div>
-            <PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.22} />
+            <PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.35} />
           </div>
           <div className="gp-card">
             <div className="gp-title">Toast · Tooltip</div>
             <div className="gp-row center">
-              <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.info} scale={0.26} />
+              <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.info} scale={0.42} />
               <span className="gp-label">Saved to the cloud</span>
             </div>
-            <PPiece id="chip" label="Tooltip text" icon={null} scale={0.3} />
+            <PPiece id="chip" label="Tooltip text" icon={null} scale={0.48} />
           </div>
           <div className="gp-card">
             <div className="gp-title">List row · Item slot</div>
             <div className="gp-row">
-              <PPiece id="iconbtn" icon={STOCK_ICONS.bag} scale={0.24} />
+              <PPiece id="iconbtn" icon={STOCK_ICONS.bag} scale={0.38} />
               <span className="gp-label">Mystic Blade</span>
-              <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.2} />
+              <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.32} />
             </div>
             <div className="gp-row center">
-              <PPiece id="iconbtn" icon={STOCK_ICONS.gem} scale={0.28} />
-              <PPiece id="badge" label="3" scale={0.24} />
+              <PPiece id="iconbtn" icon={STOCK_ICONS.gem} scale={0.45} />
+              <PPiece id="badge" label="3" scale={0.38} />
             </div>
           </div>
           <div className="gp-card">
             <div className="gp-title">Avatar · Medallion · Stat chips</div>
             <div className="gp-row center">
-              <PPiece id="iconbtn" icon={STOCK_ICONS.user} scale={0.28} />
-              <PPiece id="badge" baseState="pressed" scale={0.28} />
+              <PPiece id="iconbtn" icon={STOCK_ICONS.user} scale={0.45} />
+              <PPiece id="badge" baseState="pressed" scale={0.45} />
             </div>
             <div className="gp-row center">
-              <PPiece id="chip" label="STR 42" icon={null} scale={0.28} />
-              <PPiece id="chip" label="980" icon={STOCK_ICONS.gem} scale={0.28} />
+              <PPiece id="chip" label="STR 42" icon={null} scale={0.45} />
+              <PPiece id="chip" label="980" icon={STOCK_ICONS.gem} scale={0.45} />
             </div>
           </div>
           <div className="gp-card">
             <div className="gp-title">HUD strip · Loading</div>
             <div className="gp-row center">
-              <PPiece id="chip" label="×3" icon={STOCK_ICONS.heart} scale={0.26} />
-              <PPiece id="progress" value={0.62} scale={0.3} ambient />
-              <PPiece id="chip" label="980" icon={STOCK_ICONS.gem} scale={0.26} />
+              <PPiece id="chip" label="×3" icon={STOCK_ICONS.heart} scale={0.42} />
+              <PPiece id="progress" value={0.62} scale={0.48} ambient />
+              <PPiece id="chip" label="980" icon={STOCK_ICONS.gem} scale={0.42} />
             </div>
             <div className="gp-row center">
-              <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.refresh} scale={0.24} />
+              <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.refresh} scale={0.38} />
               <span className="gp-label">Loading level…</span>
             </div>
           </div>
           <div className="gp-card">
             <div className="gp-title">Empty state</div>
-            <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.search} scale={0.3} />
-            <PPiece id="tab" label="NOTHING HERE" scale={0.3} />
+            <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.search} scale={0.48} />
+            <PPiece id="tab" label="NOTHING HERE" scale={0.48} />
             <span className="gp-label">Your collection is waiting to begin.</span>
-            <PPiece id="small" label="EXPLORE" scale={0.32} />
+            <PPiece id="small" label="EXPLORE" scale={0.51} />
           </div>
           <div className="gp-card">
             <div className="gp-title">Error state</div>
-            <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.warning} scale={0.3} />
-            <PPiece id="tab" label="SOMETHING BROKE" scale={0.3} />
+            <PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.warning} scale={0.48} />
+            <PPiece id="tab" label="SOMETHING BROKE" scale={0.48} />
             <span className="gp-label">That didn’t work — try again.</span>
             <div className="gp-row center">
-              <PPiece id="small" label="RETRY" scale={0.3} />
-              <PPiece id="ghost" label="Back" size="s" scale={0.3} />
+              <PPiece id="small" label="RETRY" scale={0.48} />
+              <PPiece id="ghost" label="Back" size="s" scale={0.48} />
             </div>
           </div>
           <div className="gp-card">
@@ -1353,7 +1353,7 @@ export function KitPage() {
               <span className="kp-handle" />
               <div className="gp-row">
                 <span className="gp-label">Squad details</span>
-                <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.18} />
+                <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.29} />
               </div>
             </div>
           </div>
@@ -1361,10 +1361,10 @@ export function KitPage() {
             <div className="gp-title">Bottom sheet · expanded</div>
             <div className="kp-sheet">
               <span className="kp-handle" />
-              <div className="gp-row"><span className="gp-label">Squad details</span><PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.16} /></div>
-              <PPiece id="datarow" value={0.4} scale={0.3} />
-              <PPiece id="datarow" label="Iron Golem" sub="Level 8 · Tank" value={0.7} scale={0.3} />
-              <div className="kp-sheetfoot"><PPiece id="small" label="DEPLOY" scale={0.28} /></div>
+              <div className="gp-row"><span className="gp-label">Squad details</span><PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.26} /></div>
+              <PPiece id="datarow" value={0.4} scale={0.48} />
+              <PPiece id="datarow" label="Iron Golem" sub="Level 8 · Tank" value={0.7} scale={0.48} />
+              <div className="kp-sheetfoot"><PPiece id="small" label="DEPLOY" scale={0.45} /></div>
             </div>
           </div>
         </div>
@@ -1876,19 +1876,20 @@ export function KitPage() {
               <div className="lay-boardwrap">
                 {([
                   ["gem", "heart", "star", "gem", "bag"],
-                  ["star", "gem", "heart", "bag", "heart"],
-                  ["heart", "bag", "gem", "star", "gem"],
-                  ["gem", "star", "heart", "gem", "star"],
+                  ["star", "gem", "heart", "bag", "gem"],
+                  ["bag", "heart", "star", "gem", "heart"],
+                  ["gem", "star", "bag", "heart", "star"],
+                  ["heart", "gem", "star", "heart", "bag"],
                 ] as const).map((row, ri) => (
                   <div className="lay-row lay-board" key={ri}>
                     {row.map((ic, ci) => (
                       <SPiece key={ci} id="slot" size="s" icon={STOCK_ICONS[ic]} iconScale={1.35}
-                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.54} />
+                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.56} />
                     ))}
                   </div>
                 ))}
               </div>
-              <div className="sc-push"><SPiece id="progress" value={0.44} ambient scale={0.46} /></div>
+              <div className="sc-push"><SPiece id="progress" value={0.44} ambient scale={0.58} /></div>
               <SPiece id="chip" label="LEVEL 12" icon={null} scale={0.34} />
             </LayoutCard>
           )}

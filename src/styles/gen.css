@@ -735,7 +735,12 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-cap { margin-top: -2px; }
 .kp-icon { padding: 8px 4px 6px; }
 .kp-splashmain { margin: -6px 0 -4px; }
-.kp-assemblies .gp-card { height: auto; min-height: 0; padding: 38px 12px 12px; }
+.kp-assemblies .gp-card { height: auto; min-height: 0; padding: 46px 18px 22px; gap: 10px; }
+/* project rule: text NEVER overlaps art — assembly pieces keep a gentler
+   trim so labels always clear their neighbours */
+.kp-assemblies .gp-piece { margin: -18px -6px !important; }
+.kp-assemblies .gp-label { margin: 6px 0; font-size: 13px; }
+.kp-assemblies .gp-row { gap: 16px; }
 .kp-ruler { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: var(--kp-ink3); text-align: center; margin-top: -6px; }
 .kp-banners > div { max-width: 100%; }
 
@@ -1141,7 +1146,7 @@ button.kp-fact { cursor: pointer; }
 .lay-row.lay-bar { justify-content: flex-start; }
 .lay-row.lay-mid { flex: 1; }
 .lay-row.lay-foot { justify-content: flex-start; }
-.lay-row.lay-board { gap: 3px; }
+.lay-row.lay-board { gap: 2px; }
 .lay-boardwrap { display: flex; flex-direction: column; gap: 3px; align-items: center; }
 .lay-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .lay-fill { flex: 1; align-items: flex-start; }
