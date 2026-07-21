@@ -16,13 +16,12 @@ import type { GenConfig } from "@/generator/model";
    into the pointer; prefers-reduced-motion renders a still frame. */
 
 const LAYERS = [
-  { key: "highlight", t: "Highlight", sub: "gloss & specular", y: 1.66 },
-  { key: "type", t: "Type Layer", sub: "live label", y: 1.11 },
-  { key: "bevel", t: "Bevel", sub: "shell & wall", y: 0.56 },
-  { key: "pattern", t: "Pattern", sub: "face texture", y: 0.01 },
-  { key: "fill", t: "Inner Fill", sub: "candy face", y: -0.55 },
-  { key: "glow", t: "Glow", sub: "inner glow", y: -1.1 },
-  { key: "shadow", t: "Shadow", sub: "grounding", y: -1.66 },
+  { key: "highlight", t: "Highlight", sub: "gloss & specular", y: 1.45 },
+  { key: "bevel", t: "Bevel", sub: "shell & wall", y: 0.87 },
+  { key: "pattern", t: "Pattern", sub: "face texture", y: 0.29 },
+  { key: "fill", t: "Inner Fill", sub: "candy face", y: -0.29 },
+  { key: "glow", t: "Glow", sub: "inner glow", y: -0.87 },
+  { key: "shadow", t: "Shadow", sub: "grounding", y: -1.45 },
 ] as const;
 
 const SATS = [
@@ -74,54 +73,6 @@ function svgTex(svg: string, cb: (tex: THREE.Texture, w: number, h: number) => v
   img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
-/** The type-layer label, drawn into a canvas with the kit's own face.
- *  dark=true renders the extrusion body — a flat dark copy stacked under
- *  the lit face so the label reads as a chunky 3D object from any angle. */
-function typeTex(cfg: GenConfig, dark = false): THREE.CanvasTexture {
-  const cv = document.createElement("canvas");
-  cv.width = 1400; cv.height = 380;
-  const ctx = cv.getContext("2d")!;
-  const label = (cfg.content.label || "PLAY NOW").toUpperCase();
-  const T4 = cfg.type;
-  const ink = hexMix(cfg.effects.Glow ?? "#8FF0FF", "#FFFFFF", 0.55);
-  const draw = () => {
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.font = `${T4.italic ? "italic " : ""}800 175px "${T4.font}", Inter, sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    // the label carries the real type fill — solid and gradient included
-    let paint: string | CanvasGradient = ink;
-    if (T4.fillMode === "solid") paint = T4.fill;
-    else if (T4.fillMode === "gradient") {
-      const g = ctx.createLinearGradient(0, cv.height / 2 - 88, 0, cv.height / 2 + 88);
-      g.addColorStop(0, T4.fill); g.addColorStop(1, T4.fill2);
-      paint = g;
-    }
-    if (dark) {
-      // extrusion body: flat, dark, no glow — pure silhouette mass
-      ctx.fillStyle = hexMix(T4.outline.on ? T4.outline.color : (cfg.effects.Bevel ?? "#0E9CC9"), "#04060B", 0.55);
-      ctx.fillText(label, cv.width / 2, cv.height / 2, cv.width - 140);
-      return;
-    }
-    ctx.shadowColor = cfg.effects.Glow ?? "#8FF0FF"; ctx.shadowBlur = 34;
-    if (T4.outline.on) {
-      ctx.lineJoin = "round";
-      ctx.strokeStyle = T4.outline.color;
-      ctx.lineWidth = Math.max(2, T4.outline.width * (175 / 52));
-      ctx.strokeText(label, cv.width / 2, cv.height / 2, cv.width - 140);
-    }
-    ctx.fillStyle = paint;
-    ctx.fillText(label, cv.width / 2, cv.height / 2, cv.width - 140);
-  };
-  draw();
-  const tex = new THREE.CanvasTexture(cv);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  // redraw once the display face actually arrives
-  if (document.fonts?.load) {
-    document.fonts.load(`800 175px "${cfg.type.font}"`).then(() => { draw(); tex.needsUpdate = true; }).catch(() => {});
-  }
-  return tex;
-}
-
 /** The real face pattern, tiled inside a rounded plate silhouette. */
 function patternSvg(c: GenConfig): string {
   const P0 = c.candy.pattern;
@@ -161,8 +112,6 @@ interface Rig {
   camera: THREE.PerspectiveCamera;
   group: THREE.Group;
   layerMeshes: THREE.Mesh[];
-  typePlane: THREE.Mesh;
-  typeDarkMat: THREE.MeshBasicMaterial;
   glowMat: THREE.MeshBasicMaterial;
   shadowMat: THREE.MeshBasicMaterial;
   patternMat: THREE.MeshBasicMaterial;
@@ -278,33 +227,6 @@ export function HeroGL() {
       layerMeshes.push(mesh);
     }
 
-    // the type layer carries the live label as a plane riding its plate front
-    const typeGeo = new THREE.PlaneGeometry(4.3, 1.3);
-    disposables.push(typeGeo);
-    const typeMat = new THREE.MeshBasicMaterial({ map: typeTex(cfgRef.current), transparent: true, depthWrite: false, side: THREE.DoubleSide });
-    disposables.push(typeMat);
-    const typePlane = new THREE.Mesh(typeGeo, typeMat);
-    typePlane.rotation.x = -Math.PI / 2;
-    typePlane.renderOrder = 40;
-    typePlane.position.z = 0.6;
-    const typeIdx = LAYERS.findIndex((l) => l.key === "type");
-    typePlane.position.y = LAYERS[typeIdx].y + 0.27;
-    group.add(typePlane);
-    // fake extrusion: dark copies stacked beneath give the label thickness,
-    // so it still reads when the stack is dragged to an extreme angle
-    const typeDarkMat = new THREE.MeshBasicMaterial({ map: typeTex(cfgRef.current, true), transparent: true, depthWrite: false, side: THREE.DoubleSide });
-    disposables.push(typeDarkMat);
-    const typeBody: THREE.Mesh[] = [];
-    for (let d2 = 1; d2 <= 4; d2++) {
-      const m2 = new THREE.Mesh(typeGeo, typeDarkMat);
-      m2.rotation.x = -Math.PI / 2;
-      m2.renderOrder = 40 - d2;
-      m2.position.z = 0.6;
-      m2.position.y = typePlane.position.y - d2 * 0.032;
-      group.add(m2);
-      typeBody.push(m2);
-    }
-
     // satellite components — textured from the real SVG renderer, billboarded
     const satGroup = new THREE.Group();
     satGroup.position.set(3.05, 0, 0.4);
@@ -324,7 +246,7 @@ export function HeroGL() {
 
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     rig.current = {
-      renderer, scene, camera, group, layerMeshes, typePlane, typeDarkMat, glowMat, shadowMat, patternMat,
+      renderer, scene, camera, group, layerMeshes, glowMat, shadowMat, patternMat,
       satGroup, sats, keyLight, still, renderOnce: () => {}, alignSats: () => {}, disposables,
     };
     wrap.dataset.gl = "on";
@@ -518,8 +440,6 @@ export function HeroGL() {
       group.rotation.y = 0.52 + Math.sin(t * 0.19) * 0.11 + userYaw;
       group.rotation.x = 0.07 + Math.sin(t * 0.13) * 0.025 + userPitch;
       layerMeshes.forEach((pl, i) => { pl.position.y = pl.userData.baseY * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
-      typePlane.position.y = layerMeshes[typeIdx].position.y + 0.27;
-      typeBody.forEach((m2, i2) => { m2.position.y = typePlane.position.y - (i2 + 1) * 0.032; });
       glowMat.opacity = 0.7 + Math.sin(t * 0.9) * 0.22;
       sats.forEach((m2, i) => { m2.position.y = m2.userData.baseY + Math.sin(t * 0.42 + i * 1.9) * 0.05; });
       billboard();
@@ -568,7 +488,6 @@ export function HeroGL() {
         if (key === "highlight") { (pl.material as THREE.MeshToonMaterial).color.set(hi); rim2?.color.set(hexMix(hi, "#FFFFFF", 0.4)); }
         if (key === "bevel") { (pl.material as THREE.MeshToonMaterial).color.set(bevel); rim2?.color.set(hexMix(bevel, "#FFFFFF", 0.45)); }
         if (key === "fill") { (pl.material as THREE.MeshToonMaterial).color.set(fill); rim2?.color.set(hexMix(fill, "#FFFFFF", 0.5)); }
-        if (key === "type") { (pl.material as THREE.MeshToonMaterial).color.set("#0b0e17"); rim2?.color.set(hexMix(glow, "#FFFFFF", 0.2)); }
       }
       R.keyLight.position.set(Math.cos((c.lighting.angle * Math.PI) / 180) * 5, Math.sin((c.lighting.angle * Math.PI) / 180) * 5 + 2.5, 4.5);
       // soft light layers redraw in their role colors
@@ -585,13 +504,6 @@ export function HeroGL() {
         R2.patternMat.needsUpdate = true;
         if (R2.still) R2.renderOnce();
       });
-      const tm = R.typePlane.material as THREE.MeshBasicMaterial;
-      tm.map?.dispose();
-      tm.map = typeTex(c);
-      tm.needsUpdate = true;
-      R.typeDarkMat.map?.dispose();
-      R.typeDarkMat.map = typeTex(c, true);
-      R.typeDarkMat.needsUpdate = true;
       const svgs = [
         renderKit(c, "iconbtn", "l", "default", undefined, undefined, { icon: STOCK_ICONS.gem }),
         renderKit(c, "progress", "m", "default", 0.72),

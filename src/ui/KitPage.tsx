@@ -7,7 +7,7 @@ import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape }
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
 import { previewSvg } from "@/generator/icons";
-import { downloadSettings, downloadSvg, downloadZip } from "@/generator/exportUtils";
+import { downloadSettings, downloadSvg, downloadZip, downloadSpriteSheet } from "@/generator/exportUtils";
 import { LiveArt } from "./LiveArt";
 import { HeroGL } from "./HeroGL";
 
@@ -474,6 +474,42 @@ export function KitPage() {
     return next;
   });
   const [activeChap, setActiveChap] = useState("foundations");
+
+  /* one-button export: every asset onto a labeled PNG sprite sheet */
+  const [sheetBusy, setSheetBusy] = useState(false);
+  const downloadAllAssets = async () => {
+    if (sheetBusy) return;
+    setSheetBusy(true);
+    try {
+      const st = useGen.getState();
+      const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}) => ({
+        name,
+        svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], {
+          expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`],
+          row: cid === "datarow" ? st.kitRow : undefined, ...extra,
+        }),
+      });
+      const entries = [
+        ...KIT_COMPONENTS.map((c2) => rk(c2.id, c2.name)),
+        rk("panel", "Container · Round", { kind: "circle" }),
+        rk("panel", "Container · Oval", { kind: "oval" }),
+        rk("panel", "Container · Strip", { kind: "strip" }),
+        rk("reticle", "Reticle · Brackets", { overlay: "brackets" }),
+        rk("minimap", "Mini-map · Radar", { overlay: "square" }),
+        rk("joystick", "Joystick · Ghost", { overlay: "ghost" }),
+        rk("slot", "Slot · Level", { icon: STOCK_ICONS.gem, overlay: "level:42" }),
+        rk("slot", "Slot · Locked", { icon: STOCK_ICONS.gem, overlay: "locked" }),
+        { name: "Badge · Awarded", svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns.badge), "badge", effKitSize(st.kitSizes.badge), "pressed", undefined, st.kitShapes.badge, { expand: true }) },
+        { name: "Primary · Hover", svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns.primary), "primary", effKitSize(st.kitSizes.primary), "hover", undefined, st.kitShapes.primary, { expand: true }) },
+        { name: "Primary · Pressed", svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns.primary), "primary", effKitSize(st.kitSizes.primary), "pressed", undefined, st.kitShapes.primary, { expand: true }) },
+        { name: "Primary · Disabled", svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns.primary), "primary", effKitSize(st.kitSizes.primary), "disabled", undefined, st.kitShapes.primary, { expand: true }) },
+      ];
+      const fdef = fontByName(st.cfg.type.font);
+      await downloadSpriteSheet(entries, `${st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`} — sprite sheet`, st.cfg.type.font, fdef?.css ?? null);
+    } finally {
+      setSheetBusy(false);
+    }
+  };
   useEffect(() => {
     const scroller = document.querySelector(".canvas");
     if (!scroller) return;
@@ -650,6 +686,9 @@ export function KitPage() {
               <b><ShieldCheck size={14} strokeWidth={2.4} /> {a11yOpen ? audit.level : "See score"}</b><span>Accessibility</span>
             </button>
           </div>
+          <button className="kp-dlall" onClick={downloadAllAssets} disabled={sheetBusy} title="Every asset on one labeled PNG sprite sheet">
+            <Download size={15} strokeWidth={2.2} /> {sheetBusy ? "Building the sheet…" : "Download all assets — PNG sprite sheet"}
+          </button>
           <div className="kp-roleline" aria-hidden="true">
             {roles.map((r) => <span className="kp-roledot" key={r}><i style={{ background: cfg.effects[r] }} />{r}</span>)}
           </div>
@@ -1032,6 +1071,9 @@ export function KitPage() {
 
       {/* ── 14 · build parts ── */}
       <Sec n="01" title="Build Parts" note="Everything in the kit is built from these. Each part opens the layer that produces it in the editor. Downloads are layered SVGs with named groups and nine-slice metadata.">
+        <button className="kp-dlall" onClick={downloadAllAssets} disabled={sheetBusy} title="Every asset on one labeled PNG sprite sheet">
+          <Download size={15} strokeWidth={2.2} /> {sheetBusy ? "Building the sheet…" : "Download all assets — PNG sprite sheet"}
+        </button>
         <div className="kp-dlrow">
           {([["all", "Download full pack"], ["components", "Components"], ["layers", "Material layers"], ["controls", "Control pieces"], ["type", "Typography recipe"], ["assemblies", "Assemblies"]] as const).map(([which, capn]) => (
             <button key={which} onClick={() => {
