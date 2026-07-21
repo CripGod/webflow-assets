@@ -933,10 +933,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   </radialGradient>
   ${T2.fillMode === "gradient" ? `<linearGradient id="${id}tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.fill)}"/><stop offset="1" stop-color="${P(T2.fill2)}"/></linearGradient>` : ""}
   ${T2.outline.on && T2.outline.color2 ? `<linearGradient id="${id}og" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(T2.outline.color)}"/><stop offset="1" stop-color="${P(T2.outline.color2)}"/></linearGradient>` : ""}
-  ${hiIdx >= 0 ? `<linearGradient id="${id}thl" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="${hexMix(hiC, "#FFFFFF", 0.7)}"/>
-    <stop offset="1" stop-color="${hexMix(glowC, "#FFFFFF", 0.3)}"/>
-  </linearGradient>` : ""}
+  ${hiIdx >= 0 ? (() => { const hb = clamp((T2.highlightBoost ?? 70) / 100, 0, 1); return `<linearGradient id="${id}thl" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="${hexMix(hiC, "#FFFFFF", 0.25 + 0.64 * hb)}"/>
+    <stop offset="1" stop-color="${hexMix(glowC, "#FFFFFF", 0.05 + 0.36 * hb)}"/>
+  </linearGradient>`; })() : ""}
   ${showText && T2.stripes?.on ? (() => { const pcell = fs * 0.3 * clamp((T2.stripes!.scale ?? 100) / 100, 0.25, 4); return `<pattern id="${id}tst" width="${pcell.toFixed(1)}" height="${pcell.toFixed(1)}" patternUnits="userSpaceOnUse" patternTransform="rotate(${T2.stripes!.angle})">${textPatternCell(T2.stripes!.style ?? "stripes", pcell, darken(bevelC, 0.25))}</pattern>`; })() : ""}
   ${glintsDefs}
   ${textFxDef}
@@ -1308,8 +1308,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const dim = state === "disabled" ? 0.45 : 1;
       const title = opts.label ?? R2.title ?? "Shadow Knight";
       const sub = opts.sub ?? R2.sub ?? "Level 12 · Warrior";
-      const fsT = 26 * k * ((R2.titleSize ?? 100) / 100);
-      const fsS = 17 * k * ((R2.subSize ?? 100) / 100);
+      // the row's own text follows the global type Size like every label
+      const sizeK2 = clamp(cfg.type.size / 52, 0.5, 2.2);
+      const fsT = 26 * k * sizeK2 * ((R2.titleSize ?? 100) / 100);
+      const fsS = 17 * k * Math.max(0.75, sizeK2 * 0.85 + 0.15) * ((R2.subSize ?? 100) / 100);
       const barY = 30 + h - inset - 16 * k;
       const barW = w - (tx - 39) - (showAction ? 90 * k : 34 * k);
       const fillW2 = barW * clamp(value ?? (R2.value !== undefined ? R2.value / 100 : 0.4), 0, 1);

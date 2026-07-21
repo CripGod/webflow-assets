@@ -192,6 +192,8 @@ export interface TypeCfg {
   /** First matching phrase inside the label renders as a brighter, illuminated
    *  portion of the same material — same font, metrics, outline, everything. */
   highlight?: string;
+  /** How hard the highlight phrase lifts toward white — 0..100, default 70. */
+  highlightBoost?: number;
   /** Pattern fill inside the letterforms (off by default) — any face
    *  pattern style, tone-on-tone from the shell color. scale is a percent
    *  of the natural cell size (100 = default density). */
@@ -333,6 +335,8 @@ export const GAME_FONTS: { name: string; css: string | null; factor: number; cap
   { name: "Luckiest Guy", css: "Luckiest+Guy", factor: 0.58, caps: { weights: [400] } },
   { name: "Press Start 2P", css: "Press+Start+2P", factor: 1.05, caps: { weights: [400] } },
   { name: "Bungee", css: "Bungee", factor: 0.72, caps: { weights: [400] } },
+  { name: "Exo 2", css: "Exo+2:ital,wght@0,100..900;1,100..900", factor: 0.56, caps: { wght: [100, 900, 800], italic: true } },
+  { name: "Saira", css: "Saira:ital,wght@0,100..900;1,100..900", factor: 0.56, caps: { wght: [100, 900, 800], italic: true } },
   { name: "Righteous", css: "Righteous", factor: 0.58, caps: { weights: [400] } },
   { name: "Russo One", css: "Russo+One", factor: 0.64, caps: { weights: [400] } },
   { name: "Black Ops One", css: "Black+Ops+One", factor: 0.7, caps: { weights: [400] } },
