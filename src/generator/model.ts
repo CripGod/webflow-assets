@@ -202,8 +202,9 @@ export interface TypeCfg {
    *  to an inflate effect without touching the glyph geometry. */
   inflate?: { on: boolean; strength: number };
   /** Crisp vector glints riding the letterforms — a specular slab clipped to
-   *  the glyphs plus star sparkles, all placed by the master lighting angle. */
-  glints?: { on: boolean; opacity: number };
+   *  the glyphs plus star sparkles, all placed by the master lighting angle.
+   *  ox/oy nudge the whole treatment in % of the letter height. */
+  glints?: { on: boolean; opacity: number; ox?: number; oy?: number };
   fillMode: "auto" | "solid" | "gradient";
   fill: string;
   fill2: string;       // gradient bottom
@@ -624,7 +625,7 @@ export type KitComponentId =
   | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
   | "flipclock" | "stopwatch" | "timerdigits"
-  | "speedo" | "speedo2" | "circuit";
+  | "speedo" | "speedo2" | "circuit" | "leaderboard" | "trophy";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -662,6 +663,8 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "speedo", name: "Speedometer" },
   { id: "speedo2", name: "Speedo · HUD" },
   { id: "circuit", name: "Race circuit" },
+  { id: "leaderboard", name: "Position list" },
+  { id: "trophy", name: "Trophy · 1st" },
 ];
 
 /* A locked component keeps a full design snapshot of its own — the master
@@ -707,6 +710,7 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   resource: "pill",
   datarow: "kenneyRect",
   slot: "kenneyRect",
+  leaderboard: "kenneyRect", // rows are rectangular content — oval shells clip them
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the
@@ -739,4 +743,15 @@ export const STOCK_ICONS: Record<string, IconDef> = {
   gem: { lib: "lucide", name: "Gem", viewBox: "0 0 24 24", inner: '<path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/>', mode: "stroke" },
   clock: { lib: "lucide", name: "Clock", viewBox: "0 0 24 24", inner: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', mode: "stroke" },
   heart: { lib: "lucide", name: "Heart", viewBox: "0 0 24 24", inner: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>', mode: "stroke" },
+  // inventory & racing glyphs — same canonical-Lucide embedding rules
+  sword: { lib: "lucide", name: "Sword", viewBox: "0 0 24 24", inner: '<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/>', mode: "stroke" },
+  shield: { lib: "lucide", name: "Shield", viewBox: "0 0 24 24", inner: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>', mode: "stroke" },
+  helmet: { lib: "lucide", name: "HardHat", viewBox: "0 0 24 24", inner: '<path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1Z"/><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><path d="M14 6a6 6 0 0 1 6 6v3"/>', mode: "stroke" },
+  shirt: { lib: "lucide", name: "Shirt", viewBox: "0 0 24 24", inner: '<path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>', mode: "stroke" },
+  hand: { lib: "lucide", name: "Hand", viewBox: "0 0 24 24", inner: '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>', mode: "stroke" },
+  boots: { lib: "lucide", name: "Footprints", viewBox: "0 0 24 24", inner: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>', mode: "stroke" },
+  zap: { lib: "lucide", name: "Zap", viewBox: "0 0 24 24", inner: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>', mode: "stroke" },
+  flask: { lib: "lucide", name: "FlaskConical", viewBox: "0 0 24 24", inner: '<path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/>', mode: "stroke" },
+  scroll: { lib: "lucide", name: "Scroll", viewBox: "0 0 24 24", inner: '<path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>', mode: "stroke" },
+  key: { lib: "lucide", name: "Key", viewBox: "0 0 24 24", inner: '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>', mode: "stroke" },
 };

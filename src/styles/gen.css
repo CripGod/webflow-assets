@@ -827,7 +827,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kit-shine { transform-box: view-box; animation: kit-shine 3.2s cubic-bezier(.33,.1,.3,1) infinite; }
 @keyframes kit-shine { 0% { transform: translateX(0); } 42% { transform: translateX(175%); } 100% { transform: translateX(175%); } }
 @media (prefers-reduced-motion: reduce) {
-  .kp-mostage, .mo-pulse, .mo-bounce, .mo-glow, .mo-shake, .mo-pop, .mo-press, .mo-slidein, .mo-rise, .kp-ringpulse, .kit-shine { animation: none !important; }
+  .kp-mostage, .mo-pulse, .mo-bounce, .mo-glow, .mo-shake, .mo-pop, .mo-press, .mo-slidein, .mo-rise, .kp-ringpulse, .kit-shine, .kp-tnodezone.current::after { animation: none !important; }
   .kit-shine { opacity: 0; }
 }
 .kp-motion { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 10px; }
@@ -870,7 +870,8 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-tcap { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--kp-ink3); }
 .kp-tstop .kp-tconn { position: absolute; top: 34px; left: calc(50% + 34px); width: calc(100% - 68px); border-top: 3px solid rgba(160,240,255,.65); }
 .kp-tstop .kp-tconn.pending { border-top-style: dashed; border-top-color: var(--kp-line); }
-.kp-tnode.current::after { content: ""; position: absolute; inset: 4px 0 12px; border: 2px solid rgba(160,240,255,.8); border-radius: 999px; animation: kp-pulse 1.6s ease-out infinite; pointer-events: none; }
+/* (legacy .kp-tnode pulse removed in v56 — the measured ::after on
+   .kp-tnodezone.current is the only current-node ring now) */
 
 /* spotlight is the treatment itself — no component nested inside */
 .kp-spot.pure { width: 112px; height: 112px; align-items: center; justify-content: center; }
@@ -963,6 +964,9 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .sc-stack { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .sc-row { display: flex; align-items: center; justify-content: center; gap: 14px; }
 .sc-util { gap: 26px; }
+.sc-spring { flex: 1; }
+/* main-menu chrome bar — corners, so the hero column owns the center axis */
+.sc-menubar { width: 100%; gap: 10px; margin-bottom: 6px; }
 .sc-cluster { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .sc-cluster > .sc-caption { margin-bottom: 18px; }
 /* flex, so a trimmed piece's negative side margins cancel symmetrically —
@@ -1038,6 +1042,8 @@ button.kp-fact { cursor: pointer; }
 .kp-tray .kp-piece .kp-live { flex: 1; display: flex; align-items: center; justify-content: center; }
 .kp-slotgrid, .kp-ringrow { gap: 25px; padding: 25px; }
 .kp-tray.kp-axis { align-items: stretch; }
+/* racing tray — gauges want open air between them */
+.kp-tray.kp-race { gap: 25px 64px; padding: 30px 34px; }
 .kp-tray.kp-axis .kp-piece { display: flex; flex-direction: column; }
 .kp-tray.kp-axis .kp-piece .kp-live { flex: 1; display: flex; align-items: center; justify-content: center; }
 .kp-roleline { display: flex; flex-wrap: wrap; gap: 5px 16px; margin-top: 18px; }
@@ -1440,7 +1446,18 @@ button.kp-fact { cursor: pointer; }
 
 /* the track's node zone grew with the new size floor */
 .kp-tnodezone { height: 208px; }
-.kp-rail3 { top: 118px; }
+/* v56: the rail runs through the MEASURED shell centers (useShellRail);
+   the fallback keeps the old tuned position until the first measure */
+.kp-rail3 { top: calc(var(--rail-y, 124px) - 6px); }
+.kp-tnodezone { position: relative; }
+.kp-tnodezone.current::after {
+  content: ""; position: absolute; left: 50%; top: var(--node-cy, 50%);
+  width: 158px; height: 158px; margin: -79px 0 0 -79px;
+  border: 2px solid var(--kp-glowline); border-radius: 999px;
+  animation: kp-pulse 1.6s ease-out infinite; pointer-events: none;
+}
+/* the weekly streak line takes the same measured axis */
+.kp-wkdays::before { top: var(--rail-y, 44%); }
 
 /* ── v39: WebGL exploded-material hero ─────────────────────────── */
 .kp-glhero { position: relative; flex: 1 1 auto; min-width: 0; min-height: 540px; overflow: hidden; background: transparent; }
@@ -1592,6 +1609,89 @@ button.kp-fact { cursor: pointer; }
 .sc-invsub { font-size: 9.5px; font-weight: 650; letter-spacing: .06em; color: var(--st-ink2); }
 .sc-invstat { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 6px; width: 100%; margin: 3px 0; }
 .sc-invstat span { font-size: 9px; font-weight: 700; letter-spacing: .05em; color: var(--st-ink2); text-align: left; }
+
+/* ── v56: Inventory screen — strict three-column page grid ─────────
+   Wide 16:9 pattern card; panels are CSS grid, tiles are one component
+   with rarity variants, quick slots live in a deliberate footer bar. */
+.pat-wide { grid-column: 1 / -1; }
+.pat-wide .pat-view { aspect-ratio: 16 / 9; }
+.pat-wide .sc { width: 97%; height: 94%; }
+.inv2 { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 13px; width: 100%; height: 100%; font-family: Inter, sans-serif; }
+.inv2-toolbar { display: flex; align-items: center; gap: 10px; }
+.inv2-main { display: grid; grid-template-columns: minmax(240px, 0.9fr) minmax(400px, 1.45fr) minmax(280px, 1fr); gap: 16px; min-height: 0; }
+.inv2-panel { background: var(--st-well); border: 1px solid var(--st-line); border-radius: 14px; padding: 13px 16px 12px; display: flex; flex-direction: column; gap: 9px; min-height: 0; }
+.inv2-plabel { font-size: 10px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; color: var(--st-ink2); }
+.inv2-charhead { text-align: center; margin-top: -2px; }
+.inv2-charhead b { display: block; font-size: 15px; font-weight: 800; letter-spacing: .06em; color: var(--st-ink); }
+.inv2-charhead span { font-size: 10.5px; font-weight: 700; letter-spacing: .14em; color: var(--st-ink2); }
+.inv2-equip { display: grid; grid-template-columns: 76px minmax(110px, 1fr) 76px; align-items: center; gap: 10px; flex: 1; min-height: 0; }
+.inv2-eqcol { display: flex; flex-direction: column; gap: 26px; justify-content: center; }
+.inv2-eq { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.inv2-eq > span { font-size: 8.5px; font-weight: 800; letter-spacing: .13em; color: var(--st-ink2); }
+.inv2-figure { display: flex; align-items: center; justify-content: center; align-self: stretch; }
+.inv2-hero { width: 100%; max-width: 168px; height: 100%; }
+.inv2-stats { border-top: 1px solid var(--st-line); padding-top: 8px; display: flex; flex-direction: column; gap: 5px; margin-top: auto; }
+.inv2-statline { display: flex; justify-content: space-between; align-items: baseline; }
+.inv2-statline span { font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: var(--st-ink2); }
+.inv2-statline b { font-size: 12px; font-weight: 800; color: var(--st-ink); font-variant-numeric: tabular-nums; }
+.inv2-charbtn { display: flex; justify-content: center; }
+
+/* ONE slot component — rarity, quantity, selection are variants */
+.inv2-slot { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 10px; border: 1.5px solid var(--st-line); background: color-mix(in srgb, var(--st-well) 55%, rgba(8, 10, 20, 0.45)); display: grid; place-items: center; color: var(--st-ink2); padding: 0; cursor: pointer; font: inherit; }
+button.inv2-slot:hover { border-color: var(--inv-acc); color: var(--st-ink); }
+.inv2-slot.eq { width: 44px; cursor: default; }
+.inv2-slot.sm { width: 40px; }
+.inv2-slot .inv2-conn { position: absolute; top: 50%; width: 15px; border-top: 1.5px solid var(--st-line); }
+.inv2-eqcol.left .inv2-conn { right: -17px; }
+.inv2-eqcol.right .inv2-conn { left: -17px; }
+.inv2-slot.r-rare { border-color: rgba(63, 140, 255, 0.7); color: #7FB3FF; }
+.inv2-slot.r-epic { border-color: color-mix(in srgb, var(--inv-acc) 80%, transparent); color: var(--inv-acc); }
+.inv2-slot.r-legendary { border-color: rgba(245, 185, 60, 0.85); color: #F5C95C; }
+.inv2-slot.sel { box-shadow: 0 0 0 1.5px var(--inv-acc), 0 0 16px color-mix(in srgb, var(--inv-acc) 50%, transparent); }
+.inv2-slot.empty { opacity: 0.4; cursor: default; }
+.inv2-qty { position: absolute; right: 4px; bottom: 3px; font-style: normal; font-size: 10px; font-weight: 800; color: var(--st-ink); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55); }
+.inv2-flag { position: absolute; left: 4px; top: 4px; width: 14px; height: 14px; border-radius: 999px; background: var(--inv-acc); color: #0A0C14; display: grid; place-items: center; font-style: normal; }
+.inv2-flag.lock { background: rgba(120, 126, 148, 0.92); color: #FFFFFF; }
+
+.inv2-tabs { display: flex; gap: 4px; }
+.inv2-controls { display: grid; grid-template-columns: auto auto minmax(120px, 1fr) auto; gap: 8px; }
+.inv2-ctl { display: inline-flex; align-items: center; gap: 6px; height: 27px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--st-line); background: color-mix(in srgb, var(--st-well) 70%, transparent); font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--st-ink2); white-space: nowrap; }
+.inv2-ctlbtn { justify-content: center; padding: 0 8px; }
+.inv2-search { justify-content: flex-start; }
+.inv2-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; align-content: start; min-height: 0; }
+@media (max-width: 1400px) { .inv2-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.inv2-cap { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: auto; }
+.inv2-cap b { font-size: 11px; font-weight: 800; color: var(--st-ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.inv2-item { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 14px; align-items: center; margin: 6px 0 2px; }
+.inv2-itemart { display: grid; place-items: center; color: var(--inv-acc); min-height: 104px; }
+.inv2-gem { width: 104px; }
+.inv2-itemtext b { display: block; font-size: 17px; font-weight: 800; letter-spacing: .04em; color: var(--st-ink); }
+.inv2-rarity { font-size: 9.5px; font-weight: 800; letter-spacing: .16em; color: var(--inv-acc); }
+.inv2-rarity.r-legendary { color: #F5B93C; }
+.inv2-rarity.r-rare { color: #3F8CFF; }
+.inv2-rarity.r-common { color: var(--st-ink2); }
+.inv2-itemtext p { margin: 5px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--st-ink2); }
+.inv2-istats { display: flex; flex-direction: column; gap: 7px; margin-top: 6px; }
+.inv2-istat { display: grid; grid-template-columns: 84px minmax(0, 1fr) 46px; align-items: center; gap: 8px; }
+.inv2-istat span { font-size: 10px; font-weight: 800; letter-spacing: .1em; color: var(--st-ink2); }
+.inv2-istat b { font-size: 12.5px; font-weight: 800; color: var(--st-ink); text-align: right; font-variant-numeric: tabular-nums; }
+.inv2-meta { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--st-line); border-bottom: 1px solid var(--st-line); padding: 9px 2px; margin-top: 4px; }
+.inv2-meta span { font-size: 9.5px; font-weight: 800; letter-spacing: .16em; color: var(--st-ink2); }
+.inv2-meta b { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; color: var(--st-ink); }
+.inv2-actions { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: auto; }
+.inv2-actions2 { display: flex; justify-content: center; gap: 8px; }
+.inv2-foot { display: flex; align-items: center; gap: 12px; border: 1px solid var(--st-line); border-radius: 12px; background: var(--st-well); padding: 7px 14px; }
+.inv2-help { margin-left: auto; display: flex; align-items: center; gap: 9px; color: var(--st-ink2); font-size: 10.5px; line-height: 1.45; text-align: left; }
+.inv2-help p { margin: 0; }
+
+/* ── v56: Racing HUD screen — one responsive 16:9 SVG ─────────── */
+.rh { height: 100%; width: auto; aspect-ratio: 16 / 9; max-width: 100%; display: block; margin: 0 auto; }
+.rh-soft { animation: rh-softpulse 2.4s ease-in-out infinite; }
+.rh-chev { animation: rh-chevrun 2.6s linear infinite; }
+@keyframes rh-softpulse { 0%, 100% { opacity: 0.72; } 50% { opacity: 1; } }
+@keyframes rh-chevrun { 0% { transform: translateY(-10px); } 100% { transform: translateY(14px); } }
+@media (prefers-reduced-motion: reduce) { .rh-soft, .rh-chev { animation: none !important; } }
 
 /* board: template pulldown, hover preview viewport */
 .bd-tpl { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 650; color: var(--kp-ink2, #9aa1b5); }
