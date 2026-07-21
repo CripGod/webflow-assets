@@ -805,7 +805,10 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 @media (prefers-reduced-motion: reduce) {
   .kp-mostage, .mo-pulse, .mo-bounce, .mo-glow, .mo-shake, .mo-pop, .mo-press, .mo-slidein, .mo-rise, .kp-ringpulse { animation: none !important; }
 }
-.kp-motion { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 12px; margin-top: 10px; }
+.kp-motion { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 10px; }
+@media (max-width: 1400px) { .kp-motion { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kp-motion .kp-mostage { min-height: 168px; width: 100%; align-items: center; justify-content: center; }
+.kp-motion .kp-part { padding: 20px 16px 16px; }
 
 /* pattern-card pieces reclaim more of their glow pad — no clipped headers */
 .kp-patterns .gp-piece { margin: -15px -6px; }
