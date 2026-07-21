@@ -829,7 +829,9 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const tAnchor = opts.anchorLeft ? "start" : "middle";
   const tTextX = opts.anchorLeft ? x + padL - italicShift : textX;
   const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K;
-  const iconY = cy - iconSize / 2 + cfg.icon.oy * K;
+  // icon-only pieces (awarded badges, icon buttons): the vertical nudge is
+  // the icon's nudge — there is no text for it to move
+  const iconY = cy - iconSize / 2 + cfg.icon.oy * K + (iconOnly ? (opts.textOy ?? T2.oy ?? 0) * K : 0);
   const textOy = opts.textOy ?? T2.oy ?? 0;
 
   const T = D.transparency;
@@ -1101,7 +1103,7 @@ export interface KitOpts {
    *  group and slot toggles. Explicit label/sub/value still win per instance. */
   row?: {
     title?: string; sub?: string;
-    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number;
+    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number; lineGap?: number;
     titleTrack?: number; subTrack?: number;
     avatar?: boolean; progress?: boolean; action?: boolean; value?: number;
   };
@@ -1197,13 +1199,13 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     case "ghost":
       return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: opts.label ?? "Ghost", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
     case "iconbtn":
-      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: opts.icon ?? cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, shapeOverride: sov });
+      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: opts.icon ?? cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, shapeOverride: sov, textOy: opts.textOy });
     case "chip":
       return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: opts.label ?? "NEW", iconDef: opts.icon === undefined ? STOCK_ICONS.star : opts.icon, shapeOverride: sov, textOy: opts.textOy });
     case "badge":
       // presented (count) → awarded (star) → disabled
       return state === "pressed"
-        ? build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 0, iconSize: 52 * k }, { label: "", iconDef: opts.icon ?? STOCK_ICONS.star, fixedW: 118 * k, shapeOverride: sov })
+        ? build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 0, iconSize: 52 * k }, { label: "", iconDef: opts.icon ?? STOCK_ICONS.star, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy })
         : build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: opts.label ?? "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy });
     case "tab":
       return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: opts.label ?? "TAB", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
@@ -1293,11 +1295,18 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${pfx.over}` : ""}`), bx, trackW);
     }
     case "input": {
-      const w = 460 * k, h = 108 * k;
+      const w = 560 * k, h = 124 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
       const inset = bw + 4;
-      const ph = `<text x="${39 + inset + 18 * k}" y="${(30 + h / 2 + 1 + (opts.textOy ?? cfg.type.oy ?? 0) * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${30 * k}" font-style="italic" font-weight="500" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(opts.label ?? "Type something…")}</text>`;
-      return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.9"/>` + ph);
+      const tyIn = 30 + h / 2 + 1 + (opts.textOy ?? cfg.type.oy ?? 0) * k;
+      // a real value carries the full type treatment; the placeholder stays quiet
+      const ph = opts.label
+        ? contentText(opts.label, 39 + inset + 20 * k, tyIn, 32 * k * typeK, { keepCase: true })
+        : `<text x="${39 + inset + 20 * k}" y="${tyIn.toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${30 * k}" font-style="italic" font-weight="500" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc("Type something…")}</text>`;
+      const caret = state === "hover"
+        ? `<rect x="${(39 + inset + 20 * k + (opts.label ? Math.min(opts.label.length, 24) * 19 * k * typeK : 0)).toFixed(1)}" y="${(tyIn - 17 * k * typeK).toFixed(1)}" width="${(2.5 * k).toFixed(1)}" height="${(34 * k * typeK).toFixed(1)}" fill="${hexMix(glow, "#FFFFFF", 0.4)}"><animate attributeName="opacity" values="1;0;1" dur="1.1s" repeatCount="indefinite"/></rect>`
+        : "";
+      return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.9"/>` + ph + caret);
     }
     case "header":
       // resolve the label explicitly: build() treats a missing label with an
@@ -1380,7 +1389,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
         contentText(title, tx, 30 + inset + 16 * k + ((R2.titleDy ?? 0) + (opts.textOy ?? 0)) * k, fsT, { keepCase: true, track: R2.titleTrack ?? 0, opacity: dim }) +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + ((R2.subDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
         `</g>` +
         (showBar
           ? (() => { const rfx = barFx(gid2, tx, barY, fillW2, 10 * k, 5 * k); return `<defs>${rfx.defs}</defs><path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +

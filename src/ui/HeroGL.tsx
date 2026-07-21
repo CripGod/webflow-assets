@@ -26,7 +26,7 @@ const LAYERS = [
 ] as const;
 
 const SATS = [
-  { t: "ICON TOKEN", s1: "Extrude", s2: "Pad perfect", y: 1.75, h: 1.5 },
+  { t: "ICON TOKEN", s1: "Extrude", s2: "Pad perfect", y: 1.75, h: 1.95 },
   { t: "PROGRESS BAR", s1: "72% · Fill", s2: "Live value", y: 0.1, h: 1.15 },
   { t: "PANEL / CARD", s1: "9-slice · Extrude", s2: "Tokenized material", y: -1.7, h: 2.1 },
 ] as const;
@@ -40,6 +40,20 @@ function roundedRectShape(w: number, h: number, r: number): THREE.Shape {
   s.lineTo(x + r, y + h); s.absarc(x + r, y + h - r, r, Math.PI / 2, Math.PI, false);
   s.lineTo(x, y + r); s.absarc(x + r, y + r, r, Math.PI, Math.PI * 1.5, false);
   return s;
+}
+
+/** Trim most of a render's glow reserve so the art fills its texture. */
+function cropPad(svg: string, keep = 0.4): string {
+  const vb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(svg);
+  if (!vb) return svg;
+  const pad = Math.max(0, -+vb[1]);
+  if (pad < 4) return svg;
+  const cut = pad * (1 - keep);
+  const nw = +vb[3] - cut * 2, nh = +vb[4] - cut * 2;
+  return svg
+    .replace(vb[0], `viewBox="${(+vb[1] + cut).toFixed(1)} ${(+vb[2] + cut).toFixed(1)} ${nw.toFixed(1)} ${nh.toFixed(1)}"`)
+    .replace(/width="([\d.]+)"/, `width="${nw.toFixed(1)}"`)
+    .replace(/height="([\d.]+)"/, `height="${nh.toFixed(1)}"`);
 }
 
 /** Rasterize an SVG string into a THREE texture (async — image decode). */
@@ -60,8 +74,10 @@ function svgTex(svg: string, cb: (tex: THREE.Texture, w: number, h: number) => v
   img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
-/** The type-layer label, drawn into a canvas with the kit's own face. */
-function typeTex(cfg: GenConfig): THREE.CanvasTexture {
+/** The type-layer label, drawn into a canvas with the kit's own face.
+ *  dark=true renders the extrusion body — a flat dark copy stacked under
+ *  the lit face so the label reads as a chunky 3D object from any angle. */
+function typeTex(cfg: GenConfig, dark = false): THREE.CanvasTexture {
   const cv = document.createElement("canvas");
   cv.width = 1400; cv.height = 380;
   const ctx = cv.getContext("2d")!;
@@ -79,6 +95,12 @@ function typeTex(cfg: GenConfig): THREE.CanvasTexture {
       const g = ctx.createLinearGradient(0, cv.height / 2 - 88, 0, cv.height / 2 + 88);
       g.addColorStop(0, T4.fill); g.addColorStop(1, T4.fill2);
       paint = g;
+    }
+    if (dark) {
+      // extrusion body: flat, dark, no glow — pure silhouette mass
+      ctx.fillStyle = hexMix(T4.outline.on ? T4.outline.color : (cfg.effects.Bevel ?? "#0E9CC9"), "#04060B", 0.55);
+      ctx.fillText(label, cv.width / 2, cv.height / 2, cv.width - 140);
+      return;
     }
     ctx.shadowColor = cfg.effects.Glow ?? "#8FF0FF"; ctx.shadowBlur = 34;
     if (T4.outline.on) {
@@ -140,6 +162,7 @@ interface Rig {
   group: THREE.Group;
   layerMeshes: THREE.Mesh[];
   typePlane: THREE.Mesh;
+  typeDarkMat: THREE.MeshBasicMaterial;
   glowMat: THREE.MeshBasicMaterial;
   shadowMat: THREE.MeshBasicMaterial;
   patternMat: THREE.MeshBasicMaterial;
@@ -258,7 +281,7 @@ export function HeroGL() {
     // the type layer carries the live label as a plane riding its plate front
     const typeGeo = new THREE.PlaneGeometry(4.3, 1.3);
     disposables.push(typeGeo);
-    const typeMat = new THREE.MeshBasicMaterial({ map: typeTex(cfgRef.current), transparent: true, depthWrite: false });
+    const typeMat = new THREE.MeshBasicMaterial({ map: typeTex(cfgRef.current), transparent: true, depthWrite: false, side: THREE.DoubleSide });
     disposables.push(typeMat);
     const typePlane = new THREE.Mesh(typeGeo, typeMat);
     typePlane.rotation.x = -Math.PI / 2;
@@ -267,6 +290,20 @@ export function HeroGL() {
     const typeIdx = LAYERS.findIndex((l) => l.key === "type");
     typePlane.position.y = LAYERS[typeIdx].y + 0.27;
     group.add(typePlane);
+    // fake extrusion: dark copies stacked beneath give the label thickness,
+    // so it still reads when the stack is dragged to an extreme angle
+    const typeDarkMat = new THREE.MeshBasicMaterial({ map: typeTex(cfgRef.current, true), transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    disposables.push(typeDarkMat);
+    const typeBody: THREE.Mesh[] = [];
+    for (let d2 = 1; d2 <= 4; d2++) {
+      const m2 = new THREE.Mesh(typeGeo, typeDarkMat);
+      m2.rotation.x = -Math.PI / 2;
+      m2.renderOrder = 40 - d2;
+      m2.position.z = 0.6;
+      m2.position.y = typePlane.position.y - d2 * 0.032;
+      group.add(m2);
+      typeBody.push(m2);
+    }
 
     // satellite components — textured from the real SVG renderer, billboarded
     const satGroup = new THREE.Group();
@@ -287,7 +324,7 @@ export function HeroGL() {
 
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     rig.current = {
-      renderer, scene, camera, group, layerMeshes, typePlane, glowMat, shadowMat, patternMat,
+      renderer, scene, camera, group, layerMeshes, typePlane, typeDarkMat, glowMat, shadowMat, patternMat,
       satGroup, sats, keyLight, still, renderOnce: () => {}, alignSats: () => {}, disposables,
     };
     wrap.dataset.gl = "on";
@@ -351,7 +388,7 @@ export function HeroGL() {
       // deterministic packing: measure each art's projected height, stack
       // them with one even label gap, shrink if the column outgrows the
       // stage, and center the result — no cut-offs, no dead air
-      const LABEL_PX = 82, M = 16;
+      const LABEL_PX = 56, M = 14;
       const perPyOf = (m2: THREE.Mesh) => {
         const p0 = proj(v.set(m2.position.x, m2.userData.baseY, 0), satGroup);
         const p1 = proj(v.set(m2.position.x, m2.userData.baseY - 0.1, 0), satGroup);
@@ -393,12 +430,23 @@ export function HeroGL() {
     };
 
     const projectAll = () => {
+      const placed: number[] = [];
       LAYERS.forEach((_L, i) => {
         const p = proj(v.set(-2.5, layerMeshes[i].position.y, 0.2), group);
         const lab = labelRefs.current[i];
         const lx = 2;
-        if (lab) { lab.style.transform = `translate(${lx}px, ${(p.y - 15).toFixed(1)}px)`; }
+        // crowded anchors fade out — at extreme angles the stack compresses
+        // and only the labels that still have room stay readable
+        const minD = placed.length ? Math.min(...placed.map((py) => Math.abs(p.y - py))) : 99;
+        const op = Math.max(0, Math.min(1, (minD - 14) / 18));
+        if (op > 0.05) placed.push(p.y);
+        if (lab) {
+          lab.style.transform = `translate(${lx}px, ${(p.y - 15).toFixed(1)}px)`;
+          lab.style.opacity = op.toFixed(2);
+        }
         dots[i].setAttribute("cx", p.x.toFixed(1)); dots[i].setAttribute("cy", p.y.toFixed(1));
+        dots[i].setAttribute("opacity", (0.8 * op).toFixed(2));
+        leaders[i].setAttribute("opacity", (0.55 * op).toFixed(2));
         setLine(leaders[i], lx + 136, p.y, p.x - 8, p.y);
       });
       SATS.forEach((_S, i) => {
@@ -471,6 +519,7 @@ export function HeroGL() {
       group.rotation.x = 0.07 + Math.sin(t * 0.13) * 0.025 + userPitch;
       layerMeshes.forEach((pl, i) => { pl.position.y = pl.userData.baseY * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
       typePlane.position.y = layerMeshes[typeIdx].position.y + 0.27;
+      typeBody.forEach((m2, i2) => { m2.position.y = typePlane.position.y - (i2 + 1) * 0.032; });
       glowMat.opacity = 0.7 + Math.sin(t * 0.9) * 0.22;
       sats.forEach((m2, i) => { m2.position.y = m2.userData.baseY + Math.sin(t * 0.42 + i * 1.9) * 0.05; });
       billboard();
@@ -540,13 +589,16 @@ export function HeroGL() {
       tm.map?.dispose();
       tm.map = typeTex(c);
       tm.needsUpdate = true;
+      R.typeDarkMat.map?.dispose();
+      R.typeDarkMat.map = typeTex(c, true);
+      R.typeDarkMat.needsUpdate = true;
       const svgs = [
-        renderKit(c, "iconbtn", "m", "default", undefined, undefined, { icon: STOCK_ICONS.gem }),
+        renderKit(c, "iconbtn", "l", "default", undefined, undefined, { icon: STOCK_ICONS.gem }),
         renderKit(c, "progress", "m", "default", 0.72),
         renderKit(c, "panel", "m"),
       ];
       svgs.forEach((svg, i) => {
-        svgTex(svg, (tex, w, h) => {
+        svgTex(cropPad(svg), (tex, w, h) => {
           const R2 = rig.current;
           if (!R2) { tex.dispose(); return; }
           const mesh = R2.sats[i];
@@ -586,7 +638,7 @@ export function HeroGL() {
           ))}
           {SATS.map((S, i) => (
             <div key={S.t} className="kp-glsat" ref={(el) => { satLabelRefs.current[i] = el; }}>
-              <b>{S.t}</b><span>{S.s1}</span><span>{S.s2}</span>
+              <b>{S.t}</b><span>{S.s1} · {S.s2}</span>
             </div>
           ))}
         </>
