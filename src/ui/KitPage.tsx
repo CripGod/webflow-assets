@@ -29,6 +29,25 @@ const PATTERN_SCALE = 0.31;
 const clone = (c: GenConfig) => JSON.parse(JSON.stringify(c)) as GenConfig;
 
 /** Static art (type specimens, layer cards) at a uniform physical scale. */
+/** Rewrite a specimen's viewBox to hug the text vertically — specimen
+ *  canvases reserve glow travel that editorial rows don't need. */
+function tightenV(svg: string, px: number, oy = 0): string {
+  const vb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(svg);
+  if (!vb) return svg;
+  // the specimen text sits at y≈86 plus the bottom-anchor rise reserve
+  // (48·K, K = 130/168) plus the theme nudge at the same K — mirror the
+  // renderer exactly, then hug it
+  const K2 = 130 / 168;
+  const cy = 86 + 48 * K2 + oy * K2;
+  const y0 = cy - px * 0.92, h = px * 1.9;
+  // trim the left glow reserve too so every row shares one left edge
+  const x0 = 14, w = +vb[1] + +vb[3] - 14;
+  return svg
+    .replace(vb[0], `viewBox="${x0} ${y0.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}"`)
+    .replace(/width="([\d.]+)"/, `width="${w.toFixed(1)}"`)
+    .replace(/height="([\d.]+)"/, `height="${h.toFixed(1)}"`);
+}
+
 function Art({ svg, scale, className }: { svg: string; scale: number; className?: string }) {
   const w = useMemo(() => {
     const m = svg.match(/width="([\d.]+)"/);
@@ -401,7 +420,7 @@ const ICON_SET: { key: string; name: string }[] = [
 ];
 
 export function KitPage() {
-  const { cfg, kitDesigns, setPhase, kitName, setKitName, saveUserPreset } = useGen();
+  const { cfg, kitDesigns, setPhase, kitName, setKitName, saveUserPreset, update } = useGen();
   const dark = isDarkBg(cfg.canvas);
   const preset = PRESETS.find((p) => p.id === cfg.presetId);
   const sil = SHAPES.find((s) => s.id === cfg.shape)?.name.split(" — ")[0] ?? "Custom";
@@ -418,10 +437,19 @@ export function KitPage() {
   ].filter(Boolean) as string[];
   const caseName = { none: "As typed", upper: "Uppercase", lower: "Lowercase", title: "Title Case" }[T.case];
 
-  // splash text — a real editable instance of the display-text component
+  // the live display test — a real editable instance of the display-text component
   const [splash, setSplash] = useState("SWEET VICTORY");
   const [splashHi, setSplashHi] = useState("VICTORY");
-  const splashArt = useMemo(() => renderTypeSpecimen(cfg, splash, { highlight: splashHi }), [cfg, splash, splashHi]);
+  const [treatOn, setTreatOn] = useState(true);
+  const typeOff = (c: GenConfig) => {
+    c.type.outline.on = false; c.type.shadow.on = false; c.type.emboss.on = false;
+    c.type.glow.on = false; c.type.stripes = { on: false, angle: 45, opacity: 30 };
+    c.type.glints = { on: false, opacity: 55 }; c.type.highlight = "";
+  };
+  const splashArt = useMemo(() => tightenV(renderTypeSpecimen(cfg, splash, {
+    highlight: treatOn ? splashHi : undefined,
+    mutate: (c) => { c.type.size = 84; if (!treatOn) typeOff(c); },
+  }), 84, cfg.type.oy ?? 0), [cfg, splash, splashHi, treatOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // accessibility read — friendly, hidden behind a disclosure
   const [a11yOpen, setA11yOpen] = useState(false);
@@ -461,13 +489,61 @@ export function KitPage() {
     return () => { scroller.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
   }, []);
 
-  const specimen = useMemo(() => renderTypeSpecimen(cfg, label), [cfg, label]);
   // main-menu title — the game's name (preset), not the master button label
   const menuArt = useMemo(() => renderTypeSpecimen(cfg, (preset?.name ?? "CANDY").toUpperCase()), [cfg, preset]);
   const loadingArt = useMemo(() => renderTypeSpecimen(cfg, "LOADING"), [cfg]);
-  const alphaUp = useMemo(() => renderTypeSpecimen(cfg, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", { keepCase: true }), [cfg]);
-  const alphaLo = useMemo(() => renderTypeSpecimen(cfg, "abcdefghijklmnopqrstuvwxyz", { keepCase: true }), [cfg]);
-  const digits = useMemo(() => renderTypeSpecimen(cfg, "0123456789 ! ? & % + × / : . , ’ “ ” ( ) [ ]", { keepCase: true }), [cfg]);
+  const charRow = (txt: string) => tightenV(renderTypeSpecimen(cfg, txt, { keepCase: true, mutate: (c) => { c.type.size = 52; } }), 52, T.oy ?? 0);
+  const alphaUp = useMemo(() => charRow("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
+  const alphaLo = useMemo(() => charRow("abcdefghijklmnopqrstuvwxyz"), [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
+  const digits = useMemo(() => charRow("0123456789 ! ? & % + × / : . , ’ “ ” ( ) [ ]"), [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // hero specimen — the current live phrase at Display XL
+  const heroTypeArt = useMemo(() => tightenV(renderTypeSpecimen(cfg, splash, {
+    highlight: splashHi || undefined, mutate: (c) => { c.type.size = 128; },
+  }), 128, T.oy ?? 0), [cfg, splash, splashHi]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // display construction — the treatment built up in four inspectable stages
+  const conWord = (splash.trim().split(/\s+/)[0] || "LEVEL").slice(0, 8).toUpperCase();
+  const conStages = useMemo(() => {
+    const base = (c: GenConfig) => { typeOff(c); c.type.size = 62; };
+    const defs: [string, (c: GenConfig) => void][] = [
+      ["Base fill", (c) => base(c)],
+      ["Outline", (c) => { base(c); c.type.outline.on = true; }],
+      ["Depth", (c) => {
+        base(c); c.type.outline.on = true; c.type.shadow.on = true;
+        c.type.emboss.on = true; if (!c.type.emboss.strength) c.type.emboss.strength = 55;
+      }],
+      ["Highlight + glow", (c) => {
+        base(c); c.type.outline.on = true; c.type.shadow.on = true;
+        c.type.emboss.on = true; if (!c.type.emboss.strength) c.type.emboss.strength = 55;
+        c.type.glow.on = true; c.type.glints = { on: true, opacity: c.type.glints?.opacity ?? 55 };
+      }],
+    ];
+    return defs.map(([name, mutate]) => ({ name, svg: tightenV(renderTypeSpecimen(cfg, conWord, { mutate }), 62, T.oy ?? 0) }));
+  }, [cfg, conWord]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // scale reference — the same phrase down the whole ramp
+  const scaleArts = useMemo(() => ([["Display XL", 128], ["Display L", 96], ["Display M", 64], ["Display S", 40], ["Label", 18]] as const)
+    .map(([nm, px]) => ({ nm, px, svg: tightenV(renderTypeSpecimen(cfg, "LEVEL UP", { mutate: (c) => { c.type.size = px; } }), Math.max(px, 16), T.oy ?? 0) })), [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // caps-only faces map lowercase onto the uppercase forms — detect for real
+  const [fontsTick, setFontsTick] = useState(0);
+  useEffect(() => { document.fonts?.ready?.then(() => setFontsTick((t) => t + 1)).catch(() => {}); }, [T.font]); // eslint-disable-line react-hooks/exhaustive-deps
+  const capsOnly = useMemo(() => {
+    void fontsTick;
+    try {
+      const cv = document.createElement("canvas"); cv.width = 160; cv.height = 64;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return false;
+      ctx.font = `40px "${T.font}", Inter, sans-serif`;
+      ctx.textBaseline = "top";
+      ctx.fillText("agr", 4, 8);
+      const lo = cv.toDataURL();
+      ctx.clearRect(0, 0, 160, 64);
+      ctx.fillText("AGR", 4, 8);
+      return lo === cv.toDataURL();
+    } catch { return false; }
+  }, [T.font, fontsTick]);
 
   // typography recipe — the current treatment as a live layered stack
   const recipe = useMemo(() => {
@@ -640,47 +716,115 @@ export function KitPage() {
       </Sec>
 
       {/* ── 02 · typography ── */}
-      <Sec n="02" title="Typography" note="One typeface, one treatment, inherited by every component. All text is live — never outlined or rasterized.">
-        <div className="kp-typo">
-          <Art svg={specimen} scale={0.8} />
-          <Art svg={alphaUp} scale={0.5} />
-          <Art svg={alphaLo} scale={0.5} />
-          <Art svg={digits} scale={0.5} />
-        </div>
-        <SpecList rows={[
-          ["Font", T.font + (T.italic ? " Italic" : "")],
-          ["Weight", caps?.wght ? `${T.weight} · variable ${caps.wght[0]}–${caps.wght[1]}` : (caps?.weights ?? [T.weight]).join(" / ")],
-          ...(caps?.wdth ? [["Width", `${T.width ?? caps.wdth[2]}% · variable ${caps.wdth[0]}–${caps.wdth[1]}`] as [string, string]] : []),
-          ["Size", `${T.size}px`],
-          ["Case", caseName],
-          ["Tracking", String(T.spacing)],
-          ["Fill", T.fillMode === "auto" ? "Auto" : T.fillMode === "solid" ? "Solid" : "Gradient"],
-          ["Treatment", typeFx.length ? typeFx.join(" + ") : "Plain"],
-        ]} />
-        <div className="kp-links">
-          <a target="_blank" rel="noreferrer"
-            href={`https://github.com/google/fonts/tree/main/ofl/${T.font.toLowerCase().replace(/[^a-z0-9]/g, "")}`}>
-            {T.font} on GitHub ↗
-          </a>
-          <a target="_blank" rel="noreferrer"
-            href={`https://fonts.google.com/specimen/${encodeURIComponent(T.font).replace(/%20/g, "+")}`}>
-            Google Fonts ↗
-          </a>
+      <Sec n="02" title="Typography" note="One typeface, one construction system. Display text inherits the same material, outline, depth, and lighting rules as every component in the kit.">
+        <div className="kp-typo2">
+          <aside className="kp-tyinfo">
+            <div className="kp-tyid">
+              <b>{T.font}</b>
+              <span>Display Typeface</span>
+            </div>
+            <dl className="kp-tydl">
+              {([
+                ["Style", T.italic ? "Italic display" : "Display"],
+                ["Weight", caps?.wght ? `${T.weight} · variable ${caps.wght[0]}–${caps.wght[1]}` : String(T.weight)],
+                ["Case", caseName],
+                ["Tracking", `${T.spacing >= 0 ? "" : "−"}${Math.abs(T.spacing)}%`],
+                ["Treatment", ["Fill", ...typeFx].join(", ").toLowerCase().replace(/^f/, "F")],
+                ["Recommended use", "Titles, rewards, actions, short phrases"],
+              ] as const).map(([k2, v2]) => (
+                <div className="kp-tyrow" key={k2}><dt>{k2}</dt><dd>{v2}</dd></div>
+              ))}
+            </dl>
+            <div className="kp-tyuse">
+              <b className="use">Use it for</b>
+              <span>Screen titles · Reward moments · Primary actions · Short status messages</span>
+              <b className="avoid">Avoid it for</b>
+              <span>Body copy · Long instructions · Dense data · Small labels</span>
+            </div>
+            <div className="kp-tysrc">
+              <a target="_blank" rel="noreferrer" href={`https://fonts.google.com/specimen/${encodeURIComponent(T.font).replace(/%20/g, "+")}`}>Google Fonts</a>
+              <i>·</i>
+              <a target="_blank" rel="noreferrer" href={`https://github.com/google/fonts/tree/main/ofl/${T.font.toLowerCase().replace(/[^a-z0-9]/g, "")}`}>Open source</a>
+              <i>·</i>
+              <span>Live text</span>
+            </div>
+          </aside>
+
+          <div className="kp-tyspec">
+            <div className="kp-tylabel">Primary display example</div>
+            <Art svg={heroTypeArt} scale={0.92} className="kp-tyhero" />
+            <div className="kp-tyanno">Display XL · 128px · {T.spacing >= 0 ? T.spacing : `−${Math.abs(T.spacing)}`}% tracking · {caseName}</div>
+
+            <div className="kp-tylabel kp-tygap">Character set</div>
+            <div className="kp-tychars">
+              <span className="kp-tyrowlab">Uppercase</span>
+              <Art svg={alphaUp} scale={0.9} />
+              <span className="kp-tyrowlab">Lowercase</span>
+              <Art svg={alphaLo} scale={0.9} />
+              {capsOnly && <p className="kp-tymap">Lowercase maps to uppercase forms.</p>}
+              <span className="kp-tyrowlab">Numerals &amp; punctuation</span>
+              <Art svg={digits} scale={0.9} />
+            </div>
+
+            <div className="kp-tylabel kp-tygap">Display construction</div>
+            <div className="kp-tystages">
+              {conStages.map((st, i) => (
+                <figure key={st.name}>
+                  <Art svg={st.svg} scale={0.78} />
+                  <figcaption><b>{String(i + 1).padStart(2, "0")}</b> {st.name}</figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* display treatment — real, editable instances of the display-text component */}
-        <div className="kp-subhead">Display treatment</div>
-        <p className="kp-note">Splash moments from the same type system. The highlight phrase renders as a brighter, illuminated part of the same material.</p>
-        <div className="kp-splashedit">
-          <label>Text <input value={splash} maxLength={32} onChange={(e) => setSplash(e.target.value)} aria-label="Splash text" /></label>
-          <label>Highlight phrase <input value={splashHi} maxLength={32} onChange={(e) => setSplashHi(e.target.value)} aria-label="Highlight phrase" /></label>
+        <div className="kp-tylive">
+          <div className="kp-tylabel">Live display test</div>
+          <div className="kp-tylivegrid">
+            <div className="kp-tyout">
+              <Art svg={splashArt} scale={1} className="kp-splashmain" />
+              <p className="kp-tymap">The highlight phrase is rendered with the same treatment as the rest of the display.</p>
+            </div>
+            <div className="kp-tyctl">
+              <label>Primary phrase
+                <span className="kp-tyfield"><input value={splash} maxLength={20} onChange={(e) => setSplash(e.target.value)} aria-label="Splash text" /><i>{splash.length}/20</i></span>
+              </label>
+              <label>Highlight phrase
+                <span className="kp-tyfield"><input value={splashHi} maxLength={20} onChange={(e) => setSplashHi(e.target.value)} aria-label="Highlight phrase" /><i>{splashHi.length}/20</i></span>
+              </label>
+              <label className="kp-tyslide">Highlight intensity
+                <span className="kp-tyfield"><input type="range" min={0} max={100} value={T.highlightBoost ?? 70} aria-label="Highlight intensity"
+                  onChange={(e) => update((c) => { c.type.highlightBoost = +e.target.value; })} /><i>{T.highlightBoost ?? 70}%</i></span>
+              </label>
+              <label className="kp-tytog">Treatment
+                <button className={`kp-tyswitch${treatOn ? " on" : ""}`} role="switch" aria-checked={treatOn} aria-label="Treatment on or off"
+                  onClick={() => setTreatOn(!treatOn)}><i>{treatOn ? "ON" : "OFF"}</i></button>
+              </label>
+              <p className="kp-tymap">The highlight rides the matched phrase — position follows the text itself.</p>
+            </div>
+          </div>
         </div>
-        <Art svg={splashArt} scale={0.72} className="kp-splashmain" />
-        <div className="kp-splashtxts">
-          {SPLASHES.map((s) => (
-            <button key={s} className={`kp-splashtxt${s === splash ? " on" : ""}`} title={`Load “${s}” into the splash editor`}
-              onClick={() => { setSplash(s); setSplashHi(s === "SWEET VICTORY" ? "VICTORY" : ""); }}>{s}</button>
-          ))}
+
+        <div className="kp-tyfoot">
+          <div className="kp-typresets">
+            <div className="kp-tylabel">Phrase presets</div>
+            <div className="kp-splashtxts" style={{ fontFamily: `'${T.font}', Inter, sans-serif` }}>
+              {SPLASHES.map((sp) => (
+                <button key={sp} className={`kp-splashtxt${sp === splash ? " on" : ""}`} title={`Load “${sp}” into the live test`}
+                  onClick={() => { setSplash(sp); setSplashHi(sp === "SWEET VICTORY" ? "VICTORY" : ""); }}>{sp}</button>
+              ))}
+            </div>
+            <p className="kp-tymap">Click a preset to load it into the live test.</p>
+          </div>
+          <div className="kp-tyscale">
+            <div className="kp-tylabel">Type scale reference</div>
+            {scaleArts.map((r) => (
+              <div className="kp-tyrung" key={r.nm}>
+                <span>{r.nm}<i>{r.px}px</i></span>
+                <Art svg={r.svg} scale={0.68} />
+              </div>
+            ))}
+          </div>
         </div>
       </Sec>
 

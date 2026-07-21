@@ -1396,3 +1396,78 @@ button.kp-fact { cursor: pointer; }
 /* promote-a-state — the accent variant of the state buttons */
 .resetstate.makedefault { border-color: color-mix(in srgb, #3d8edb 45%, transparent); color: #3d8edb; }
 .resetstate.makedefault:hover { background: color-mix(in srgb, #3d8edb 12%, transparent); }
+
+/* ── v41: editorial typography section ─────────────────────────── */
+.kp-typo2 { display: grid; grid-template-columns: minmax(300px, 30fr) minmax(0, 70fr); gap: 44px 72px; align-items: start; margin-top: 46px; }
+.kp-tylabel { font-size: 11.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--kp-ink3); margin-bottom: 14px; }
+.kp-tygap { margin-top: 44px; }
+
+/* left editorial column */
+.kp-tyinfo { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.kp-tyid b { display: block; font-size: 44px; font-weight: 800; letter-spacing: -0.01em; color: var(--kp-ink); line-height: 1.05; }
+.kp-tyid span { display: block; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--kp-ink2); }
+.kp-tydl { margin: 0; border-top: 1px solid var(--kp-line); }
+.kp-tyrow { display: grid; grid-template-columns: 120px 1fr; gap: 8px; padding: 11px 0; border-bottom: 1px solid var(--kp-line); }
+.kp-tyrow dt { font-size: 12.5px; font-weight: 600; color: var(--kp-ink3); }
+.kp-tyrow dd { margin: 0; font-size: 13.5px; font-weight: 650; color: var(--kp-ink); }
+.kp-tyuse { display: flex; flex-direction: column; gap: 6px; }
+.kp-tyuse b { font-size: 12.5px; font-weight: 800; letter-spacing: .04em; margin-top: 10px; }
+.kp-tyuse b.use { color: #43b97f; }
+.kp-tyuse b.avoid { color: #d4756b; }
+.kp-tyuse span { font-size: 13.5px; line-height: 1.55; color: var(--kp-ink2); }
+.kp-tysrc { display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--kp-ink2); padding-top: 6px; border-top: 1px solid var(--kp-line); }
+.kp-tysrc a { color: var(--kp-ink2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+.kp-tysrc a:hover { color: var(--kp-ink); }
+.kp-tysrc i { font-style: normal; color: var(--kp-ink3); }
+
+/* right specimen column */
+.kp-tyspec { min-width: 0; }
+.kp-tyspec .kp-art { max-width: 100%; }
+.kp-tyspec .kp-art svg { max-width: 100%; height: auto; }
+.kp-tyanno { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--kp-line); font-size: 12.5px; font-weight: 600; letter-spacing: .02em; color: var(--kp-ink2); }
+.kp-tychars { display: flex; flex-direction: column; gap: 4px; }
+.kp-tyrowlab { font-size: 11.5px; font-weight: 700; color: var(--kp-ink3); margin-top: 14px; }
+.kp-tychars > .kp-tyrowlab:first-child { margin-top: 0; }
+.kp-tymap { font-size: 12.5px; color: var(--kp-ink3); margin: 4px 0 0; }
+.kp-tystages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; align-items: end; }
+.kp-tystages figure { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.kp-tystages .kp-art svg { max-width: 100%; height: auto; }
+.kp-tystages figcaption { font-size: 12px; font-weight: 650; color: var(--kp-ink2); border-top: 1px solid var(--kp-line); padding-top: 8px; }
+.kp-tystages figcaption b { color: var(--kp-ink3); font-weight: 800; margin-right: 6px; }
+
+/* live display test */
+.kp-tylive { margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--kp-line); }
+.kp-tylivegrid { display: grid; grid-template-columns: minmax(0, 62fr) minmax(320px, 38fr); gap: 24px 64px; align-items: start; }
+.kp-tyout { min-width: 0; }
+.kp-tyout .kp-art svg { max-width: 100%; height: auto; }
+.kp-tyctl { display: flex; flex-direction: column; gap: 16px; }
+.kp-tyctl > label { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--kp-ink2); }
+.kp-tyfield { display: flex; align-items: center; gap: 10px; }
+.kp-tyfield input[type="text"], .kp-tyfield input:not([type]) { flex: 1; min-width: 0; background: transparent; border: 1px solid var(--kp-line); border-radius: 10px; padding: 9px 12px; font: 650 14px/1.2 inherit; color: var(--kp-ink); }
+.kp-tyfield input:focus-visible { outline: 2px solid #3d8edb; outline-offset: 1px; }
+.kp-tyfield input[type="range"] { flex: 1; accent-color: #3d8edb; }
+.kp-tyfield i { font-style: normal; font-size: 11.5px; font-weight: 650; color: var(--kp-ink3); min-width: 44px; text-align: right; }
+.kp-tytog { flex-direction: row !important; align-items: center; justify-content: space-between; }
+.kp-tyswitch { display: inline-flex; align-items: center; width: 58px; height: 26px; border-radius: 13px; border: 1px solid var(--kp-line); background: transparent; cursor: pointer; position: relative; }
+.kp-tyswitch i { font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; color: var(--kp-ink3); position: absolute; left: 9px; }
+.kp-tyswitch::after { content: ""; position: absolute; right: 4px; width: 18px; height: 18px; border-radius: 50%; background: var(--kp-ink3); transition: transform .15s ease, background .15s ease; transform: translateX(-30px); }
+.kp-tyswitch.on { border-color: #3d8edb; }
+.kp-tyswitch.on i { left: auto; right: 9px; color: #3d8edb; }
+.kp-tyswitch.on::after { transform: translateX(0); background: #3d8edb; }
+
+/* presets + scale reference */
+.kp-tyfoot { display: grid; grid-template-columns: minmax(0, 55fr) minmax(360px, 45fr); gap: 24px 72px; margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--kp-line); margin-bottom: 32px; }
+.kp-typresets .kp-splashtxts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 26px; margin-top: 4px; }
+.kp-typresets .kp-splashtxt { text-align: left; font-size: 17px; padding: 2px 0; }
+.kp-tyscale { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kp-tyrung { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 16px; align-items: center; padding: 4px 0; }
+.kp-tyrung span { font-size: 12.5px; font-weight: 650; color: var(--kp-ink2); display: flex; flex-direction: column; }
+.kp-tyrung span i { font-style: normal; font-size: 11px; color: var(--kp-ink3); }
+.kp-tyrung .kp-art svg { max-width: 100%; height: auto; }
+
+/* responsive: stack the editorial column above the specimen */
+@media (max-width: 1240px) {
+  .kp-typo2 { grid-template-columns: 1fr; gap: 40px; }
+  .kp-tylivegrid, .kp-tyfoot { grid-template-columns: 1fr; }
+  .kp-tystages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
