@@ -189,6 +189,8 @@ interface GenStore {
   loadFromLibrary: (id: string) => void;
   board: BoardItem[];
   addToBoard: (libId: string) => void;
+  /** Append a pre-placed set of kit pieces (starter templates). */
+  addBoardItems: (items: { kitId: KitComponentId; x: number; y: number; scale?: number }[]) => void;
   /** Drop a live kit component on the board — follows the master style. */
   addKitToBoard: (kitId: KitComponentId) => void;
   rotateBoardItem: (id: string, deg: number) => void;
@@ -388,6 +390,17 @@ export const useGen = create<GenStore>((set, get) => ({
     const board = [...get().board, item];
     saveJson(BOARD_KEY, board);
     set({ board, phase: "board" });
+  },
+  addBoardItems: (items) => {
+    // starter templates: a full set of pieces, pre-sized and pre-placed
+    const stamp = Date.now().toString(36);
+    const add: BoardItem[] = items.map((it, i) => ({
+      id: "bd" + stamp + i + Math.random().toString(36).slice(2, 5),
+      libId: "", kitId: it.kitId, x: it.x, y: it.y, ...(it.scale ? { scale: it.scale } : {}),
+    }));
+    const board = [...get().board, ...add];
+    saveJson(BOARD_KEY, board);
+    set({ board, boardSel: null });
   },
   addKitToBoard: (kitId) => {
     const n = get().board.length;

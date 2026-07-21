@@ -80,7 +80,7 @@ function Art({ svg, scale, className, hug = true }: { svg: string; scale: number
 interface PieceOpts {
   id: KitComponentId; size?: KitSize; label?: string; segments?: string[];
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
-  sub?: string; max?: string; addBtn?: boolean; overlay?: string; iconScale?: number; trim?: boolean;
+  sub?: string; max?: string; addBtn?: boolean; overlay?: string; iconScale?: number; trim?: boolean; tight?: boolean;
   kind?: "circle" | "oval" | "strip"; tone?: "alt"; shape?: Shape;
 }
 
@@ -160,7 +160,7 @@ function PPiece(p: PieceOpts & { ambient?: boolean }) {
   const { cfg, name, kit } = usePiece({ ...p, size: p.size ?? "m" });
   return (
     <LiveArt cfg={cfg} playing scale={p.scale ?? PATTERN_SCALE} className="gp-piece"
-      kit={kit} title={name} ambient={p.ambient} trim={p.trim} />
+      kit={kit} title={name} ambient={p.ambient} trim={p.trim} tight={p.tight} />
   );
 }
 
@@ -1883,8 +1883,8 @@ export function KitPage() {
                 ] as const).map((row, ri) => (
                   <div className="lay-row lay-board" key={ri}>
                     {row.map((ic, ci) => (
-                      <SPiece key={ci} id="slot" size="s" icon={STOCK_ICONS[ic]} iconScale={1.35}
-                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.56} />
+                      <SPiece key={ci} id="slot" size="s" icon={STOCK_ICONS[ic]} iconScale={1.35} tight
+                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.62} />
                     ))}
                   </div>
                 ))}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Grid3x3, ImagePlus, Lock, Monitor, Search, Smartphone, Trash2, X } from "lucide-react";
+import { Download, Grid3x3, ImagePlus, LayoutTemplate, Lock, Monitor, Search, Smartphone, SquarePen, Trash2, X } from "lucide-react";
 import { useGen } from "@/generator/store";
 import type { BoardItem } from "@/generator/store";
 import { renderBevel, renderKit, glowPadOf } from "@/generator/bevel";
@@ -23,6 +23,44 @@ const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
   { name: "Combat & spatial", ids: ["reticle", "minimap", "ammo", "lives", "bignum"] },
 ];
 
+/* Starter templates — approximate compositions for the 16:9 stage. The
+   user nudges from here; every piece stays a live kit asset. */
+const BOARD_TEMPLATES: Record<string, { kitId: KitComponentId; x: number; y: number; scale?: number }[]> = {
+  "Main menu": [
+    { kitId: "header", x: 560, y: 90, scale: 1.1 },
+    { kitId: "primary", x: 700, y: 420, scale: 1.1 },
+    { kitId: "small", x: 790, y: 640 },
+    { kitId: "ghost", x: 790, y: 790 },
+    { kitId: "resource", x: 70, y: 60 },
+    { kitId: "iconbtn", x: 1680, y: 60, scale: 0.9 },
+  ],
+  "Game HUD": [
+    { kitId: "resource", x: 70, y: 55 },
+    { kitId: "lives", x: 90, y: 200, scale: 0.9 },
+    { kitId: "progress", x: 640, y: 60, scale: 1.1 },
+    { kitId: "minimap", x: 1540, y: 55, scale: 0.9 },
+    { kitId: "joystick", x: 110, y: 640 },
+    { kitId: "ammo", x: 1470, y: 850 },
+    { kitId: "iconbtn", x: 1720, y: 620, scale: 0.85 },
+  ],
+  "Settings": [
+    { kitId: "header", x: 620, y: 80 },
+    { kitId: "slider", x: 640, y: 350 },
+    { kitId: "slider", x: 640, y: 500 },
+    { kitId: "toggle", x: 700, y: 650 },
+    { kitId: "toggle", x: 1000, y: 650 },
+    { kitId: "small", x: 820, y: 830 },
+  ],
+  "Match-3 round": [
+    { kitId: "resource", x: 70, y: 55 },
+    { kitId: "flipclock", x: 1480, y: 55, scale: 0.75 },
+    ...([0, 1, 2] as const).flatMap((r) => ([0, 1, 2] as const).map((c) => (
+      { kitId: "slot" as KitComponentId, x: 730 + c * 160, y: 300 + r * 160, scale: 0.9 }
+    ))),
+    { kitId: "progress", x: 660, y: 890, scale: 1.05 },
+  ],
+};
+
 const STAGE: Record<"169" | "mobile", [number, number, string]> = {
   "169": [1920, 1080, "16:9 Board"],
   mobile: [390, 844, "Mobile Board"],
@@ -33,11 +71,13 @@ const clone = (c: GenConfig) => (typeof structuredClone === "function" ? structu
 export function BoardView({ playing }: { playing: boolean }) {
   const {
     cfg, board, library, kitShapes, kitSizes, kitTextFill, kitRow,
-    boardAspect, setBoardAspect, boardSnap, setBoardSnap, boardSel, setBoardSel,
+    addBoardItems, boardAspect, setBoardAspect, boardSnap, setBoardSnap, boardSel, setBoardSel,
     addToBoard, addKitToBoard, moveBoardItem, scaleBoardItem, rotateBoardItem, removeBoardItem,
     bgImage, setBgImage, bgShow, bgOpacity, bgBlur, setBg,
   } = useGen();
   const [q, setQ] = useState("");
+  // rolling over a tray thumbnail previews the asset large in a viewport
+  const [preview, setPreview] = useState<{ name: string; svg: string } | null>(null);
   const [LW, LH, stageName] = STAGE[boardAspect];
   const frameRef = useRef<HTMLDivElement>(null);
   const bgInput = useRef<HTMLInputElement>(null);
@@ -151,7 +191,9 @@ export function BoardView({ playing }: { playing: boolean }) {
                 <div className="bd-grid">
                   {items.map((it) => (
                     <button key={it.id} className="bd-asset" title={`Add ${it.name} to the board`}
-                      onClick={() => addKitToBoard(it.id)}>
+                      onClick={() => addKitToBoard(it.id)}
+                      onPointerEnter={() => setPreview({ name: it.name, svg: svgOf({ id: "pv", libId: "", kitId: it.id, x: 0, y: 0 } as BoardItem).svg })}
+                      onPointerLeave={() => setPreview(null)}>
                       <span dangerouslySetInnerHTML={{ __html: it.svg }} />
                       <i>{it.name}</i>
                     </button>
@@ -165,7 +207,9 @@ export function BoardView({ playing }: { playing: boolean }) {
               <div className="bd-cat">Saved components</div>
               <div className="bd-grid">
                 {library.filter((l) => !q || l.name.toLowerCase().includes(q.toLowerCase())).map((l) => (
-                  <button key={l.id} className="bd-asset" title={`Add ${l.name} to the board`} onClick={() => addToBoard(l.id)}>
+                  <button key={l.id} className="bd-asset" title={`Add ${l.name} to the board`} onClick={() => addToBoard(l.id)}
+                    onPointerEnter={() => setPreview({ name: l.name, svg: l.kit ? renderKit(l.cfg, l.kit.id, l.kit.size, "default", undefined, l.kit.shape) : renderBevel(l.cfg, "default") })}
+                    onPointerLeave={() => setPreview(null)}>
                     <span dangerouslySetInnerHTML={{ __html: l.kit ? renderKit(l.cfg, l.kit.id, l.kit.size, "default", undefined, l.kit.shape) : renderBevel(l.cfg, "default") }} />
                     <i>{l.name}</i>
                   </button>
@@ -177,6 +221,13 @@ export function BoardView({ playing }: { playing: boolean }) {
         </div>
       </aside>
 
+      {preview && (
+        <div className="bd-preview" aria-hidden="true">
+          <div className="bd-pvart" dangerouslySetInnerHTML={{ __html: preview.svg }} />
+          <div className="bd-pvname">{preview.name}</div>
+        </div>
+      )}
+
       {/* ── stage ── */}
       <div className="bd-main">
         <header className="bd-top">
@@ -187,6 +238,14 @@ export function BoardView({ playing }: { playing: boolean }) {
             <button className={boardAspect === "mobile" ? "on" : ""} role="radio" aria-checked={boardAspect === "mobile"}
               onClick={() => setBoardAspect("mobile")}><Smartphone size={13} strokeWidth={2} /> Mobile</button>
           </div>
+          <label className="bd-tpl" title="Add a full starter composition — pieces land pre-sized and pre-placed">
+            <LayoutTemplate size={13} strokeWidth={2} />
+            <select value="" aria-label="Add a starter template"
+              onChange={(e) => { const t = BOARD_TEMPLATES[e.target.value]; if (t) addBoardItems(t); }}>
+              <option value="">Starter template…</option>
+              {Object.keys(BOARD_TEMPLATES).map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
           <label className="bd-snap"><Grid3x3 size={13} strokeWidth={2} /> Snap to grid
             <input type="checkbox" checked={boardSnap} onChange={(e) => setBoardSnap(e.target.checked)} />
           </label>
@@ -237,6 +296,12 @@ export function BoardView({ playing }: { playing: boolean }) {
                 onChange={(e) => rotateBoardItem(sel.id, +e.target.value)} />
             </label>
             <div className="bd-actions">
+              {sel.kitId && (
+                <button onClick={() => { useGen.getState().setFocus(sel.kitId!); useGen.getState().setPhase("master"); }}
+                  title="Open this component in the editor — every control shapes it live">
+                  <SquarePen size={13} strokeWidth={2.2} /> Edit component
+                </button>
+              )}
               <button onClick={() => downloadSvg(svgOf(sel).svg, `board-${nameOf(sel).toLowerCase().replace(/[^a-z0-9]+/g, "-")}.svg`)}>
                 <Download size={13} strokeWidth={2.2} /> Export asset
               </button>
