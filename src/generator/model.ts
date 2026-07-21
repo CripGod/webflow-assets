@@ -623,7 +623,7 @@ export type KitComponentId =
   | "slider" | "progress" | "input" | "dropdown" | "panel"
   | "resource" | "datarow" | "slot" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
-  | "timer" | "timerbar";
+  | "flipclock" | "stopwatch" | "timerdigits";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -648,8 +648,9 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "datarow", name: "Data row" },
   { id: "slot", name: "Item slot" },
   { id: "ring", name: "Progress ring" },
-  { id: "timer", name: "Countdown timer" },
-  { id: "timerbar", name: "Round timer" },
+  { id: "flipclock", name: "Flip countdown" },
+  { id: "stopwatch", name: "Stopwatch" },
+  { id: "timerdigits", name: "Timer digits" },
   { id: "joystick", name: "Joystick" },
   { id: "reticle", name: "Reticle" },
   { id: "minimap", name: "Mini-map" },
@@ -701,7 +702,6 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   resource: "pill",
   datarow: "kenneyRect",
   slot: "kenneyRect",
-  timer: "pill",
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the

@@ -83,7 +83,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const inert = disabled || kit?.tone === "alt";
   const value = id === "toggle" || id === "checkbox" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
-    : id === "progress" || id === "ring" || id === "timer" || id === "timerbar" ? (playing && !disabled ? pval : kit?.value)
+    : id === "progress" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
     : kit?.value;
 
@@ -201,7 +201,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
     };
     raf.current = requestAnimationFrame(step);
   };
-  const isTimer = id === "timer" || id === "timerbar";
+  const isTimer = id === "flipclock" || id === "stopwatch" || id === "timerdigits";
 
   // ambient progress: bars, rings and timers quietly replay on their own beat
   const beat = useRef(4600 + Math.random() * 2400);
@@ -292,7 +292,9 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
         else if (e.key === "Escape" || e.key === "Enter") { (e.currentTarget as HTMLElement).blur(); }
         else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault();
-          setTyped((t) => ((t ?? kit?.label ?? "") + e.key).slice(0, 24));
+          // the renderer stamps how many characters fit the text-safe zone
+          const cap = Number(ref.current?.querySelector("svg")?.getAttribute("data-maxchars")) || 24;
+          setTyped((t) => ((t ?? kit?.label ?? "") + e.key).slice(0, Math.min(cap, 40)));
         }
       },
     } : id === "toggle" ? {
@@ -313,11 +315,17 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   };
 
   const anchorStyle = trimStyle ?? (anchorContent && pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined);
+  // choice controls render pinned to their resting pose — the hover answer
+  // is a light-up on the wrapper (brightness), never a re-render that grows
+  const choice = id === "checkbox" || id === "radio" || id === "toggle";
+  const choiceHover = playing && !inert && choice
+    ? { transition: "filter .16s ease", filter: live !== "default" ? "brightness(1.14) saturate(1.05)" : "none" }
+    : undefined;
   // draggable pieces own their gestures — a slider drag must never pan the page
   const gestureStyle = id === "slider" || id === "segment" || id === "joystick" ? { touchAction: "none" as const } : undefined;
   return (
     <div ref={ref} className={shellFree ? `${className ?? ""} kp-shellfree` : className} title={title}
-      style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle, ...gestureStyle }}
+      style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle, ...gestureStyle, ...choiceHover }}
       {...(playing ? playHandlers
         : onDesignClick ? {
             onClick: onDesignClick, role: "button", tabIndex: 0,

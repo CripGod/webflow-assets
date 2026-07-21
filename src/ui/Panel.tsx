@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize } from "@/generator/model";
 import type { GenStateName, BlendMode , PatternType } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -247,7 +247,8 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem, replaceConfig } = useGen();
+  const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -360,34 +361,46 @@ export function Panel() {
   return (
     <aside className={`panel${playLocked ? " playlock" : ""}`} ref={panelRef}>
       {playLocked && <div className="playnote">Play mode — controls are paused so you can feel the states. Switch back to Design (✎ in the canvas toolbar) to edit.</div>}
-      {focus && (
-        <div className="focusnote">
-          Editing <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — every control below shapes it live.
-          <button onClick={() => setFocus(null)}>Back to button</button>
-          {/* per-component lock: freeze this exact look on this piece only.
-              The master keeps evolving; the locked piece doesn't move. */}
-          {kitDesigns[focus] ? (
-            <div className="lockrow">
-              <span className="lockstate"><Lock size={12} strokeWidth={2.2} /> Locked to its own look — master edits won't move it on the Kit or Board.</span>
-              <button title="Re-freeze this component with the design currently in the editor"
-                onClick={() => setKitDesign(focus, { ...pickDesign(cfg), stateDesigns: structuredClone(cfg.stateDesigns) })}>
-                <Lock size={12} strokeWidth={2.2} /> Update lock
-              </button>
-              <button title="Drop the lock — this component follows the master again"
-                onClick={() => setKitDesign(focus, null)}>
-                <LockOpen size={12} strokeWidth={2.2} /> Unlock
-              </button>
-            </div>
-          ) : (
-            <div className="lockrow">
-              <button title="Freeze the current look onto this component only — tweak here, lock it, then take the master anywhere else"
-                onClick={() => setKitDesign(focus, { ...pickDesign(cfg), stateDesigns: structuredClone(cfg.stateDesigns) })}>
-                <Lock size={12} strokeWidth={2.2} /> Lock this look to {KIT_COMPONENTS.find((c) => c.id === focus)?.name}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      {focus && (() => {
+        const fname = KIT_COMPONENTS.find((c) => c.id === focus)?.name ?? focus;
+        const locked = !!kitDesigns[focus];
+        /* One clear rule, stated where the user is looking:
+           unlocked = edits restyle the WHOLE kit; locked = edits stay on
+           THIS piece (they stream straight into its lock — no "update
+           lock" step, what you see is what's saved). */
+        return (
+          <div className="focusnote">
+            Editing <b>{fname}</b>{locked
+              ? <> — <b>this piece only</b>. The rest of the kit doesn't move.</>
+              : <> — style edits restyle the <b>whole kit</b>. Lock below to style just this piece.</>}
+            <button onClick={() => setFocus(null)}>Back to button</button>
+            {locked ? (
+              <div className="lockrow">
+                <span className="lockstate"><Lock size={12} strokeWidth={2.2} /> Edits save into this piece automatically.</span>
+                <button title="Make the whole kit look like this piece, then follow the master again"
+                  onClick={() => {
+                    const merged = applyKitDesign(useGen.getState().cfg, kitDesigns[focus]);
+                    setKitDesign(focus, null);
+                    replaceConfig(structuredClone(merged));
+                  }}>
+                  <Lock size={12} strokeWidth={2.2} /> Push this look to the whole kit
+                </button>
+                <button title="Drop the lock — this piece follows the master design again"
+                  onClick={() => setKitDesign(focus, null)}>
+                  <LockOpen size={12} strokeWidth={2.2} /> Unlock — follow the master
+                </button>
+              </div>
+            ) : (
+              <div className="lockrow">
+                <button title="From here on, edits style only this piece — the master and every other piece stay put"
+                  onClick={() => setKitDesign(focus, { ...pickDesign(cfg), stateDesigns: structuredClone(cfg.stateDesigns) })}>
+                  <Lock size={12} strokeWidth={2.2} /> Style {fname} only (lock it)
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {/* ── Global — whole-component adjustments per state ── */}
       <Section id="state" title="Global" right={<span className="statebadge">{STATE_LABEL[selectedState]}</span>}>
         <div className="segmini" role="radiogroup" aria-label="State being edited">
