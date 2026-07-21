@@ -867,8 +867,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     const tx0 = opts.anchorLeft ? tTextX : tTextX - textW / 2;
     const gcx = tx0 + textW / 2;
     const bandW = textW * 1.18, bandH = fs * 0.28;
+    // user nudge — % of the letter height, applied to slab and stars alike
+    const gdx = clamp(GL2!.ox ?? 0, -100, 100) / 100 * fs;
+    const gdy = clamp(GL2!.oy ?? 0, -100, 100) / 100 * fs;
     // the slab drifts toward the light and tilts perpendicular to it
-    const bcx = gcx + lx * fs * 0.08, bcy = gy + ly * fs * 0.24;
+    const bcx = gcx + lx * fs * 0.08 + gdx, bcy = gy + ly * fs * 0.24 + gdy;
     const rot = Math.atan2(ly, lx) * 180 / Math.PI + 90;
     const star4 = (sx: number, sy: number, s: number, sr: number) =>
       `<path d="M0 ${(-s).toFixed(1)} L${(s * 0.22).toFixed(1)} ${(-s * 0.22).toFixed(1)} L${s.toFixed(1)} 0 L${(s * 0.22).toFixed(1)} ${(s * 0.22).toFixed(1)} L0 ${s.toFixed(1)} L${(-s * 0.22).toFixed(1)} ${(s * 0.22).toFixed(1)} L${(-s).toFixed(1)} 0 L${(-s * 0.22).toFixed(1)} ${(-s * 0.22).toFixed(1)} Z" transform="translate(${sx.toFixed(1)} ${sy.toFixed(1)}) rotate(${sr})" fill="#FFFFFF"/>`;
@@ -878,13 +881,13 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
         <rect x="${(bcx - bandW * 0.19).toFixed(1)}" y="${(bcy + bandH * 0.75).toFixed(1)}" width="${(bandW * 0.38).toFixed(1)}" height="${(bandH * 0.42).toFixed(1)}" rx="${(bandH * 0.21).toFixed(1)}" fill="#FFFFFF" opacity="0.7" transform="rotate(${rot.toFixed(1)} ${bcx.toFixed(1)} ${bcy.toFixed(1)})"/>
       </g>
       <g opacity="${Math.min(1, gOp * 1.15).toFixed(2)}">
-        ${star4(tx0 + textW * 0.16 + lx * fs * 0.06, gy - fs * 0.24 + ly * fs * 0.06, fs * 0.16, 0)}
-        ${star4(tx0 + textW * 0.52 + lx * fs * 0.06, gy + fs * 0.16 + ly * fs * 0.06, fs * 0.09, 18)}
-        ${star4(tx0 + textW * 0.85 + lx * fs * 0.06, gy - fs * 0.1 + ly * fs * 0.06, fs * 0.125, -14)}
+        ${star4(tx0 + textW * 0.16 + lx * fs * 0.06 + gdx, gy - fs * 0.24 + ly * fs * 0.06 + gdy, fs * 0.16, 0)}
+        ${star4(tx0 + textW * 0.52 + lx * fs * 0.06 + gdx, gy + fs * 0.16 + ly * fs * 0.06 + gdy, fs * 0.09, 18)}
+        ${star4(tx0 + textW * 0.85 + lx * fs * 0.06 + gdx, gy - fs * 0.1 + ly * fs * 0.06 + gdy, fs * 0.125, -14)}
       </g>`;
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw + pad * 2}" height="${vh + pad * 2}" viewBox="${-pad} ${-pad} ${vw + pad * 2} ${vh + pad * 2}" font-family="'${T2.font}', Inter, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw + pad * 2}" height="${vh + pad * 2}" viewBox="${-pad} ${-pad} ${vw + pad * 2} ${vh + pad * 2}" font-family="'${T2.font}', Inter, sans-serif" data-shell="${x.toFixed(1)} ${(y + riseDy + lift).toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" role="img" aria-label="${label || "component"}, ${state} state">
 <defs>
   <linearGradient id="${id}band" ${axis}>
     <stop offset="0" stop-color="${darken(bevelC, clamp(0.3 * lowK, 0, 0.7))}"/>
@@ -1132,7 +1135,7 @@ export interface KitOpts {
   /** Data-row content model — independent size/tracking/placement per text
    *  group and slot toggles. Explicit label/sub/value still win per instance. */
   row?: {
-    title?: string; sub?: string;
+    title?: string; sub?: string; subOn?: boolean;
     titleSize?: number; subSize?: number; titleDy?: number; subDy?: number; lineGap?: number; blockDy?: number;
     titleTrack?: number; subTrack?: number;
     avatar?: boolean; progress?: boolean; action?: boolean; value?: number;
@@ -1439,7 +1442,11 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
         contentText(title, tx, 30 + inset + 16 * k + ((R2.titleDy ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k, fsT, { keepCase: true, track: R2.titleTrack ?? 0, opacity: dim }) +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + Math.max(26 * k, fsT * 0.95) + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
+        /* auto-leading from BOTH line heights: the title's lower half (with
+           its depth treatment) plus the subtitle's cap height — big display
+           type can never crash into line two (universal no-overlap law) */
+        (R2.subOn === false ? "" :
+          `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + Math.max(24 * k, fsT * 0.55 + fsS * 0.78 + 4 * k) + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>`) +
         `</g>` +
         (showBar
           ? (() => { const rfx = barFx(gid2, tx, barY, fillW2, 10 * k, 5 * k); return `<defs>${rfx.defs}</defs><path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
@@ -1576,7 +1583,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const offFace = desaturate(hexMix(bevel, "#20242E", 0.72), 0.5);
       const total3 = d3 + pad3 * 2;
       const totH3 = total3 + 14; // extra floor below the sphere — captions need air
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${total3}" height="${totH3}" viewBox="0 0 ${total3} ${totH3}" role="img" aria-label="glow orb" data-orb="${lit ? "1" : "0"}">
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${total3}" height="${totH3}" viewBox="0 0 ${total3} ${totH3}" data-shell="${pad3} ${pad3} ${d3.toFixed(1)} ${d3.toFixed(1)}" role="img" aria-label="glow orb" data-orb="${lit ? "1" : "0"}">
 <defs>
   <radialGradient id="${gid7}" cx="0.34" cy="0.28" r="0.95">
     <stop offset="0" stop-color="#FFFFFF"/>
@@ -1876,31 +1883,113 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
 </svg>`;
     }
     case "circuit": {
-      /* Race circuit mini-map — a stylized Spa-Francorchamps line with live
-         position markers. Shell-free spatial UI, like the reticles. */
-      const w = 250 * k, h = 175 * k, pad2 = 34;
+      /* Race circuit mini-map — the fictional KAZURI RING (somewhere in the
+         East African highlands): hairpin, ridge climb, long savanna sweep,
+         gorge esses, drawn as one closed line. Rendered as a dimensional
+         ribbon: isometric squash + extruded walls so elevation reads. */
+      const w = 250 * k, h = 175 * k, pad2 = 40;
       const W2 = w + pad2 * 2, H2 = h + pad2 * 2;
       const gid9 = "cc" + UID++;
       const dim = state === "disabled" ? 0.45 : 1;
       const sx3 = w / 220, sy3 = h / 150;
-      // stylized Spa: La Source hairpin, Eau Rouge climb, Kemmel, Les Combes,
-      // Pouhon sweep, Blanchimont, Bus Stop — drawn as one closed line
       const d3 = `M ${(30 * sx3 + pad2).toFixed(1)} ${(118 * sy3 + pad2).toFixed(1)} L ${(24 * sx3 + pad2).toFixed(1)} ${(106 * sy3 + pad2).toFixed(1)} Q ${(20 * sx3 + pad2).toFixed(1)} ${(96 * sy3 + pad2).toFixed(1)} ${(28 * sx3 + pad2).toFixed(1)} ${(92 * sy3 + pad2).toFixed(1)} L ${(60 * sx3 + pad2).toFixed(1)} ${(78 * sy3 + pad2).toFixed(1)} Q ${(66 * sx3 + pad2).toFixed(1)} ${(75 * sy3 + pad2).toFixed(1)} ${(64 * sx3 + pad2).toFixed(1)} ${(68 * sy3 + pad2).toFixed(1)} L ${(46 * sx3 + pad2).toFixed(1)} ${(34 * sy3 + pad2).toFixed(1)} Q ${(43 * sx3 + pad2).toFixed(1)} ${(26 * sy3 + pad2).toFixed(1)} ${(50 * sx3 + pad2).toFixed(1)} ${(22 * sy3 + pad2).toFixed(1)} L ${(74 * sx3 + pad2).toFixed(1)} ${(12 * sy3 + pad2).toFixed(1)} Q ${(82 * sx3 + pad2).toFixed(1)} ${(8 * sy3 + pad2).toFixed(1)} ${(88 * sx3 + pad2).toFixed(1)} ${(14 * sy3 + pad2).toFixed(1)} L ${(102 * sx3 + pad2).toFixed(1)} ${(30 * sy3 + pad2).toFixed(1)} Q ${(106 * sx3 + pad2).toFixed(1)} ${(36 * sy3 + pad2).toFixed(1)} ${(114 * sx3 + pad2).toFixed(1)} ${(34 * sy3 + pad2).toFixed(1)} L ${(168 * sx3 + pad2).toFixed(1)} ${(22 * sy3 + pad2).toFixed(1)} Q ${(178 * sx3 + pad2).toFixed(1)} ${(20 * sy3 + pad2).toFixed(1)} ${(182 * sx3 + pad2).toFixed(1)} ${(28 * sy3 + pad2).toFixed(1)} L ${(196 * sx3 + pad2).toFixed(1)} ${(62 * sy3 + pad2).toFixed(1)} Q ${(199 * sx3 + pad2).toFixed(1)} ${(70 * sy3 + pad2).toFixed(1)} ${(192 * sx3 + pad2).toFixed(1)} ${(76 * sy3 + pad2).toFixed(1)} L ${(160 * sx3 + pad2).toFixed(1)} ${(100 * sy3 + pad2).toFixed(1)} Q ${(130 * sx3 + pad2).toFixed(1)} ${(122 * sy3 + pad2).toFixed(1)} ${(96 * sx3 + pad2).toFixed(1)} ${(128 * sy3 + pad2).toFixed(1)} L ${(48 * sx3 + pad2).toFixed(1)} ${(136 * sy3 + pad2).toFixed(1)} Q ${(36 * sx3 + pad2).toFixed(1)} ${(138 * sy3 + pad2).toFixed(1)} ${(32 * sx3 + pad2).toFixed(1)} ${(128 * sy3 + pad2).toFixed(1)} Z`;
+      /* dimensional ribbon: the ground shadow sits deepest, then stacked
+         wall passes rise to the lit racing line on top */
+      const wall = [8, 6.5, 5, 3.5, 2]
+        .map((dy, i) => `<path d="${d3}" transform="translate(0 ${(dy * k).toFixed(1)})" fill="none" stroke="${darken(bevel, 0.62 - i * 0.05)}" stroke-width="${(9 * k).toFixed(1)}" stroke-linejoin="round"/>`)
+        .join("");
+      const startTick = `<line x1="${(26 * sx3 + pad2).toFixed(1)}" y1="${(110 * sy3 + pad2 - 6).toFixed(1)}" x2="${(36 * sx3 + pad2).toFixed(1)}" y2="${(114 * sy3 + pad2 + 4).toFixed(1)}" stroke="${isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.5)}" stroke-width="3" stroke-dasharray="3 3" opacity="0.9"/>`;
       const track =
-        `<path d="${d3}" fill="none" stroke="${darken(bevel, 0.45)}" stroke-width="${(9 * k).toFixed(1)}" stroke-linejoin="round" opacity="0.9"/>` +
+        `<ellipse cx="${(W2 / 2).toFixed(1)}" cy="${(H2 / 2 + 16 * k).toFixed(1)}" rx="${(w * 0.52).toFixed(1)}" ry="${(h * 0.4).toFixed(1)}" fill="${hexRgba("#04070E", 0.35)}"/>` +
+        wall +
+        `<path d="${d3}" fill="none" stroke="${darken(bevel, 0.45)}" stroke-width="${(9 * k).toFixed(1)}" stroke-linejoin="round" opacity="0.95"/>` +
         `<path d="${d3}" fill="none" stroke="${glow}" stroke-width="${(4 * k).toFixed(1)}" stroke-linejoin="round" filter="url(#${gid9}g)"/>` +
-        `<line x1="${(26 * sx3 + pad2).toFixed(1)}" y1="${(110 * sy3 + pad2 - 6).toFixed(1)}" x2="${(36 * sx3 + pad2).toFixed(1)}" y2="${(114 * sy3 + pad2 + 4).toFixed(1)}" stroke="${isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.5)}" stroke-width="3" stroke-dasharray="3 3" opacity="0.9"/>`;
+        startTick;
+      /* isometric squash makes the extrusion read as elevation */
+      const iso = (inner: string) => `<g transform="translate(0 ${(H2 * 0.13).toFixed(1)}) scale(1 0.74)">${inner}</g>`;
       if (opts.part === "track") {
-        return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}"><defs><filter id="${gid9}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.55"/></filter></defs>${track}</svg>`;
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}"><defs><filter id="${gid9}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.55"/></filter></defs>${iso(track)}</svg>`;
       }
       const markers =
         `<circle cx="${(64 * sx3 + pad2).toFixed(1)}" cy="${(68 * sy3 + pad2).toFixed(1)}" r="${(6.5 * k).toFixed(1)}" fill="${glow}" filter="url(#${gid9}g)"/>` +
         `<circle cx="${(150 * sx3 + pad2).toFixed(1)}" cy="${(107 * sy3 + pad2).toFixed(1)}" r="${(5 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.55)}" opacity="0.85"/>` +
         `<circle cx="${(114 * sx3 + pad2).toFixed(1)}" cy="${(34 * sy3 + pad2).toFixed(1)}" r="${(5 * k).toFixed(1)}" fill="${hexMix("#FF4D5A", bevel, 0.18)}" opacity="0.9"/>`;
-      const tag = `<text x="${(cxOf(W2)).toFixed(1)}" y="${(H2 - 12).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".3em" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.3)}" text-anchor="middle" opacity="${dim}">SPA · GP CIRCUIT</text>`;
+      const tag = `<text x="${(cxOf(W2)).toFixed(1)}" y="${(H2 - 10).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".3em" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.3)}" text-anchor="middle" opacity="${dim}">KAZURI RING · GP CIRCUIT</text>`;
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="race circuit map" data-race="circuit">
 <defs><filter id="${gid9}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.55"/></filter></defs>
-<g opacity="${dim}">${track}${markers}${tag}</g>
+<g opacity="${dim}">${iso(track + markers)}${tag}</g>
+</svg>`;
+    }
+    case "leaderboard": {
+      /* Track position list — TOP 5, the player's row lit. The panel is the
+         kit shell; every row is live engine content in real games. */
+      const w = 330 * k, h = 250 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 168 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const inset = bw + 8;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const rows = [
+        { p: "1", d: "NOR", gap: "1:21.548", you: false },
+        { p: "2", d: "VER", gap: "+0.842", you: false },
+        { p: "3", d: "YOU", gap: "+2.156", you: true },
+        { p: "4", d: "LEC", gap: "+3.271", you: false },
+        { p: "5", d: "PIA", gap: "+4.712", you: false },
+      ];
+      const x0 = 39 + inset + 16 * k, x1 = 39 + w - inset - 18 * k;
+      const headY = 30 + inset + 20 * k;
+      const rowH = (h - inset * 2 - 40 * k) / rows.length;
+      const gid10 = "lb" + UID++;
+      const ink = "rgba(255,255,255,0.88)", ink2 = "rgba(255,255,255,0.5)";
+      const parts =
+        `<defs><linearGradient id="${gid10}s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${hexRgba(bevel, 0.55)}"/><stop offset="0.5" stop-color="${hexRgba(glow, 0.55)}"/><stop offset="1" stop-color="${hexRgba(bevel, 0.55)}"/></linearGradient></defs>` +
+        `<text x="${x0.toFixed(1)}" y="${headY.toFixed(1)}" font-family="Inter, sans-serif" font-size="${(12 * k).toFixed(1)}" font-weight="800" letter-spacing=".26em" fill="${hexRgba(glow, 0.8)}" opacity="${dim}">TOP 5</text>` +
+        rows.map((r, i) => {
+          const yC = 30 + inset + 34 * k + rowH * (i + 0.5);
+          const hl = r.you
+            ? `<rect x="${(x0 - 6 * k).toFixed(1)}" y="${(yC - rowH * 0.44).toFixed(1)}" width="${(x1 - x0 + 12 * k).toFixed(1)}" height="${(rowH * 0.88).toFixed(1)}" rx="${(7 * k).toFixed(1)}" fill="url(#${gid10}s)" stroke="${hexRgba(glow, 0.8)}" stroke-width="1.5"/>`
+            : "";
+          const w8 = r.you ? 900 : 700;
+          return hl +
+            `<text x="${(x0 + 4 * k).toFixed(1)}" y="${yC.toFixed(1)}" font-family="Inter, sans-serif" font-size="${(15 * k).toFixed(1)}" font-weight="${w8}" fill="${r.you ? "#FFFFFF" : ink2}" dominant-baseline="central">${r.p}</text>` +
+            `<text x="${(x0 + 30 * k).toFixed(1)}" y="${yC.toFixed(1)}" font-family="Inter, sans-serif" font-size="${(16 * k).toFixed(1)}" font-weight="${w8}" letter-spacing=".08em" fill="${r.you ? "#FFFFFF" : ink}" dominant-baseline="central">${r.d}</text>` +
+            `<text x="${x1.toFixed(1)}" y="${yC.toFixed(1)}" font-family="Inter, sans-serif" font-size="${(13.5 * k).toFixed(1)}" font-weight="600" fill="${r.you ? hexMix(glow, "#FFFFFF", 0.4) : ink2}" text-anchor="end" dominant-baseline="central">${r.gap}</text>`;
+        }).join("");
+      if (opts.part === "base") return track; // rows are live engine content
+      return inject(track, `<g opacity="${dim}">${parts}</g>`).replace("<svg ", `<svg data-race="board" `);
+    }
+    case "trophy": {
+      /* 1st-place trophy — candy gold, the rank lives on the bowl as
+         replaceable content. Shell-free celebration asset. */
+      const d4 = ({ s: 130, m: 168, l: 214 } as Record<KitSize, number>)[size] * k;
+      const pad4 = 44;
+      const W2 = d4 + pad4 * 2, H2 = d4 * 1.22 + pad4 * 2;
+      const cx3 = W2 / 2;
+      const gid11 = "tr" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const gold = hexMix("#F5B93C", bevel, 0.18);
+      const goldHi = lighten(gold, 0.45), goldLo = darken(gold, 0.4);
+      const bowlW = d4 * 0.72, bowlH = d4 * 0.52;
+      const bx = cx3 - bowlW / 2, by = pad4 + d4 * 0.06;
+      const rank = opts.label ?? "1";
+      const stemY = by + bowlH, baseY = stemY + d4 * 0.2;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" data-shell="${bx.toFixed(1)} ${by.toFixed(1)} ${bowlW.toFixed(1)} ${(baseY + d4 * 0.12 - by).toFixed(1)}" role="img" aria-label="first place trophy" data-race="trophy">
+<defs>
+  <linearGradient id="${gid11}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${goldLo}"/><stop offset="0.35" stop-color="${goldHi}"/><stop offset="0.6" stop-color="${gold}"/><stop offset="1" stop-color="${goldLo}"/></linearGradient>
+  <filter id="${gid11}g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${(d4 * 0.05).toFixed(1)}"/></filter>
+</defs>
+<g opacity="${dim}">
+  <ellipse cx="${cx3}" cy="${(baseY + d4 * 0.15).toFixed(1)}" rx="${(bowlW * 0.55).toFixed(1)}" ry="${(d4 * 0.05).toFixed(1)}" fill="rgba(0,0,0,0.35)"/>
+  <ellipse cx="${cx3}" cy="${(by + bowlH * 0.34).toFixed(1)}" rx="${(bowlW * 0.72).toFixed(1)}" ry="${(bowlH * 0.62).toFixed(1)}" fill="${gold}" filter="url(#${gid11}g)" opacity="0.3"/>
+  <path d="M ${(bx - d4 * 0.14).toFixed(1)} ${(by + bowlH * 0.14).toFixed(1)} q ${(-d4 * 0.16).toFixed(1)} ${(bowlH * 0.32).toFixed(1)} ${(d4 * 0.18).toFixed(1)} ${(bowlH * 0.52).toFixed(1)}" fill="none" stroke="${gold}" stroke-width="${(d4 * 0.055).toFixed(1)}" stroke-linecap="round"/>
+  <path d="M ${(bx + bowlW + d4 * 0.14).toFixed(1)} ${(by + bowlH * 0.14).toFixed(1)} q ${(d4 * 0.16).toFixed(1)} ${(bowlH * 0.32).toFixed(1)} ${(-d4 * 0.18).toFixed(1)} ${(bowlH * 0.52).toFixed(1)}" fill="none" stroke="${gold}" stroke-width="${(d4 * 0.055).toFixed(1)}" stroke-linecap="round"/>
+  <path d="M ${bx.toFixed(1)} ${by.toFixed(1)} H ${(bx + bowlW).toFixed(1)} V ${(by + bowlH * 0.42).toFixed(1)} Q ${(bx + bowlW).toFixed(1)} ${(by + bowlH).toFixed(1)} ${cx3.toFixed(1)} ${(by + bowlH).toFixed(1)} Q ${bx.toFixed(1)} ${(by + bowlH).toFixed(1)} ${bx.toFixed(1)} ${(by + bowlH * 0.42).toFixed(1)} Z" fill="url(#${gid11})" stroke="${goldLo}" stroke-width="2"/>
+  <ellipse cx="${cx3}" cy="${by.toFixed(1)}" rx="${(bowlW / 2).toFixed(1)}" ry="${(d4 * 0.05).toFixed(1)}" fill="${goldHi}" stroke="${goldLo}" stroke-width="1.5"/>
+  <ellipse cx="${(bx + bowlW * 0.28).toFixed(1)}" cy="${(by + bowlH * 0.3).toFixed(1)}" rx="${(bowlW * 0.12).toFixed(1)}" ry="${(bowlH * 0.22).toFixed(1)}" fill="#FFFFFF" opacity="0.5"/>
+  <path d="M ${(cx3 - d4 * 0.07).toFixed(1)} ${stemY.toFixed(1)} L ${(cx3 - d4 * 0.11).toFixed(1)} ${baseY.toFixed(1)} H ${(cx3 + d4 * 0.11).toFixed(1)} L ${(cx3 + d4 * 0.07).toFixed(1)} ${stemY.toFixed(1)} Z" fill="${darken(gold, 0.15)}" stroke="${goldLo}" stroke-width="1.5"/>
+  <path d="${roundRect(cx3 - bowlW * 0.34, baseY, bowlW * 0.68, d4 * 0.08, d4 * 0.02)}" fill="url(#${gid11})" stroke="${goldLo}" stroke-width="1.5"/>
+  <path d="${roundRect(cx3 - bowlW * 0.42, baseY + d4 * 0.07, bowlW * 0.84, d4 * 0.06, d4 * 0.02)}" fill="${darken(gold, 0.28)}" stroke="${goldLo}" stroke-width="1.5"/>
+  ${rank ? contentText(rank, cx3, by + bowlH * 0.44, d4 * 0.34 * typeK, { anchor: "middle", keepCase: true, opacity: dim }) : ""}
+  <path d="M ${(bx + bowlW * 0.82).toFixed(1)} ${(by - d4 * 0.05).toFixed(1)} l ${(d4 * 0.025).toFixed(1)} ${(d4 * 0.05).toFixed(1)} ${(d4 * 0.05).toFixed(1)} ${(d4 * 0.025).toFixed(1)} ${(-d4 * 0.05).toFixed(1)} ${(d4 * 0.025).toFixed(1)} ${(-d4 * 0.025).toFixed(1)} ${(d4 * 0.05).toFixed(1)} ${(-d4 * 0.025).toFixed(1)} ${(-d4 * 0.05).toFixed(1)} ${(-d4 * 0.05).toFixed(1)} ${(-d4 * 0.025).toFixed(1)} ${(d4 * 0.05).toFixed(1)} ${(-d4 * 0.025).toFixed(1)} Z" fill="#FFFFFF" opacity="0.9"/>
+</g>
 </svg>`;
     }
     case "dropdown": {

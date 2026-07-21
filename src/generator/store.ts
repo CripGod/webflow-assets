@@ -298,6 +298,8 @@ export interface RowCfg {
   lineGap?: number;
   /** Rides BOTH text lines up or down together (px at M). */
   blockDy?: number;
+  /** Show the second text line at all (default true). */
+  subOn?: boolean;
 }
 export function defaultRow(): RowCfg {
   return {

@@ -489,6 +489,13 @@ export function Panel() {
 
       {/* ── A2 · Silhouette — pure geometry, material stays ── */}
       <Section id="silhouette" title="Silhouette" summary={<span>{SHAPES.find((sh) => sh.id === D.shape)?.name.split(" — ")[0]}</span>}>
+        {/* v56: corner smoothness lives at the TOP of the section, always
+            visible — it was buried under the import notes and vanished for
+            pills, which read as "missing" */}
+        <Slider label="Corner smoothness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
+        {(focus ? (kitShapes[focus] ?? KIT_SHAPE[focus] ?? D.shape) : D.shape) === "pill" && (
+          <div className="helper">The pill's ends are already fully round — smoothness shows on cornered silhouettes (rectangles, chamfers, tags…).</div>
+        )}
         <div className="silcats" role="radiogroup" aria-label="Silhouette category">
           {["All", ...SILHOUETTE_CATEGORIES].map((cat) => (
             <button key={cat} className={silCat === cat ? "on" : ""} role="radio" aria-checked={silCat === cat}
@@ -553,9 +560,6 @@ export function Panel() {
           over arc segments — arcs can distort under stretch. Boolean-union overlapping
           shapes before export; counter-holes are fine.
         </div>
-        {(focus ? (kitShapes[focus] ?? KIT_SHAPE[focus] ?? D.shape) : D.shape) !== "pill" && (
-          <Slider label="Corner softness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
-        )}
         {focus && <div className="helper">Picking a silhouette here reshapes only <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the style stays global.</div>}
         <button className="resetstate" onClick={() => setOutlines(true)} title="Judge silhouettes as plain geometry — before materials flatter them">
           <Shapes size={13} strokeWidth={2} /> Outline view — compare raw geometry
@@ -874,14 +878,15 @@ export function Panel() {
           <Slider label="Size" value={kitRow.titleSize} min={60} max={160} unit="%" onChange={(v) => setKitRow({ titleSize: v })} />
           <Slider label="Tracking" value={kitRow.titleTrack} min={-5} max={20} unit="" onChange={(v) => setKitRow({ titleTrack: v })} />
           <Slider label="Vertical" value={kitRow.titleDy} min={-20} max={20} unit="px" onChange={(v) => setKitRow({ titleDy: v })} />
-          <div className="sublabel">Text group B — subtitle</div>
+          <div className="sublabel">Text group B — second line</div>
+          <label className="check"><input type="checkbox" checked={kitRow.subOn ?? true} onChange={(e) => setKitRow({ subOn: e.target.checked })} /> Show the second line</label>
           <input className="tinput" value={kitRow.sub} maxLength={40} aria-label="Row subtitle"
             onChange={(e) => setKitRow({ sub: e.target.value })} />
-          <Slider label="Size" value={kitRow.subSize} min={60} max={160} unit="%" onChange={(v) => setKitRow({ subSize: v })} />
+          <Slider label="Size" value={kitRow.subSize} min={50} max={160} unit="%" onChange={(v) => setKitRow({ subSize: v })} />
           <Slider label="Tracking" value={kitRow.subTrack} min={-5} max={20} unit="" onChange={(v) => setKitRow({ subTrack: v })} />
-          <Slider label="Vertical" value={kitRow.subDy} min={-20} max={20} unit="px" onChange={(v) => setKitRow({ subDy: v })} />
+          <Slider label="Vertical" value={kitRow.subDy} min={-40} max={40} unit="px" onChange={(v) => setKitRow({ subDy: v })} />
           <div className="sublabel">Leading</div>
-          <Slider label="Leading" value={kitRow.lineGap ?? 0} min={-16} max={40} unit="px" onChange={(v) => setKitRow({ lineGap: v })} />
+          <Slider label="Leading" value={kitRow.lineGap ?? 0} min={-30} max={80} unit="px" onChange={(v) => setKitRow({ lineGap: v })} />
           <Slider label="Block shift" value={kitRow.blockDy ?? 0} min={-24} max={24} unit="px" onChange={(v) => setKitRow({ blockDy: v })} />
           <div className="helper">Leading opens or closes the space between the title and subtitle; block shift rides both lines up or down together.</div>
           <div className="sublabel">Slots</div>
@@ -1083,9 +1088,11 @@ export function Panel() {
           <div className="helper">Any face pattern, inside the letterforms — tone-on-tone from the shell color.</div>
         </FxToggle>
         <FxToggle label="Highlight glints" on={T2.glints?.on ?? false}
-          onToggle={(v) => update((c) => { c.type.glints = { on: v, opacity: c.type.glints?.opacity ?? 55 }; })}>
-          <Slider label="Opacity" value={T2.glints?.opacity ?? 55} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.glints = { on: c.type.glints?.on ?? true, opacity: v }; })} />
-          <div className="helper">Crisp vector highlights riding the letterforms — a specular slab clipped to the glyphs plus star glints. They follow the master Lighting angle, like every highlight in the system.</div>
+          onToggle={(v) => update((c) => { c.type.glints = { ...(c.type.glints ?? { opacity: 55 }), on: v, opacity: c.type.glints?.opacity ?? 55 }; })}>
+          <Slider label="Opacity" value={T2.glints?.opacity ?? 55} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.glints = { ...(c.type.glints ?? { on: true }), on: c.type.glints?.on ?? true, opacity: v }; })} />
+          <Slider label="Nudge X" value={T2.glints?.ox ?? 0} min={-60} max={60} unit="%" onChange={(v) => update((c) => { c.type.glints = { on: c.type.glints?.on ?? true, opacity: c.type.glints?.opacity ?? 55, oy: c.type.glints?.oy, ox: v }; })} />
+          <Slider label="Nudge Y" value={T2.glints?.oy ?? 0} min={-60} max={60} unit="%" onChange={(v) => update((c) => { c.type.glints = { on: c.type.glints?.on ?? true, opacity: c.type.glints?.opacity ?? 55, ox: c.type.glints?.ox, oy: v }; })} />
+          <div className="helper">Crisp vector highlights riding the letterforms — a specular slab clipped to the glyphs plus star glints. They follow the master Lighting angle; the nudges shift the whole treatment in % of the letter height.</div>
         </FxToggle>
       </Section>
 
