@@ -66,13 +66,28 @@ function typeTex(cfg: GenConfig): THREE.CanvasTexture {
   cv.width = 1400; cv.height = 380;
   const ctx = cv.getContext("2d")!;
   const label = (cfg.content.label || "PLAY NOW").toUpperCase();
+  const T4 = cfg.type;
   const ink = hexMix(cfg.effects.Glow ?? "#8FF0FF", "#FFFFFF", 0.55);
   const draw = () => {
     ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.font = `${cfg.type.italic ? "italic " : ""}800 175px "${cfg.type.font}", Inter, sans-serif`;
+    ctx.font = `${T4.italic ? "italic " : ""}800 175px "${T4.font}", Inter, sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = ink;
+    // the label carries the real type fill — solid and gradient included
+    let paint: string | CanvasGradient = ink;
+    if (T4.fillMode === "solid") paint = T4.fill;
+    else if (T4.fillMode === "gradient") {
+      const g = ctx.createLinearGradient(0, cv.height / 2 - 88, 0, cv.height / 2 + 88);
+      g.addColorStop(0, T4.fill); g.addColorStop(1, T4.fill2);
+      paint = g;
+    }
     ctx.shadowColor = cfg.effects.Glow ?? "#8FF0FF"; ctx.shadowBlur = 34;
+    if (T4.outline.on) {
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = T4.outline.color;
+      ctx.lineWidth = Math.max(2, T4.outline.width * (175 / 52));
+      ctx.strokeText(label, cv.width / 2, cv.height / 2, cv.width - 140);
+    }
+    ctx.fillStyle = paint;
     ctx.fillText(label, cv.width / 2, cv.height / 2, cv.width - 140);
   };
   draw();
