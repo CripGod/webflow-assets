@@ -1556,3 +1556,5 @@ button.kp-fact { cursor: pointer; }
 }
 .bd-pvart svg { width: 100%; height: auto; display: block; }
 .bd-pvname { margin-top: 10px; text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: rgba(235,238,255,.6); }
+
+.kp-dlall.kp-dlquiet { opacity: .75; border-style: dashed; margin-top: 8px; }

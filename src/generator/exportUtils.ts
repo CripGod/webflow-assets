@@ -36,7 +36,7 @@ function crc32(buf: Uint8Array): number {
   for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
-export function makeZip(files: { path: string; data: string }[]): Blob {
+export function makeZip(files: { path: string; data: string | Uint8Array }[]): Blob {
   const enc = new TextEncoder();
   const chunks: Uint8Array[] = [];
   const central: Uint8Array[] = [];
@@ -52,7 +52,7 @@ export function makeZip(files: { path: string; data: string }[]): Blob {
   };
   for (const f of files) {
     const name = enc.encode(f.path);
-    const data = enc.encode(f.data);
+    const data = typeof f.data === "string" ? enc.encode(f.data) : f.data;
     const crc = crc32(data);
     const local = cat(u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
       u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), name, data);
@@ -67,8 +67,29 @@ export function makeZip(files: { path: string; data: string }[]): Blob {
     u32(centralBlob.length), u32(offset), u16(0));
   return new Blob([...chunks, centralBlob, end].map((u) => u.buffer as ArrayBuffer), { type: "application/zip" });
 }
-export function downloadZip(name: string, files: { path: string; data: string }[]) {
+export function downloadZip(name: string, files: { path: string; data: string | Uint8Array }[]) {
   download(name, makeZip(files));
+}
+
+/** Rasterize an SVG string to transparent PNG bytes at the given scale. */
+export function svgToPngBytes(svg: string, scale = 2): Promise<{ bytes: Uint8Array; w: number; h: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.round(img.width * scale));
+      cv.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = cv.getContext("2d")!;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      cv.toBlob(async (b) => {
+        if (!b) { reject(new Error("raster failed")); return; }
+        resolve({ bytes: new Uint8Array(await b.arrayBuffer()), w: cv.width, h: cv.height });
+      }, "image/png");
+    };
+    img.onerror = () => reject(new Error("svg load failed"));
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
+  });
 }
 
 /** Rasterize an SVG string to a transparent PNG at the given scale. */
@@ -135,12 +156,12 @@ export async function fontDataUri(family: string, cssQuery: string | null): Prom
   return uri;
 }
 
-export async function downloadSpriteSheet(
+export async function buildSpriteSheetBytes(
   entries: { name: string; svg: string }[],
   title: string,
   fontFamily: string,
   fontCss: string | null,
-): Promise<void> {
+): Promise<Uint8Array | null> {
   const fontUri = await fontDataUri(fontFamily, fontCss);
   const faceCss = fontUri ? `<defs><style>@font-face{font-family:'${fontFamily}';src:url(${fontUri}) format('woff2');}</style></defs>` : "";
   const imgs = await Promise.all(entries.map((e) => new Promise<{ name: string; img: HTMLImageElement; w: number; h: number } | null>((resolve) => {
@@ -172,7 +193,7 @@ export async function downloadSpriteSheet(
   const cv = document.createElement("canvas");
   cv.width = SHEET_W; cv.height = SHEET_H;
   const ctx = cv.getContext("2d");
-  if (!ctx) return;
+  if (!ctx) return null;
   ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "#8b93a3";
   ctx.font = "700 34px Inter, sans-serif";
@@ -186,7 +207,20 @@ export async function downloadSpriteSheet(
     ctx.font = "600 19px Inter, sans-serif";
     ctx.fillText(pl.name.toUpperCase(), pl.x + pl.w / 2, pl.y + pl.h + 30, pl.w + PAD);
   }
-  await new Promise<void>((resolve) => cv.toBlob((blob) => { if (blob) download("kit-sprite-sheet.png", blob); resolve(); }, "image/png"));
+  return await new Promise<Uint8Array | null>((resolve) => cv.toBlob(async (blob) => {
+    resolve(blob ? new Uint8Array(await blob.arrayBuffer()) : null);
+  }, "image/png"));
+}
+
+/** The packed sheet stays available as a VISUAL CATALOG download. */
+export async function downloadSpriteSheet(
+  entries: { name: string; svg: string }[],
+  title: string,
+  fontFamily: string,
+  fontCss: string | null,
+): Promise<void> {
+  const bytes = await buildSpriteSheetBytes(entries, title, fontFamily, fontCss);
+  if (bytes) download("kit-sprite-sheet.png", new Blob([bytes.buffer as ArrayBuffer], { type: "image/png" }));
 }
 
 export function buildHtml(cfg: GenConfig): string {

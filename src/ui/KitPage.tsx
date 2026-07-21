@@ -7,7 +7,8 @@ import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape }
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
 import { previewSvg } from "@/generator/icons";
-import { downloadSettings, downloadSvg, downloadZip, downloadSpriteSheet } from "@/generator/exportUtils";
+import { downloadSettings, downloadSvg, downloadZip, downloadSpriteSheet, buildSpriteSheetBytes } from "@/generator/exportUtils";
+import { downloadEngineExport } from "@/generator/engineExport";
 import { LiveArt } from "./LiveArt";
 import { HeroGL } from "./HeroGL";
 
@@ -22,6 +23,63 @@ const CHAPTERS: [string, string, string][] = [
   ["patterns", "04", "Screen Patterns"],
   ["resources", "05", "Resources"],
 ];
+
+/* "Edit pattern" sends the pattern's elements to the Board, pre-placed in
+   the pattern's own arrangement — nudge from there. */
+const PATTERN_BOARDS: Record<string, { kitId: KitComponentId; x: number; y: number; scale?: number }[]> = {
+  "Main Menu": [
+    { kitId: "header", x: 560, y: 90, scale: 1.1 }, { kitId: "primary", x: 700, y: 420, scale: 1.1 },
+    { kitId: "small", x: 790, y: 640 }, { kitId: "ghost", x: 790, y: 790 },
+    { kitId: "chip", x: 70, y: 60 }, { kitId: "iconbtn", x: 1680, y: 60, scale: 0.9 }, { kitId: "badge", x: 1540, y: 60, scale: 0.9 },
+  ],
+  "Sign In": [
+    { kitId: "header", x: 600, y: 90 }, { kitId: "input", x: 640, y: 380 }, { kitId: "input", x: 640, y: 540 },
+    { kitId: "primary", x: 710, y: 720 }, { kitId: "ghost", x: 800, y: 890, scale: 0.85 },
+  ],
+  "Settings": [
+    { kitId: "header", x: 620, y: 80 }, { kitId: "slider", x: 640, y: 350 }, { kitId: "slider", x: 640, y: 500 },
+    { kitId: "toggle", x: 700, y: 650 }, { kitId: "toggle", x: 1000, y: 650 }, { kitId: "small", x: 820, y: 830 },
+  ],
+  "Profile": [
+    { kitId: "iconbtn", x: 160, y: 140, scale: 1.3 }, { kitId: "datarow", x: 520, y: 150 },
+    { kitId: "progress", x: 520, y: 360 }, { kitId: "chip", x: 520, y: 500 }, { kitId: "badge", x: 1500, y: 150 },
+  ],
+  "Reward": [
+    { kitId: "badge", x: 830, y: 200, scale: 1.4 }, { kitId: "chip", x: 800, y: 560 }, { kitId: "primary", x: 700, y: 740 },
+  ],
+  "Purchase": [
+    { kitId: "header", x: 620, y: 80 }, { kitId: "segment", x: 640, y: 320 }, { kitId: "chip", x: 700, y: 520 },
+    { kitId: "resource", x: 660, y: 640 }, { kitId: "primary", x: 700, y: 810 },
+  ],
+  "Inventory": [
+    { kitId: "chip", x: 70, y: 55 }, { kitId: "resource", x: 420, y: 55 }, { kitId: "resource", x: 720, y: 55 },
+    { kitId: "iconbtn", x: 1700, y: 55, scale: 0.85 },
+    { kitId: "slot", x: 110, y: 220 }, { kitId: "slot", x: 110, y: 430, scale: 0.8 }, { kitId: "slot", x: 260, y: 430, scale: 0.8 },
+    { kitId: "tab", x: 620, y: 200 }, { kitId: "tab", x: 880, y: 200 }, { kitId: "tab", x: 1140, y: 200 },
+    { kitId: "slot", x: 620, y: 360, scale: 0.9 }, { kitId: "slot", x: 790, y: 360, scale: 0.9 }, { kitId: "slot", x: 960, y: 360, scale: 0.9 },
+    { kitId: "slot", x: 620, y: 540, scale: 0.9 }, { kitId: "slot", x: 790, y: 540, scale: 0.9 }, { kitId: "slot", x: 960, y: 540, scale: 0.9 },
+    { kitId: "progress", x: 620, y: 780 },
+    { kitId: "slot", x: 1480, y: 240 }, { kitId: "primary", x: 1430, y: 560, scale: 0.85 }, { kitId: "ghost", x: 1480, y: 720, scale: 0.8 },
+  ],
+  "Confirmation": [
+    { kitId: "header", x: 600, y: 240 }, { kitId: "small", x: 700, y: 620 }, { kitId: "ghost", x: 980, y: 620 },
+    { kitId: "iconbtn", x: 900, y: 800, scale: 0.8 },
+  ],
+  "Loading": [
+    { kitId: "header", x: 600, y: 300 }, { kitId: "progress", x: 640, y: 580, scale: 1.1 },
+  ],
+  "Results — Victory": [
+    { kitId: "header", x: 540, y: 160, scale: 1.1 }, { kitId: "resource", x: 790, y: 460 },
+    { kitId: "primary", x: 620, y: 680 }, { kitId: "ghost", x: 1060, y: 700 },
+  ],
+  "Empty State": [
+    { kitId: "badge", x: 870, y: 280, scale: 1.2 }, { kitId: "tab", x: 780, y: 500 }, { kitId: "small", x: 830, y: 660 },
+  ],
+  "Connection Error": [
+    { kitId: "badge", x: 870, y: 260, scale: 1.2 }, { kitId: "tab", x: 760, y: 480 },
+    { kitId: "small", x: 700, y: 660 }, { kitId: "ghost", x: 1000, y: 660 },
+  ],
+};
 
 const PIECE_SCALE = 0.62;
 const PATTERN_SCALE = 0.31;
@@ -192,6 +250,12 @@ function Pat({ n, name, cat, comps, asms, lead, children }: {
         <span className="pat-num">{n}</span>
         <h4 className="pat-name">{name}</h4>
         <span className="pat-cat">{cat}</span>
+        {PATTERN_BOARDS[name] && (
+          <button className="pat-open" title={`Recreate ${name} on the Board — elements land in this arrangement, ready to nudge`}
+            onClick={() => { useGen.getState().addBoardItems(PATTERN_BOARDS[name]); useGen.getState().setPhase("board"); }}>
+            Edit on Board →
+          </button>
+        )}
         <button className="pat-open" onClick={() => setBig(true)}
           title={`Inspect ${name} at presentation size`}>
           Open pattern →
@@ -497,13 +561,26 @@ export function KitPage() {
   });
   const [activeChap, setActiveChap] = useState("foundations");
 
-  /* one-button export: every asset onto a labeled PNG sprite sheet */
+  /* the packed sheet is a VISUAL CATALOG; engines get atomic assets */
   const [sheetBusy, setSheetBusy] = useState(false);
-  const downloadAllAssets = async () => {
-    if (sheetBusy) return;
-    setSheetBusy(true);
+  const [engineBusy, setEngineBusy] = useState(false);
+  const downloadEngineKit = async () => {
+    if (engineBusy) return;
+    setEngineBusy(true);
     try {
       const st = useGen.getState();
+      const name = st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`;
+      const fdef2 = fontByName(st.cfg.type.font);
+      await downloadEngineExport(
+        { cfg: st.cfg, kitDesigns: st.kitDesigns, kitTextFill: st.kitTextFill, kitShapes: st.kitShapes, kitSizes: st.kitSizes, kitName: name },
+        () => buildSpriteSheetBytes(sheetEntries(st), `${name} — visual catalog`, st.cfg.type.font, fdef2?.css ?? null),
+      );
+    } finally {
+      setEngineBusy(false);
+    }
+  };
+  const sheetEntries = (st: ReturnType<typeof useGen.getState>) => {
+    {
       const pieceCfg = (cid: KitComponentId) => applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]);
       const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}, v?: number, gstate: GenStateName = "default") => ({
         name,
@@ -556,8 +633,16 @@ export function KitPage() {
         rk("reticle", "Reticle · Locked", {}, undefined, "hover"),
         rk("ring", "Ring · Complete", {}, 1),
       ];
+      return entries;
+    }
+  };
+  const downloadAllAssets = async () => {
+    if (sheetBusy) return;
+    setSheetBusy(true);
+    try {
+      const st = useGen.getState();
       const fdef = fontByName(st.cfg.type.font);
-      await downloadSpriteSheet(entries, `${st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`} — sprite sheet`, st.cfg.type.font, fdef?.css ?? null);
+      await downloadSpriteSheet(sheetEntries(st), `${st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`} — visual catalog`, st.cfg.type.font, fdef?.css ?? null);
     } finally {
       setSheetBusy(false);
     }
@@ -742,8 +827,11 @@ export function KitPage() {
             style={{ background: cfg.effects.Bevel ?? "#0E9CC9", color: isDarkBg(cfg.effects.Bevel ?? "#0E9CC9") ? "#ffffff" : "#0d0f16" }}>
             <PenTool size={16} strokeWidth={2.3} /> Edit this Kit
           </button>
-          <button className="kp-dlall" onClick={downloadAllAssets} disabled={sheetBusy} title="Every asset on one labeled PNG sprite sheet">
-            <Download size={15} strokeWidth={2.2} /> {sheetBusy ? "Building the sheet…" : "Download all assets — PNG sprite sheet"}
+          <button className="kp-dlall" onClick={downloadEngineKit} disabled={engineBusy} title="Atomic, content-free assets: nine-slice PNGs, manifest, Unity importer, Unreal recipes">
+            <Download size={15} strokeWidth={2.2} /> {engineBusy ? "Building engine kit…" : "Engine export — atomic assets (ZIP)"}
+          </button>
+          <button className="kp-dlall kp-dlquiet" onClick={downloadAllAssets} disabled={sheetBusy} title="One labeled PNG of every asset — a catalog for humans, not for slicing">
+            <Download size={14} strokeWidth={2.2} /> {sheetBusy ? "Building the catalog…" : "Sprite sheet — visual catalog (PNG)"}
           </button>
           <div className="kp-roleline" aria-hidden="true">
             {roles.map((r) => <span className="kp-roledot" key={r}><i style={{ background: cfg.effects[r] }} />{r}</span>)}
@@ -1141,8 +1229,11 @@ export function KitPage() {
 
       {/* ── 14 · build parts ── */}
       <Sec n="01" title="Build Parts" note="Everything in the kit is built from these. Each part opens the layer that produces it in the editor. Downloads are layered SVGs with named groups and nine-slice metadata.">
-        <button className="kp-dlall" onClick={downloadAllAssets} disabled={sheetBusy} title="Every asset on one labeled PNG sprite sheet">
-          <Download size={15} strokeWidth={2.2} /> {sheetBusy ? "Building the sheet…" : "Download all assets — PNG sprite sheet"}
+        <button className="kp-dlall" onClick={downloadEngineKit} disabled={engineBusy} title="Atomic, content-free assets: nine-slice PNGs, manifest, Unity importer, Unreal recipes">
+          <Download size={15} strokeWidth={2.2} /> {engineBusy ? "Building engine kit…" : "Engine export — atomic assets (ZIP)"}
+        </button>
+        <button className="kp-dlall kp-dlquiet" onClick={downloadAllAssets} disabled={sheetBusy} title="One labeled PNG of every asset — a catalog for humans, not for slicing">
+          <Download size={14} strokeWidth={2.2} /> {sheetBusy ? "Building the catalog…" : "Sprite sheet — visual catalog (PNG)"}
         </button>
         <div className="kp-dlrow">
           {([["all", "Download full pack"], ["components", "Components"], ["layers", "Material layers"], ["controls", "Control pieces"], ["type", "Typography recipe"], ["assemblies", "Assemblies"]] as const).map(([which, capn]) => (
@@ -1902,7 +1993,7 @@ export function KitPage() {
         <SpecList rows={[
           ["Figma", "Drop any exported SVG on the canvas; ungroup once for the layer tree (shadow, extrusion, shell, face, content, gloss)"],
           ["Illustrator", "Opens directly. The SVG-Tiny clipping notice concerns re-saving only; imports are complete"],
-          ["Engines", "Sprite-sheet kit with per-state rects and 9-slice borders — Unity Sprite Editor and Unreal UMG shapes"],
+          ["Engines", "Atomic engine export: content-free nine-slice PNGs + kit-manifest.json (dims, margins, pivots, tintability), a Unity importer + example prefabs, Unreal UMG recipes — labels stay live engine text; the sprite sheet is a visual catalog only"],
           ["Nine-slice", "Caps are capScale × shell height and never stretch; content gives the text-safe insets (9slice.json)"],
           ["Settings", "The whole design as portable JSON — re-import it or share it as a team default"],
         ]} />
