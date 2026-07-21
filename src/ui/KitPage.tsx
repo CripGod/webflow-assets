@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix, isDarkBg } from "@/generator/model";
+import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix, isDarkBg, effKitSize } from "@/generator/model";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
 import { previewSvg } from "@/generator/icons";
 import { downloadSettings, downloadSvg, downloadZip } from "@/generator/exportUtils";
 import { LiveArt } from "./LiveArt";
+import { HeroGL } from "./HeroGL";
 
 /* The Kit — a living guideline sheet in five levels: Foundations, Components,
    Assemblies, Build Parts, Screen Patterns. One renderer draws everything,
@@ -50,7 +51,7 @@ function usePiece(p: PieceOpts) {
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
-  const size = p.size ?? (kitSizes[p.id] === "s" ? "m" : kitSizes[p.id]) ?? "l";
+  const size = p.size ?? effKitSize(kitSizes[p.id]);
   return {
     // a locked component renders its own snapshot, not the master's style
     cfg: applyKitDesign(cfg, kitDesigns[p.id]),
@@ -198,56 +199,6 @@ function LayoutCard({ id, name, device, onHide, children }: {
       </header>
       <div className="lay-view"><div className="lay-stage">{children}</div></div>
     </article>
-  );
-}
-
-/* ── hero composition — a structured screen-like collage of live pieces
-   on a starfield, unbounded by any card. Deliberate slots, not random:
-   headline column center, meta clusters left and right, dashed arcs. */
-const ORBIT: { p: PieceOpts; s: number }[] = [
-  { p: { id: "primary", label: "PLAY NOW" }, s: 0.5 },
-  { p: { id: "ring", value: 0.72 }, s: 0.5 },
-  { p: { id: "header", label: "LEVEL UP!" }, s: 0.38 },
-  { p: { id: "lives", label: "3", max: "5" }, s: 0.72 },
-  { p: { id: "joystick", size: "s" }, s: 0.46 },
-  { p: { id: "toggle", value: 1 }, s: 0.4 },
-  { p: { id: "slot", icon: STOCK_ICONS.gem, overlay: "level:42" }, s: 0.44 },
-  { p: { id: "reticle" }, s: 0.6 },
-];
-
-/* ── hero — an orbital carousel: pieces circle a glass centerpiece on one
-   shared elliptical path, recessed into depth on the far side. Pure CSS
-   3D illusion (scale + blur + layering), auto-animating, hover to pause,
-   still under prefers-reduced-motion. */
-function Collage() {
-  const { cfg } = useGen();
-  const glow = cfg.effects.Glow ?? "#8FF0FF";
-  const bevel = cfg.effects.Bevel ?? "#0E9CC9";
-  return (
-    <div className="kp-collage kp-orbit" aria-label="Live component carousel" style={{
-      backgroundImage: [
-        `radial-gradient(ellipse 62% 54% at 50% 42%, ${hexMix(glow, "#000000", 0)}1c, transparent 70%)`,
-        `radial-gradient(ellipse 50% 44% at 30% 72%, ${hexMix(bevel, "#000000", 0)}17, transparent 70%)`,
-        "radial-gradient(rgba(150,160,200,0.35) 1px, transparent 1.6px)",
-        "radial-gradient(rgba(150,160,200,0.22) 1px, transparent 1.4px)",
-      ].join(", "),
-      backgroundSize: "100% 100%, 100% 100%, 110px 110px, 66px 66px",
-      backgroundPosition: "0 0, 0 0, 12px 8px, 40px 50px",
-    }}>
-      <div className="kp-orbitcenter kp-dailyb">
-        <span className="kp-dbt">Daily bonus</span>
-        <span className="kp-dbs">Collect your reward</span>
-        <div className="kp-dbrow">
-          <SPiece id="badge" baseState="pressed" icon={STOCK_ICONS.gem} scale={0.52} />
-          <SPiece id="small" label="CLAIM" scale={0.5} />
-        </div>
-      </div>
-      {ORBIT.map((o, i) => (
-        <div className="kp-orbititem" key={i} style={{ animationDelay: `${((-44 / ORBIT.length) * i).toFixed(2)}s` }}>
-          <SPiece {...o.p} scale={o.s} />
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -463,7 +414,7 @@ export function KitPage() {
   const typeFx = [
     T.outline.on && "Outline", T.shadow.on && "Shadow",
     T.emboss.on && (T.emboss.strength < 0 ? "Deboss" : "Emboss"), T.glow.on && "Glow",
-    T.stripes?.on && "Stripes", T.inflate?.on && "Inflate",
+    T.stripes?.on && "Stripes", T.glints?.on && "Glints",
   ].filter(Boolean) as string[];
   const caseName = { none: "As typed", upper: "Uppercase", lower: "Lowercase", title: "Title Case" }[T.case];
 
@@ -523,7 +474,7 @@ export function KitPage() {
     const offAll = (c: GenConfig) => {
       c.type.outline.on = false; c.type.shadow.on = false; c.type.emboss.on = false;
       c.type.glow.on = false; c.type.stripes = { on: false, angle: 45, opacity: 30 };
-      c.type.inflate = { on: false, strength: 55 }; c.type.highlight = "";
+      c.type.glints = { on: false, opacity: 55 }; c.type.highlight = "";
     };
     const layers: { name: string; on: (c: GenConfig) => void }[] = [{ name: "Live base text · face fill", on: () => {} }];
     if (T.outline.on) layers.push({ name: "+ Outline", on: (c) => { c.type.outline.on = true; } });
@@ -531,7 +482,7 @@ export function KitPage() {
     if (T.emboss.on) layers.push({ name: T.emboss.strength < 0 ? "+ Deboss relief" : "+ Emboss relief", on: (c) => { c.type.emboss.on = true; } });
     if (T.glow.on) layers.push({ name: "+ Glow", on: (c) => { c.type.glow.on = true; } });
     if (T.stripes?.on) layers.push({ name: "+ Stripe mask", on: (c) => { c.type.stripes!.on = true; } });
-    if (T.inflate?.on) layers.push({ name: "+ Inflate highlight", on: (c) => { c.type.inflate!.on = true; } });
+    if (T.glints?.on) layers.push({ name: "+ Highlight glints", on: (c) => { c.type.glints!.on = true; } });
     layers.push({ name: "+ Highlight phrase", on: (c) => { c.type.highlight = c.content.label.split(" ").pop() ?? ""; } });
     const ons: ((c: GenConfig) => void)[] = [];
     return layers.map((l) => {
@@ -641,7 +592,7 @@ export function KitPage() {
             </div>
           )}
         </div>
-        <Collage />
+        <HeroGL />
       </header>
 
       <Chapter n="01" id="foundations" label="Foundations" blurb="The color roles, material and typography every component inherits." />
@@ -916,7 +867,7 @@ export function KitPage() {
           <Piece id="lives" caption="Lives" label="3" max="5" scale={0.72} />
           <Piece id="joystick" caption="Joystick · ghost overlay" overlay="ghost" scale={0.44} />
         </div>
-        <div className="kp-meta"><span>Reticles and lives are shell-free spatial UI</span><span>Badges double as spatial markers — pair one with the pulse ring from Onboarding & Map</span><span>Ghost joystick overlays gameplay at 48% opacity</span></div>
+        <div className="kp-meta"><span>Reticles and lives are shell-free spatial UI</span><span>Badges double as spatial markers — pair one with the pulse ring from Onboarding & Map</span><span>The overlay stick is stroke-and-glass — designed to sit on live gameplay</span></div>
         <div className="kp-subhead">Celebration numbers</div>
         <div className="kp-tray">
           <Piece id="bignum" caption="Big number · full type treatment, no container" label="+12,450" scale={0.6} />
@@ -954,7 +905,7 @@ export function KitPage() {
                 (["circle", "oval", "strip"] as const).forEach((kind) =>
                   files.push({ path: `assemblies/containers/panel-${kind}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns.panel), "panel", "m", "default", undefined, st.kitShapes.panel, { expand: true, kind }) }));
                 ([["header", "banner"], ["tab", "section-tab"], ["datarow", "list-row"], ["resource", "hud-counter"], ["slot", "item-slot"], ["ring", "progress-ring"], ["chip", "stat-chip"], ["badge", "medallion"]] as [KitComponentId, string][]).forEach(([cid, nm]) =>
-                  files.push({ path: `assemblies/pieces/${nm}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, st.kitSizes[cid] ?? "m", "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
+                  files.push({ path: `assemblies/pieces/${nm}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
                 files.push({
                   path: "assemblies/RECIPES.md",
                   data: [
@@ -968,12 +919,12 @@ export function KitPage() {
                     "- Objective card: tab + medallion + text + progress + chip + small button",
                     "- Reward track: item-slot per milestone, connectors 3px, done = solid",
                     "- Bottom sheet: panel with 18px top radius + handle bar 44×5",
-                    "- Map node: medallion; current node adds a 2px pulse ring at +8px",
+                    "- Waypoint: medallion; the current waypoint adds a 2px pulse ring at +8px",
                   ].join("\n"),
                 });
               }
               if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) =>
-                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, st.kitSizes[cid] ?? "m", "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${st.kitSizes[cid] ?? "m"}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
+                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
               if (which === "all") {
                 files.push({
                   path: "9slice.json",
@@ -1270,7 +1221,7 @@ export function KitPage() {
             </div>
           </div>
           <div className="gp-card">
-            <div className="gp-title">Map nodes · connectors</div>
+            <div className="gp-title">Waypoints · connectors</div>
             <div className="kp-map">
               <span className="kp-line done" />
               <span className="kp-line" />
