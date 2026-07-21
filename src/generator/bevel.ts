@@ -1103,7 +1103,7 @@ export interface KitOpts {
    *  group and slot toggles. Explicit label/sub/value still win per instance. */
   row?: {
     title?: string; sub?: string;
-    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number; lineGap?: number;
+    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number; lineGap?: number; blockDy?: number;
     titleTrack?: number; subTrack?: number;
     avatar?: boolean; progress?: boolean; action?: boolean; value?: number;
   };
@@ -1388,8 +1388,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
             iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 })
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
-        contentText(title, tx, 30 + inset + 16 * k + ((R2.titleDy ?? 0) + (opts.textOy ?? 0)) * k, fsT, { keepCase: true, track: R2.titleTrack ?? 0, opacity: dim }) +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
+        contentText(title, tx, 30 + inset + 16 * k + ((R2.titleDy ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k, fsT, { keepCase: true, track: R2.titleTrack ?? 0, opacity: dim }) +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
         `</g>` +
         (showBar
           ? (() => { const rfx = barFx(gid2, tx, barY, fillW2, 10 * k, 5 * k); return `<defs>${rfx.defs}</defs><path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
@@ -1617,6 +1617,76 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   <text x="${cx3}" y="${cy3 + 1}" font-family="'${font}', Inter, sans-serif" font-size="${(d2 * 0.18).toFixed(1)}" font-weight="800" letter-spacing="0.02em" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(label2)}</text>
 </g>
 </svg>`;
+    }
+    case "timer": {
+      /* Countdown chip — clock medallion, mm:ss readout, and a thin drain
+         strip along the bottom edge. Time is value·90s when no label is
+         given, so a live host can tick it down and the readout follows.
+         The last quarter turns urgent: the medallion and strip go alarm. */
+      const h = 88 * k;
+      const v3 = clamp(value ?? 0.62, 0, 1);
+      const secs = Math.max(0, Math.round(v3 * 90));
+      const tLabel = opts.label ?? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+      const urgent = v3 <= 0.25 && state !== "disabled";
+      const alarm = hexMix("#FF4D5A", bevel, 0.18);
+      const fsV = 32 * k;
+      const textW = tLabel.length * fsV * typeK * 0.62;
+      const w = Math.max(168 * k, 64 * k + textW + 52 * k);
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const cy = 30 + h / 2;
+      const medR = h * 0.42;
+      const medC = urgent ? alarm : bevel;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const inset = bw + 4;
+      const sh = 6 * k;
+      const sx2 = 39 + inset + 10 * k, sw2 = w - inset * 2 - 20 * k;
+      const sy2 = 30 + h - inset - sh - 4 * k;
+      const gid5 = "tm" + UID++;
+      const parts =
+        candyKnob(39 + 6 * k + medR, cy, medR, medC) +
+        iconGroup(STOCK_ICONS.clock, 39 + 6 * k + medR - medR * 0.5, cy - medR * 0.5, medR, darken(medC, 0.55), { strokeWidth: 2.4 }) +
+        contentText(tLabel, 39 + 18 * k + medR * 2, cy - 3 * k + typeOyK * k, fsV * typeK, { keepCase: true, opacity: dim }) +
+        `<defs><linearGradient id="${gid5}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>` +
+        `<path d="${roundRect(sx2, sy2, sw2, sh, sh / 2)}" fill="${wellFill}" opacity="0.92"/>` +
+        (v3 > 0.005 ? `<path d="${roundRect(sx2, sy2, sw2 * v3, sh, sh / 2)}" fill="${urgent ? alarm : `url(#${gid5})`}" opacity="${dim}"/>` : "");
+      return inject(track, `<g data-timer="chip"${urgent ? ' data-urgent="1"' : ""}>${parts}</g>`);
+    }
+    case "timerbar": {
+      /* Round timer — the arena clock. Unlike progress, the charge drains
+         toward the CENTER from both ends, quarter ticks mark the pacing,
+         and the readout rides the middle of the bar on a quiet capsule. */
+      const w = 560 * k, h = 60 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const inset = bw + 3;
+      const gapPad = 5 * k;
+      const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
+      const bh = h - inset * 2 - gapPad * 2;
+      const trackW = w - inset * 2 - gapPad * 2;
+      const v3 = clamp(value ?? 0.62, 0, 1);
+      const fw = trackW * v3;
+      const fx = bx + (trackW - fw) / 2;
+      const urgent = v3 <= 0.25 && state !== "disabled";
+      const alarm = hexMix("#FF4D5A", bevel, 0.18);
+      const secs = Math.max(0, Math.round(v3 * 90));
+      const tLabel = opts.label ?? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const gid5 = "tb" + UID++;
+      const pfx = barFx(gid5, fx, by, fw, bh, bh / 2);
+      const ticks = [0.25, 0.5, 0.75].map((t2) =>
+        `<rect x="${(bx + trackW * t2 - 1).toFixed(1)}" y="${(by + bh * 0.18).toFixed(1)}" width="2" height="${(bh * 0.64).toFixed(1)}" rx="1" fill="#FFFFFF" opacity="0.22"/>`).join("");
+      const fsB = Math.min(bh * 0.6, 26 * k) * typeK;
+      const capW = tLabel.length * fsB * 0.68 + 22 * k;
+      const cx4 = bx + trackW / 2;
+      return stampTrack(inject(track,
+        `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
+         <defs><linearGradient id="${gid5}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${urgent ? alarm : bevel}"/><stop offset="0.5" stop-color="${urgent ? lighten(alarm, 0.25) : glow}"/><stop offset="1" stop-color="${urgent ? alarm : bevel}"/></linearGradient>${pfx.defs}</defs>
+         <g data-timer="bar"${urgent ? ' data-urgent="1"' : ""}>
+         ${fw > 1 ? `${pfx.open}<path d="${roundRect(fx, by, fw, bh, bh / 2)}" fill="url(#${gid5})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${pfx.close}
+         <path d="${roundRect(fx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${pfx.over}` : ""}
+         ${ticks}
+         <rect x="${(cx4 - capW / 2).toFixed(1)}" y="${(by + bh / 2 - fsB * 0.72).toFixed(1)}" width="${capW.toFixed(1)}" height="${(fsB * 1.44).toFixed(1)}" rx="${(fsB * 0.72).toFixed(1)}" fill="#04080E" opacity="0.38"/>
+         ${contentText(tLabel, cx4, by + bh / 2 + 1 + typeOyK * k, fsB, { anchor: "middle", keepCase: true, opacity: dim })}
+         </g>`), bx, trackW);
     }
     case "dropdown": {
       const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy });

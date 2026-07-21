@@ -83,7 +83,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const inert = disabled || kit?.tone === "alt";
   const value = id === "toggle" || id === "checkbox" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
-    : id === "progress" || id === "ring" ? (playing && !disabled ? pval : kit?.value)
+    : id === "progress" || id === "ring" || id === "timer" || id === "timerbar" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
     : kit?.value;
 
@@ -93,7 +93,9 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const state: GenStateName = disabled ? "disabled"
     : held ? "pressed"
     : id === "input" && editing ? "hover" // focused input shows the caret
-    : id === "checkbox" ? (kit?.baseState ?? "default") // checks light up, they never grow
+    // switches light up when flipped, they never grow — hover/press stays off
+    // checkboxes, toggles and radios so the value change IS the feedback
+    : id === "checkbox" || id === "toggle" || id === "radio" ? (kit?.baseState ?? "default")
     : playing ? (live === "default" ? (kit?.baseState ?? "default") : live)
     : (kit?.baseState ?? "default");
 
@@ -181,11 +183,31 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
     raf.current = requestAnimationFrame(step);
   };
 
-  // ambient progress: the bar (or ring) quietly replays its demo on its own beat
+  /* Timer demo playback — refills to the target, then drains LINEARLY to
+     zero (time is linear) over ~3.2s; the renderer derives the mm:ss
+     readout from the value, so the clock visibly ticks down. */
+  const playTimer = () => {
+    cancelAnimationFrame(raf.current);
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPval(target);
+      return;
+    }
+    setPval(target);
+    const t0 = performance.now();
+    const step = (t: number) => {
+      const u = Math.min(1, (t - t0) / 3200);
+      setPval(target * (1 - u));
+      if (u < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+  };
+  const isTimer = id === "timer" || id === "timerbar";
+
+  // ambient progress: bars, rings and timers quietly replay on their own beat
   const beat = useRef(4600 + Math.random() * 2400);
   useEffect(() => {
-    if (!ambient || (id !== "progress" && id !== "ring") || !playing) return;
-    const t = window.setInterval(playProgress, beat.current);
+    if (!ambient || (id !== "progress" && id !== "ring" && !isTimer) || !playing) return;
+    const t = window.setInterval(isTimer ? playTimer : playProgress, beat.current);
     return () => window.clearInterval(t);
   }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -199,6 +221,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
     else if (id === "toggle" || id === "checkbox") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
     else if (id === "progress" || id === "ring") playProgress();
+    else if (isTimer) playTimer();
     else if (id === "segment") {
       const c = trackCoord(e);
       if (c) setSel(c.thirds);
@@ -279,12 +302,12 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
       onKeyDown: (e: React.KeyboardEvent) => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOn((v) => !v); }
       },
-    } : id === "progress" || id === "ring" ? {
+    } : id === "progress" || id === "ring" || isTimer ? {
       role: "button" as const,
       tabIndex: 0,
-      "aria-label": "Play progress demo",
+      "aria-label": isTimer ? "Restart the timer" : "Play progress demo",
       onKeyDown: (e: React.KeyboardEvent) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); playProgress(); }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (isTimer ? playTimer : playProgress)(); }
       },
     } : {}),
   };

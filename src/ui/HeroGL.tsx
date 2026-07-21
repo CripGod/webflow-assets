@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { useGen } from "@/generator/store";
 import { renderKit } from "@/generator/bevel";
-import { STOCK_ICONS, hexMix } from "@/generator/model";
+import { STOCK_ICONS, applyKitTextFill, hexMix } from "@/generator/model";
 import type { GenConfig } from "@/generator/model";
 
 /* ── HeroGL — the exploded material diagram, live in WebGL ──────────────
@@ -504,10 +504,11 @@ export function HeroGL() {
         R2.patternMat.needsUpdate = true;
         if (R2.still) R2.renderOnce();
       });
+      const kf = useGen.getState().kitTextFill;
       const svgs = [
-        renderKit(c, "iconbtn", "l", "default", undefined, undefined, { icon: STOCK_ICONS.gem }),
-        renderKit(c, "progress", "m", "default", 0.72),
-        renderKit(c, "panel", "m"),
+        renderKit(applyKitTextFill(c, kf.iconbtn), "iconbtn", "l", "default", undefined, undefined, { icon: STOCK_ICONS.gem }),
+        renderKit(applyKitTextFill(c, kf.progress), "progress", "m", "default", 0.72),
+        renderKit(applyKitTextFill(c, kf.panel), "panel", "m"),
       ];
       svgs.forEach((svg, i) => {
         svgTex(cropPad(svg), (tex, w, h) => {

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, KIT_SHAPE, applyKitDesign, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, KIT_SHAPE, applyKitDesign, applyKitTextFill, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
@@ -212,6 +212,10 @@ interface GenStore {
    *  the theme's value applies only to components never adjusted. */
   kitTextOy: Partial<Record<string, number>>;
   setKitTextOy: (key: string, v: number | null) => void;
+  /** Per-component text color override — one piece's glyphs go their own
+   *  color while global Typography keeps driving everything else. */
+  kitTextFill: Partial<Record<KitComponentId, string>>;
+  setKitTextFill: (id: KitComponentId, color: string | null) => void;
   /** Data rows (and objectives built from them) carry their own two-text-group
    *  content model — independent size, tracking and vertical placement per
    *  group, plus slot toggles. Too intricate for the generic text controls. */
@@ -288,6 +292,8 @@ export interface RowCfg {
   value: number;                          // progress fill %
   /** Extra distance between the title and subtitle lines (px at M). */
   lineGap?: number;
+  /** Rides BOTH text lines up or down together (px at M). */
+  blockDy?: number;
 }
 export function defaultRow(): RowCfg {
   return {
@@ -344,10 +350,12 @@ export const useGen = create<GenStore>((set, get) => ({
   setCanvasMode: (m) => set({ canvasMode: m }),
   library: loadJson<LibItem[]>(LIB_KEY, []),
   addToLibrary: (name) => {
-    const { focus, kitSizes, kitShapes, kitDesigns, kitTextOy } = get();
+    const { focus, kitSizes, kitShapes, kitDesigns, kitTextOy, kitTextFill } = get();
     let cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
     // a locked component saves with its locked look — the snapshot IS the piece
     if (focus && kitDesigns[focus]) cfg = applyKitDesign(cfg, kitDesigns[focus]);
+    // a per-piece text color bakes in the same way
+    if (focus && kitTextFill[focus]) cfg = applyKitTextFill(cfg, kitTextFill[focus]);
     // a component-specific text adjustment bakes into the snapshot
     if (focus) {
       const oy = kitTextOy[`${focus}:${effKitSize(kitSizes[focus])}`];
@@ -452,6 +460,14 @@ export const useGen = create<GenStore>((set, get) => ({
     const kitShapes = { ...get().kitShapes, [id]: shape };
     saveJson("ui-generator-kitshapes", kitShapes);
     set({ kitShapes });
+  },
+  kitTextFill: loadJson<Partial<Record<KitComponentId, string>>>("ui-generator-kittextfill", {}),
+  setKitTextFill: (id, color) => {
+    markTouched();
+    const kitTextFill = { ...get().kitTextFill };
+    if (color) kitTextFill[id] = color; else delete kitTextFill[id];
+    saveJson("ui-generator-kittextfill", kitTextFill);
+    set({ kitTextFill });
   },
   kitDesigns: loadJson<Partial<Record<KitComponentId, KitDesign>>>("ui-generator-kitdesigns", {}),
   setKitDesign: (id, d) => {

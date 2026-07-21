@@ -3,7 +3,7 @@ import { Download, Grid3x3, ImagePlus, Lock, Monitor, Search, Smartphone, Trash2
 import { useGen } from "@/generator/store";
 import type { BoardItem } from "@/generator/store";
 import { renderBevel, renderKit, glowPadOf } from "@/generator/bevel";
-import { KIT_COMPONENTS } from "@/generator/model";
+import { KIT_COMPONENTS, applyKitTextFill } from "@/generator/model";
 import type { GenConfig, KitComponentId } from "@/generator/model";
 import { download, downloadSvg } from "@/generator/exportUtils";
 import { LiveArt } from "./LiveArt";
@@ -18,7 +18,7 @@ import { LiveArt } from "./LiveArt";
 const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
   { name: "Buttons", ids: ["primary", "secondary", "small", "ghost", "iconbtn"] },
   { name: "Containers", ids: ["panel", "header", "tab", "dropdown"] },
-  { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "ring"] },
+  { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "ring", "timer", "timerbar"] },
   { name: "Controls", ids: ["toggle", "slider", "progress", "input", "segment", "checkbox", "radio", "joystick"] },
   { name: "Combat & spatial", ids: ["reticle", "minimap", "ammo", "lives", "bignum"] },
 ];
@@ -32,7 +32,7 @@ const clone = (c: GenConfig) => (typeof structuredClone === "function" ? structu
 
 export function BoardView({ playing }: { playing: boolean }) {
   const {
-    cfg, board, library, kitShapes, kitSizes, kitRow,
+    cfg, board, library, kitShapes, kitSizes, kitTextFill, kitRow,
     boardAspect, setBoardAspect, boardSnap, setBoardSnap, boardSel, setBoardSel,
     addToBoard, addKitToBoard, moveBoardItem, scaleBoardItem, rotateBoardItem, removeBoardItem,
     bgImage, setBgImage, bgShow, bgOpacity, bgBlur, setBg,
@@ -65,16 +65,16 @@ export function BoardView({ playing }: { playing: boolean }) {
     const name = (id: KitComponentId) => KIT_COMPONENTS.find((c) => c.id === id)?.name ?? id;
     return ASSET_GROUPS.map((g) => ({
       name: g.name,
-      items: g.ids.map((id) => ({ id, name: name(id), svg: renderKit(tc, id, "s", "default", undefined, kitShapes[id]) })),
+      items: g.ids.map((id) => ({ id, name: name(id), svg: renderKit(applyKitTextFill(tc, kitTextFill[id]), id, "s", "default", undefined, kitShapes[id]) })),
     }));
-  }, [cfg, kitShapes]);
+  }, [cfg, kitShapes, kitTextFill]);
 
   const sel = board.find((b) => b.id === boardSel) ?? null;
 
   /* the exact svg a board item shows — shared by display, export and PNG */
   const svgOf = (b: BoardItem): { svg: string; cfg: GenConfig } => {
     if (b.kitId) {
-      return { svg: renderKit(cfg, b.kitId, kitSizes[b.kitId] ?? "l", "default", undefined, kitShapes[b.kitId], { row: b.kitId === "datarow" ? kitRow : undefined }), cfg };
+      return { svg: renderKit(applyKitTextFill(cfg, kitTextFill[b.kitId]), b.kitId, kitSizes[b.kitId] ?? "l", "default", undefined, kitShapes[b.kitId], { row: b.kitId === "datarow" ? kitRow : undefined }), cfg };
     }
     const item = library.find((l) => l.id === b.libId);
     if (!item) return { svg: "", cfg };
@@ -291,7 +291,7 @@ function StagePiece({ b, playing, fit, selected, svgOf, onSelect, onDragStart, o
   onDragMove: (e: React.PointerEvent) => void;
   onDragEnd: () => void;
 }) {
-  const { cfg, library, kitShapes, kitSizes, kitRow } = useGen();
+  const { cfg, library, kitShapes, kitSizes, kitTextFill, kitRow } = useGen();
   void svgOf;
   const sc = b.scale ?? 1;
   const item = b.kitId ? null : library.find((l) => l.id === b.libId);
@@ -311,7 +311,7 @@ function StagePiece({ b, playing, fit, selected, svgOf, onSelect, onDragStart, o
       } : { onPointerDown: onSelect })}>
       <div style={{ transform: `scale(${sc})`, transformOrigin: "top left" }}>
         {b.kitId ? (
-          <LiveArt cfg={cfg} playing={playing} anchorContent
+          <LiveArt cfg={applyKitTextFill(cfg, kitTextFill[b.kitId])} playing={playing} anchorContent
             kit={{ id: b.kitId, size: kitSizes[b.kitId] ?? "l", shape: kitShapes[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }} />
         ) : (
           <LiveArt cfg={item!.cfg} playing={playing} anchorContent

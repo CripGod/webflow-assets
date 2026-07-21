@@ -247,7 +247,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -867,8 +867,10 @@ export function Panel() {
           <Slider label="Size" value={kitRow.subSize} min={60} max={160} unit="%" onChange={(v) => setKitRow({ subSize: v })} />
           <Slider label="Tracking" value={kitRow.subTrack} min={-5} max={20} unit="" onChange={(v) => setKitRow({ subTrack: v })} />
           <Slider label="Vertical" value={kitRow.subDy} min={-20} max={20} unit="px" onChange={(v) => setKitRow({ subDy: v })} />
-          <Slider label="Line spacing" value={kitRow.lineGap ?? 0} min={-12} max={30} unit="px" onChange={(v) => setKitRow({ lineGap: v })} />
-          <div className="helper">Distance between the title and subtitle lines.</div>
+          <div className="sublabel">Leading</div>
+          <Slider label="Leading" value={kitRow.lineGap ?? 0} min={-16} max={40} unit="px" onChange={(v) => setKitRow({ lineGap: v })} />
+          <Slider label="Block shift" value={kitRow.blockDy ?? 0} min={-24} max={24} unit="px" onChange={(v) => setKitRow({ blockDy: v })} />
+          <div className="helper">Leading opens or closes the space between the title and subtitle; block shift rides both lines up or down together.</div>
           <div className="sublabel">Slots</div>
           <label className="check"><input type="checkbox" checked={kitRow.avatar} onChange={(e) => setKitRow({ avatar: e.target.checked })} /> Portrait / icon slot</label>
           <label className="check"><input type="checkbox" checked={kitRow.progress} onChange={(e) => setKitRow({ progress: e.target.checked })} /> Progress bar</label>
@@ -985,6 +987,22 @@ export function Panel() {
           </button>
         </>)}
         <Slider label="Fill opacity" value={T2.fillOpacity ?? 100} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.fillOpacity = v; })} />
+
+        {/* per-piece text color — the escape hatch from "changing text color
+            changes it everywhere". Only offered while a component is focused. */}
+        {focus && (() => {
+          const fname = KIT_COMPONENTS.find((c) => c.id === focus)?.name ?? focus;
+          return (<>
+            <div className="sublabel">This piece only</div>
+            <label className="check"><input type="checkbox" checked={!!kitTextFill[focus]}
+              onChange={(e) => setKitTextFill(focus, e.target.checked ? (T2.fillMode !== "auto" ? T2.fill : "#FFFFFF") : null)} />
+              Own text color for <b>{fname}</b></label>
+            {kitTextFill[focus] && (<>
+              <Well label="This piece only" value={kitTextFill[focus]!} onChange={(v) => setKitTextFill(focus, v)} />
+              <div className="helper">{fname} keeps this text color no matter how the global type or palette changes. Untick to rejoin the kit.</div>
+            </>)}
+          </>);
+        })()}
 
         <label className="fieldbox" style={{ minWidth: 0 }}>
           <span className="fl">Text style preset</span>

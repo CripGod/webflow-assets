@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, fontByName, hexMix, isDarkBg, effKitSize } from "@/generator/model";
+import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, applyKitTextFill, fontByName, hexMix, isDarkBg, effKitSize } from "@/generator/model";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
@@ -66,14 +66,15 @@ interface PieceOpts {
 /** Shared plumbing for every live piece on this page. The page is always
  *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitRow, setFocus, setKitSize, setKitKind } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextFill, kitRow, setFocus, setKitSize, setKitKind } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
   const size = p.size ?? effKitSize(kitSizes[p.id]);
   return {
-    // a locked component renders its own snapshot, not the master's style
-    cfg: applyKitDesign(cfg, kitDesigns[p.id]),
+    // a locked component renders its own snapshot, not the master's style —
+    // and a per-piece text color rides on top of either
+    cfg: applyKitTextFill(applyKitDesign(cfg, kitDesigns[p.id]), kitTextFill[p.id]),
     locked: !!kitDesigns[p.id],
     size, setKitSize,
     sizable: p.size === undefined,
@@ -118,10 +119,10 @@ function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
         <button className="kp-dl" title={`Export ${p.caption} SVG`} aria-label={`Export ${p.caption} SVG`}
           onClick={(e) => {
             e.stopPropagation();
-            const { cfg: c, kitShapes: ks, kitDesigns: kd, kitTextOy: ko } = useGen.getState();
+            const { cfg: c, kitShapes: ks, kitDesigns: kd, kitTextOy: ko, kitTextFill: kf } = useGen.getState();
             const variant = p.caption.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
             downloadSvg(
-              renderKit(applyKitDesign(c, kd[p.id]), p.id, size, p.baseState ?? "default", p.value, ks[p.id],
+              renderKit(applyKitTextFill(applyKitDesign(c, kd[p.id]), kf[p.id]), p.id, size, p.baseState ?? "default", p.value, ks[p.id],
                 { label: p.label, segments: p.segments, icon: p.icon, expand: true, textOy: ko[`${p.id}:${size}`] }),
               `kit-${variant}-${size}.svg`
             );
@@ -422,7 +423,7 @@ const ICON_SET: { key: string; name: string }[] = [
 ];
 
 export function KitPage() {
-  const { cfg, kitDesigns, setPhase, kitName, setKitName, saveUserPreset, update } = useGen();
+  const { cfg, kitDesigns, kitTextFill, setPhase, kitName, setKitName, saveUserPreset, update } = useGen();
   const dark = isDarkBg(cfg.canvas);
   const preset = PRESETS.find((p) => p.id === cfg.presetId);
   const sil = SHAPES.find((s) => s.id === cfg.shape)?.name.split(" — ")[0] ?? "Custom";
@@ -482,9 +483,10 @@ export function KitPage() {
     setSheetBusy(true);
     try {
       const st = useGen.getState();
-      const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}) => ({
+      const pieceCfg = (cid: KitComponentId) => applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]);
+      const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}, v?: number, gstate: GenStateName = "default") => ({
         name,
-        svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], {
+        svg: renderKit(pieceCfg(cid), cid, effKitSize(st.kitSizes[cid]), gstate, v, st.kitShapes[cid], {
           expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`],
           row: cid === "datarow" ? st.kitRow : undefined, ...extra,
         }),
@@ -499,10 +501,12 @@ export function KitPage() {
         rk("joystick", "Joystick · Ghost", { overlay: "ghost" }),
         rk("slot", "Slot · Level", { icon: STOCK_ICONS.gem, overlay: "level:42" }),
         rk("slot", "Slot · Locked", { icon: STOCK_ICONS.gem, overlay: "locked" }),
-        { name: "Badge · Awarded", svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns.badge), "badge", effKitSize(st.kitSizes.badge), "pressed", undefined, st.kitShapes.badge, { expand: true }) },
-        { name: "Primary · Hover", svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns.primary), "primary", effKitSize(st.kitSizes.primary), "hover", undefined, st.kitShapes.primary, { expand: true }) },
-        { name: "Primary · Pressed", svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns.primary), "primary", effKitSize(st.kitSizes.primary), "pressed", undefined, st.kitShapes.primary, { expand: true }) },
-        { name: "Primary · Disabled", svg: renderKit(applyKitDesign(st.cfg, st.kitDesigns.primary), "primary", effKitSize(st.kitSizes.primary), "disabled", undefined, st.kitShapes.primary, { expand: true }) },
+        rk("timer", "Countdown · Urgent", {}, 0.13),
+        rk("timerbar", "Round timer · Urgent", {}, 0.13),
+        rk("badge", "Badge · Awarded", {}, undefined, "pressed"),
+        rk("primary", "Primary · Hover", {}, undefined, "hover"),
+        rk("primary", "Primary · Pressed", {}, undefined, "pressed"),
+        rk("primary", "Primary · Disabled", {}, undefined, "disabled"),
       ];
       const fdef = fontByName(st.cfg.type.font);
       await downloadSpriteSheet(entries, `${st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`} — sprite sheet`, st.cfg.type.font, fdef?.css ?? null);
@@ -964,11 +968,11 @@ export function KitPage() {
         <div className="kp-subhead">Banner / Stretch</div>
         <div className="kp-tray kp-banners">
           <div>
-            <SliceDemo cfg={applyKitDesign(cfg, kitDesigns.header)} label={label} fit={380} ruler />
+            <SliceDemo cfg={applyKitTextFill(applyKitDesign(cfg, kitDesigns.header), kitTextFill.header)} label={label} fit={380} ruler />
             <div className="kp-cap"><span>Standard</span></div>
           </div>
           <div>
-            <SliceDemo cfg={applyKitDesign(cfg, kitDesigns.header)} label="CONTINUE YOUR ADVENTURE" size="l" fit={520} ruler />
+            <SliceDemo cfg={applyKitTextFill(applyKitDesign(cfg, kitDesigns.header), kitTextFill.header)} label="CONTINUE YOUR ADVENTURE" size="l" fit={520} ruler />
             <div className="kp-cap"><span>Wide</span></div>
           </div>
         </div>
@@ -1065,6 +1069,17 @@ export function KitPage() {
           <Piece id="ring" size="l" caption="Complete" value={1} label="✓" scale={0.56} />
           <Piece id="ring" size="l" caption="Expired" value={0} label="0:00" baseState="disabled" scale={0.56} />
         </div>
+        <div className="kp-subhead">Round timers — the countdown ticks live; the last quarter goes urgent</div>
+        <div className="kp-tray">
+          <Piece id="timer" caption="Countdown · running" value={0.62} scale={0.5} ambient />
+          <Piece id="timer" caption="Countdown · urgent" value={0.13} scale={0.5} />
+          <Piece id="timer" caption="Countdown · expired" value={0} baseState="disabled" scale={0.5} />
+        </div>
+        <div className="kp-tray">
+          <Piece id="timerbar" caption="Round timer · draining to center" value={0.62} scale={0.5} ambient />
+          <Piece id="timerbar" caption="Round timer · urgent" value={0.13} scale={0.5} />
+        </div>
+        <div className="kp-meta"><span>Time derives from the value — hosts tick the value, the readout follows</span><span>Quarter ticks pace the round</span><span>Below 25% the fill and medallion switch to the alarm tint</span></div>
       </Sec>
 
       <Chapter n="03" id="parts" label="Build Parts" blurb="The construction vocabulary: parts, containers, assemblies and motion — with downloads." />
@@ -1083,16 +1098,16 @@ export function KitPage() {
               if (which === "all" || which === "layers") layerCards.forEach((lc) => files.push({ path: `build-parts/material-layers/${slug(lc.name)}.svg`, data: lc.svg }));
               if (which === "all" || which === "type") recipe.forEach((r) => files.push({ path: `build-parts/typography-recipe/${slug(r.name)}.svg`, data: r.svg }));
               if (which === "all" || which === "controls") (["slider", "toggle", "progress", "badge", "ring", "slot", "resource", "datarow"] as KitComponentId[]).forEach((cid) =>
-                files.push({ path: `build-parts/control-pieces/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, "m", "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
+                files.push({ path: `build-parts/control-pieces/${cid}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, "m", "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
               if (which === "all" || which === "assemblies") {
                 // containers + the pieces every assembly is composed from,
                 // plus a recipe sheet describing the compositions
                 (["s", "m", "l"] as const).forEach((sz) =>
-                  files.push({ path: `assemblies/containers/panel-${sz}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns.panel), "panel", sz, "default", undefined, st.kitShapes.panel, { expand: true }) }));
+                  files.push({ path: `assemblies/containers/panel-${sz}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns.panel), st.kitTextFill.panel), "panel", sz, "default", undefined, st.kitShapes.panel, { expand: true }) }));
                 (["circle", "oval", "strip"] as const).forEach((kind) =>
-                  files.push({ path: `assemblies/containers/panel-${kind}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns.panel), "panel", "m", "default", undefined, st.kitShapes.panel, { expand: true, kind }) }));
+                  files.push({ path: `assemblies/containers/panel-${kind}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns.panel), st.kitTextFill.panel), "panel", "m", "default", undefined, st.kitShapes.panel, { expand: true, kind }) }));
                 ([["header", "banner"], ["tab", "section-tab"], ["datarow", "list-row"], ["resource", "hud-counter"], ["slot", "item-slot"], ["ring", "progress-ring"], ["chip", "stat-chip"], ["badge", "medallion"]] as [KitComponentId, string][]).forEach(([cid, nm]) =>
-                  files.push({ path: `assemblies/pieces/${nm}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
+                  files.push({ path: `assemblies/pieces/${nm}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, row: cid === "datarow" ? st.kitRow : undefined }) }));
                 files.push({
                   path: "assemblies/RECIPES.md",
                   data: [
@@ -1111,7 +1126,7 @@ export function KitPage() {
                 });
               }
               if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) =>
-                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitDesign(st.cfg, st.kitDesigns[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
+                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
               if (which === "all") {
                 files.push({
                   path: "9slice.json",
