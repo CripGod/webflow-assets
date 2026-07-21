@@ -286,6 +286,8 @@ export interface RowCfg {
   titleTrack: number; subTrack: number;   // letter-spacing, em/100
   avatar: boolean; progress: boolean; action: boolean;
   value: number;                          // progress fill %
+  /** Extra distance between the title and subtitle lines (px at M). */
+  lineGap?: number;
 }
 export function defaultRow(): RowCfg {
   return {

@@ -708,7 +708,8 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-banners > div { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 
 .kp-parts, .kp-recipe { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 12px; margin-top: 10px; }
-.kp-recipe { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+.kp-recipe { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+.kp-recipe .kp-part { padding: 18px 12px 12px; gap: 10px; }
 .kp-part {
   display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 8px 8px;
   border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); cursor: pointer;

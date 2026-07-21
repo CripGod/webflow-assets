@@ -65,6 +65,8 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const [val, setVal] = useState(clamp01(kit?.value ?? 0.62));      // slider
   const [pval, setPval] = useState(clamp01(kit?.value ?? 0.62));    // progress
   const [sel, setSel] = useState(Math.round(kit?.value ?? 1));      // segment
+  const [typed, setTyped] = useState<string | null>(null);          // input
+  const [editing, setEditing] = useState(false);                    // input focus
   const [open, setOpen] = useState(kit?.baseState === "pressed");   // dropdown / badge award
   const [stick, setStick] = useState<[number, number]>([0, 0]);  // joystick
   const stickDrag = useRef<{ x: number; y: number; sx: number; sy: number } | null>(null);
@@ -90,6 +92,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const held = (id === "dropdown" || id === "badge") && (playing ? open : kit?.baseState === "pressed");
   const state: GenStateName = disabled ? "disabled"
     : held ? "pressed"
+    : id === "input" && editing ? "hover" // focused input shows the caret
     : id === "checkbox" ? (kit?.baseState ?? "default") // checks light up, they never grow
     : playing ? (live === "default" ? (kit?.baseState ?? "default") : live)
     : (kit?.baseState ?? "default");
@@ -101,9 +104,9 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
     : "";
   const svg = useMemo(
     () => kit
-      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
+      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: id === "input" ? (typed ?? kit.label) : kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
       : renderBevel(cfg, state),
-    [cfg, kitKey, state, value, id === "joystick" ? stick : null] // eslint-disable-line react-hooks/exhaustive-deps
+    [cfg, kitKey, state, value, id === "joystick" ? stick : null, id === "input" ? typed : null] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // natural width × scale — uniform physical scale across every piece, so a
@@ -192,7 +195,8 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
      so pointerup on it is the reliable activation signal. */
   const pressedHere = useRef(false);
   const activate = (e: React.PointerEvent) => {
-    if (id === "toggle" || id === "checkbox") setOn((v) => !v);
+    if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
+    else if (id === "toggle" || id === "checkbox") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
     else if (id === "progress" || id === "ring") playProgress();
     else if (id === "segment") {
@@ -253,7 +257,22 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
     // suppress it; keyboard users still reach pieces through tab order
     onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
     // keyboard operation for the stateful pieces
-    ...(id === "toggle" ? {
+    ...(id === "input" ? {
+      role: "textbox" as const,
+      tabIndex: 0,
+      "aria-label": "Type into the input",
+      onFocus: () => setEditing(true),
+      onBlur: () => setEditing(false),
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (!editing && e.key.length === 1) { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); }
+        if (e.key === "Backspace") { e.preventDefault(); setTyped((t) => (t ?? kit?.label ?? "").slice(0, -1)); }
+        else if (e.key === "Escape" || e.key === "Enter") { (e.currentTarget as HTMLElement).blur(); }
+        else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          setTyped((t) => ((t ?? kit?.label ?? "") + e.key).slice(0, 24));
+        }
+      },
+    } : id === "toggle" ? {
       role: "switch" as const,
       "aria-checked": on,
       tabIndex: 0,

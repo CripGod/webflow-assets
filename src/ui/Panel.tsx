@@ -867,6 +867,8 @@ export function Panel() {
           <Slider label="Size" value={kitRow.subSize} min={60} max={160} unit="%" onChange={(v) => setKitRow({ subSize: v })} />
           <Slider label="Tracking" value={kitRow.subTrack} min={-5} max={20} unit="" onChange={(v) => setKitRow({ subTrack: v })} />
           <Slider label="Vertical" value={kitRow.subDy} min={-20} max={20} unit="px" onChange={(v) => setKitRow({ subDy: v })} />
+          <Slider label="Line spacing" value={kitRow.lineGap ?? 0} min={-12} max={30} unit="px" onChange={(v) => setKitRow({ lineGap: v })} />
+          <div className="helper">Distance between the title and subtitle lines.</div>
           <div className="sublabel">Slots</div>
           <label className="check"><input type="checkbox" checked={kitRow.avatar} onChange={(e) => setKitRow({ avatar: e.target.checked })} /> Portrait / icon slot</label>
           <label className="check"><input type="checkbox" checked={kitRow.progress} onChange={(e) => setKitRow({ progress: e.target.checked })} /> Progress bar</label>

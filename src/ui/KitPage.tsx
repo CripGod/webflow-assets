@@ -347,7 +347,9 @@ function MotionDemo({ name, cls, piece, purpose, dur, ease }: {
 }) {
   const [tick, setTick] = useState(0);
   return (
-    <button className="kp-part kp-mo" title={`Replay ${name}`} onClick={() => setTick((t) => t + 1)}>
+    <button className="kp-part kp-mo" title={`Replay ${name}`}
+      onPointerUp={() => setTick((t) => t + 1)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTick((t) => t + 1); } }}>
       <span key={tick} className={`kp-mostage ${cls}`}>
         <PPiece {...piece} scale={piece.scale ?? 0.52} />
       </span>
@@ -564,7 +566,7 @@ export function KitPage() {
     return layers.map((l) => {
       ons.push(l.on);
       const fns = [...ons];
-      return { name: l.name, svg: renderTypeSpecimen(cfg, label, { mutate: (c) => { offAll(c); fns.forEach((f) => f(c)); } }) };
+      return { name: l.name, svg: tightenV(renderTypeSpecimen(cfg, label, { mutate: (c) => { offAll(c); fns.forEach((f) => f(c)); c.type.size = 64; } }), 64, cfg.type.oy ?? 0) };
     });
   }, [cfg, label]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -870,16 +872,16 @@ export function KitPage() {
       {/* ── 05 · fields ── */}
       <Sec n="03" title="Fields" note="Input wells sunk into the same material. The dropdown opens in place.">
         <div className="kp-tray">
-          <Piece id="input" caption="Input" />
+          <Piece id="input" caption="Input · click and type" scale={0.78} />
           <Piece id="dropdown" caption="Dropdown" />
           {/* the open menu overflows its svg — give the caption room below */}
           <div className="kp-tall"><Piece id="dropdown" caption="Dropdown · Open" baseState="pressed" /></div>
         </div>
         <StateStrip variants={[
-          { cap: "Empty", piece: { id: "input" } },
-          { cap: "Filled", piece: { id: "input", label: "player_one" } },
-          { cap: "Hover / Focus", piece: { id: "input", baseState: "hover" } },
-          { cap: "Disabled", piece: { id: "input", baseState: "disabled" } },
+          { cap: "Empty", piece: { id: "input", scale: 0.46 } },
+          { cap: "Filled", piece: { id: "input", label: "player_one", scale: 0.46 } },
+          { cap: "Hover / Focus", piece: { id: "input", baseState: "hover", scale: 0.46 } },
+          { cap: "Disabled", piece: { id: "input", baseState: "disabled", scale: 0.46 } },
         ]} />
       </Sec>
 
@@ -1121,7 +1123,7 @@ export function KitPage() {
         <div className="kp-recipe">
           {recipe.map((r) => (
             <button className="kp-part wide" key={r.name} title="Open Typography in the editor" onClick={() => openEditor("typography")}>
-              <Art svg={r.svg} scale={0.3} />
+              <Art svg={r.svg} scale={0.62} />
               <span className="kp-partname">{r.name}</span>
             </button>
           ))}
