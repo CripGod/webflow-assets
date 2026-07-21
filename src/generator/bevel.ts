@@ -1105,6 +1105,8 @@ export interface KitOpts {
   /** Joystick deflection, each axis −1..1. */
   stick?: [number, number];
   label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number;
+  /** Slot icon emphasis — >1 makes the icon the star of the tile. */
+  iconScale?: number;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string;
   /** Data-row content model — independent size/tracking/placement per text
    *  group and slot toggles. Explicit label/sub/value still win per instance. */
@@ -1324,13 +1326,22 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         `<defs><clipPath id="${gidIn}"><rect x="${(39 + inset + 6 * k).toFixed(1)}" y="${30 + 2}" width="${(w - inset * 2 - 12 * k).toFixed(1)}" height="${h - 4}"/></clipPath></defs>` +
         `<g clip-path="url(#${gidIn})">` + ph + caret + `</g>`);
     }
-    case "header":
+    case "header": {
       // resolve the label explicitly: build() treats a missing label with an
       // explicit iconDef as icon-only, which would blank the banner.
-      // maxW is lifted well past the button cap — Banner/Stretch must carry a
-      // 28-character uppercase label without clipping; the center stretches,
-      // the swallowtail caps stay fixed (procedural three-slice).
-      return build(cfg, state, { x: 52, y: 34, h: 158 * k, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy });
+      // The shell is sized from a GENEROUS text estimate (display faces run
+      // wider than the char factor) plus the silhouette's cap + safe insets,
+      // so the label respects the three-slice bounds the guides draw.
+      const h5 = 158 * k;
+      const lbl5 = (opts.label ?? cfg.content.label) || "BANNER";
+      const met5 = silhouetteMeta((sov ?? "banner") as Shape);
+      const T5 = cfg.type;
+      const fs5 = 46 * k * (T5.size / 52);
+      const tw5 = lbl5.length * fs5 * fontByName(T5.font).factor * (1 + T5.spacing / 100) * 1.18 + (T5.italic ? fs5 * 0.35 : 0);
+      const inset5 = met5 ? Math.max(met5.content.left, met5.capScale) * h5 + Math.max(12, fs5 * 0.3) : 90 * k;
+      const w5 = Math.min(2600 * k, Math.max(430 * k, tw5 + inset5 * 2));
+      return build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy, fixedW: w5 });
+    }
     case "panel": {
       // container shell — same recipe, bigger canvas. tokenH keeps walls,
       // rim and depth at component scale instead of scaling with the height.
@@ -1500,9 +1511,11 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       } else if (opts.icon && !ov.startsWith("level")) {
         // type treatment: the outline underlay and a lit fill, like the label
         // (level slots skip the icon — the number is the content, nothing
-        // may ghost behind it)
-        if (cfg.type.outline.on) parts.push(iconGroup(opts.icon, cx2 - inner * 0.3, cy2 - inner * 0.3, inner * 0.6, darken(bevel, 0.5), { strokeWidth: 2 + cfg.type.outline.width * 0.7 }));
-        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3, cy2 - inner * 0.3, inner * 0.6, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2 }));
+        // may ghost behind it). iconScale > 1 makes the icon the star of
+        // the tile — match-3 boards, gem grids.
+        const isc = clamp(opts.iconScale ?? 1, 0.5, 1.45);
+        if (cfg.type.outline.on) parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, darken(bevel, 0.5), { strokeWidth: 2 + cfg.type.outline.width * 0.7 }));
+        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2 }));
       }
       if (dimmed) parts.push(`<path d="${wellPath}" fill="rgba(6,8,16,0.62)"/>`);
       if (ov === "locked") parts.push(iconGroup(STOCK_ICONS.lock, cx2 - 13, cy2 - 13, 26, "rgba(255,255,255,0.85)", { strokeWidth: 2.2 }));
@@ -1541,7 +1554,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const dim = state === "disabled" ? 0.45 : 1;
       const offFace = desaturate(hexMix(bevel, "#20242E", 0.72), 0.5);
       const total3 = d3 + pad3 * 2;
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${total3}" height="${total3}" viewBox="0 0 ${total3} ${total3}" role="img" aria-label="glow orb" data-orb="${lit ? "1" : "0"}">
+      const totH3 = total3 + 14; // extra floor below the sphere — captions need air
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${total3}" height="${totH3}" viewBox="0 0 ${total3} ${totH3}" role="img" aria-label="glow orb" data-orb="${lit ? "1" : "0"}">
 <defs>
   <radialGradient id="${gid7}" cx="0.34" cy="0.28" r="0.95">
     <stop offset="0" stop-color="#FFFFFF"/>
