@@ -598,16 +598,25 @@ export const useGen = create<GenStore>((set, get) => ({
     const prev = get().cfg;
     // structuredClone is ~3-4x faster than JSON round-tripping — keeps rapid
     // slider drags responsive
-    const cfg = (typeof structuredClone === "function" ? structuredClone(prev) : JSON.parse(JSON.stringify(prev))) as GenConfig;
+    const clone2 = (c: GenConfig) => (typeof structuredClone === "function" ? structuredClone(c) : JSON.parse(JSON.stringify(c))) as GenConfig;
+    const cfg = clone2(prev);
+    /* What-you-see-is-what-you-edit: when the focused piece is LOCKED, its
+       snapshot is the design on screen — so edits are applied to a working
+       config built from that snapshot and flow back INTO the snapshot.
+       The master (and every other piece) doesn't move. Content, states
+       and canvas stay shared and land on the master as always. */
+    const focus0 = get().focus;
+    const lockedId = focus0 && get().kitDesigns[focus0] ? focus0 : null;
+    const work = lockedId ? clone2(applyKitDesign(cfg, get().kitDesigns[lockedId])) : cfg;
     const sel = get().selectedState;
     if (sel !== "default") {
       // editing a non-default state: fork its design on first touch, then
       // route all design-field edits into the fork — Default stays untouched
-      if (!cfg.stateDesigns) cfg.stateDesigns = {};
-  if (!cfg.knob) cfg.knob = { color: null };
-      if (!cfg.stateDesigns[sel]) cfg.stateDesigns[sel] = pickDesign(cfg);
-      const d = cfg.stateDesigns[sel]!;
-      const t = Object.assign({}, cfg, {
+      if (!work.stateDesigns) work.stateDesigns = {};
+      if (!work.knob) work.knob = { color: null };
+      if (!work.stateDesigns[sel]) work.stateDesigns[sel] = pickDesign(work);
+      const d = work.stateDesigns[sel]!;
+      const t = Object.assign({}, work, {
         effects: d.effects, face: d.face, bevel: d.bevel, candy: d.candy,
         lighting: d.lighting, shadow: d.shadow, transparency: d.transparency, type: d.type,
       }) as GenConfig;
@@ -617,14 +626,24 @@ export const useGen = create<GenStore>((set, get) => ({
       d.lighting = t.lighting; d.shadow = t.shadow; d.transparency = t.transparency; d.type = t.type;
       // the typeface is one decision for the whole component — weight, colors
       // and effects stay state-specific
-      if (d.type.font !== cfg.type.font) {
-        cfg.type.font = d.type.font;
-        for (const other of Object.values(cfg.stateDesigns)) { if (other?.type) other.type.font = d.type.font; }
+      if (d.type.font !== work.type.font) {
+        work.type.font = d.type.font;
+        for (const other of Object.values(work.stateDesigns)) { if (other?.type) other.type.font = d.type.font; }
       }
-      cfg.content = t.content; cfg.icon = t.icon; cfg.states = t.states; cfg.visible = t.visible;
-      cfg.canvas = t.canvas; cfg.presetId = t.presetId;
+      work.content = t.content; work.icon = t.icon; work.states = t.states; work.visible = t.visible;
+      work.canvas = t.canvas; work.presetId = t.presetId;
     } else {
-      fn(cfg);
+      fn(work);
+    }
+    if (lockedId) {
+      // design fields → the piece's lock; everything shared → the master
+      cfg.content = work.content; cfg.icon = work.icon; cfg.states = work.states;
+      cfg.visible = work.visible; cfg.canvas = work.canvas; cfg.presetId = work.presetId;
+      cfg.knob = work.knob; cfg.barFx = work.barFx;
+      const nkd: KitDesign = { ...pickDesign(work), stateDesigns: work.stateDesigns ?? {} };
+      const kitDesigns = { ...get().kitDesigns, [lockedId]: nkd };
+      saveJson("ui-generator-kitdesigns", kitDesigns);
+      set({ kitDesigns });
     }
     const now = Date.now();
     if (now - lastPush > 350) {

@@ -18,7 +18,7 @@ import { LiveArt } from "./LiveArt";
 const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
   { name: "Buttons", ids: ["primary", "secondary", "small", "ghost", "iconbtn"] },
   { name: "Containers", ids: ["panel", "header", "tab", "dropdown"] },
-  { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "ring", "timer", "timerbar"] },
+  { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "ring", "flipclock", "stopwatch", "timerdigits"] },
   { name: "Controls", ids: ["toggle", "slider", "progress", "input", "segment", "checkbox", "radio", "joystick"] },
   { name: "Combat & spatial", ids: ["reticle", "minimap", "ammo", "lives", "bignum"] },
 ];

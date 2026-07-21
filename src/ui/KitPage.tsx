@@ -34,6 +34,7 @@ const clone = (c: GenConfig) => JSON.parse(JSON.stringify(c)) as GenConfig;
 function tightenV(svg: string, px: number, oy = 0): string {
   const vb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(svg);
   if (!vb) return svg;
+  if (!svg.includes("overflow:visible")) svg = svg.replace("<svg ", '<svg style="overflow:visible" ');
   // the specimen text sits at y≈86 plus the bottom-anchor rise reserve
   // (48·K, K = 130/168) plus the theme nudge at the same K — mirror the
   // renderer exactly, then hug it
@@ -501,12 +502,38 @@ export function KitPage() {
         rk("joystick", "Joystick · Ghost", { overlay: "ghost" }),
         rk("slot", "Slot · Level", { icon: STOCK_ICONS.gem, overlay: "level:42" }),
         rk("slot", "Slot · Locked", { icon: STOCK_ICONS.gem, overlay: "locked" }),
-        rk("timer", "Countdown · Urgent", {}, 0.13),
-        rk("timerbar", "Round timer · Urgent", {}, 0.13),
-        rk("badge", "Badge · Awarded", {}, undefined, "pressed"),
+        rk("flipclock", "Flip countdown · Urgent", {}, 0.13),
+        rk("stopwatch", "Stopwatch · Urgent", {}, 0.13),
+        /* the state block — engines skin the full interaction, not just the
+           resting pose, so every stateful piece ships its other faces too */
         rk("primary", "Primary · Hover", {}, undefined, "hover"),
         rk("primary", "Primary · Pressed", {}, undefined, "pressed"),
         rk("primary", "Primary · Disabled", {}, undefined, "disabled"),
+        rk("secondary", "Secondary · Hover", {}, undefined, "hover"),
+        rk("secondary", "Secondary · Disabled", {}, undefined, "disabled"),
+        rk("small", "Small · Hover", {}, undefined, "hover"),
+        rk("small", "Small · Pressed", {}, undefined, "pressed"),
+        rk("iconbtn", "Icon button · Hover", {}, undefined, "hover"),
+        rk("iconbtn", "Icon button · Pressed", {}, undefined, "pressed"),
+        rk("chip", "Chip · Hover", {}, undefined, "hover"),
+        rk("tab", "Tab · Selected", {}, undefined, "pressed"),
+        rk("tab", "Tab · Disabled", {}, undefined, "disabled"),
+        rk("badge", "Badge · Awarded", {}, undefined, "pressed"),
+        rk("toggle", "Toggle · Off", {}, 0),
+        rk("toggle", "Toggle · Disabled", {}, 1, "disabled"),
+        rk("checkbox", "Checkbox · Off", {}, 0),
+        rk("radio", "Radio · Off", {}, 0),
+        rk("segment", "Segment · First", {}, 0),
+        rk("slider", "Slider · Low", {}, 0.15),
+        rk("progress", "Progress · Full", {}, 1),
+        rk("input", "Input · Focus", {}, undefined, "hover"),
+        rk("input", "Input · Disabled", {}, undefined, "disabled"),
+        rk("dropdown", "Dropdown · Open", {}, undefined, "pressed"),
+        rk("datarow", "Data row · Selected", {}, undefined, "hover"),
+        rk("datarow", "Data row · Disabled", {}, undefined, "disabled"),
+        rk("slot", "Slot · Claimable", { icon: STOCK_ICONS.gem, overlay: "claimable" }, undefined, "hover"),
+        rk("reticle", "Reticle · Locked", {}, undefined, "hover"),
+        rk("ring", "Ring · Complete", {}, 1),
       ];
       const fdef = fontByName(st.cfg.type.font);
       await downloadSpriteSheet(entries, `${st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`} — sprite sheet`, st.cfg.type.font, fdef?.css ?? null);
@@ -1069,17 +1096,18 @@ export function KitPage() {
           <Piece id="ring" size="l" caption="Complete" value={1} label="✓" scale={0.56} />
           <Piece id="ring" size="l" caption="Expired" value={0} label="0:00" baseState="disabled" scale={0.56} />
         </div>
-        <div className="kp-subhead">Round timers — the countdown ticks live; the last quarter goes urgent</div>
+        <div className="kp-subhead">Timers — three voices for the same clock; every one ticks live</div>
         <div className="kp-tray">
-          <Piece id="timer" caption="Countdown · running" value={0.62} scale={0.5} ambient />
-          <Piece id="timer" caption="Countdown · urgent" value={0.13} scale={0.5} />
-          <Piece id="timer" caption="Countdown · expired" value={0} baseState="disabled" scale={0.5} />
+          <Piece id="flipclock" caption="Flip countdown · running" value={0.62} scale={0.48} ambient />
+          <Piece id="flipclock" caption="Flip countdown · urgent" value={0.13} scale={0.48} />
+          <Piece id="flipclock" caption="Flip countdown · event" label="07:11:38" scale={0.42} />
         </div>
         <div className="kp-tray">
-          <Piece id="timerbar" caption="Round timer · draining to center" value={0.62} scale={0.5} ambient />
-          <Piece id="timerbar" caption="Round timer · urgent" value={0.13} scale={0.5} />
+          <Piece id="stopwatch" caption="Stopwatch · running" value={0.62} scale={0.52} ambient />
+          <Piece id="stopwatch" caption="Stopwatch · urgent" value={0.13} scale={0.52} />
+          <Piece id="timerdigits" caption="Timer digits · pure type, no container" value={0.75} scale={0.5} ambient />
         </div>
-        <div className="kp-meta"><span>Time derives from the value — hosts tick the value, the readout follows</span><span>Quarter ticks pace the round</span><span>Below 25% the fill and medallion switch to the alarm tint</span></div>
+        <div className="kp-meta"><span>Time derives from the value — hosts tick the value, the readout follows</span><span>Click any timer to replay its drain</span><span>Below 25% remaining, digits, hand and tiles switch to the alarm tint</span></div>
       </Sec>
 
       <Chapter n="03" id="parts" label="Build Parts" blurb="The construction vocabulary: parts, containers, assemblies and motion — with downloads." />
@@ -1368,7 +1396,7 @@ export function KitPage() {
               <div className="kp-wkdays">
                 {(["M", "T", "W", "T", "F", "S", "S"] as const).map((d, i) => (
                   <div className="kp-wkday" key={d + i}>
-                    <SPiece id="checkbox" value={i < 4 ? 1 : 0} scale={0.54} />
+                    <SPiece id="checkbox" value={i < 4 ? 1 : 0} scale={0.44} />
                     <span>{d}</span>
                   </div>
                 ))}
@@ -1755,15 +1783,17 @@ export function KitPage() {
                 <SPiece id="resource" label="27" icon={STOCK_ICONS.heart} scale={0.34} />
                 <SPiece id="resource" label="900" icon={STOCK_ICONS.gem} scale={0.34} />
               </div>
-              <div className="lay-row">
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} scale={0.34} />
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.34} />
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.34} />
-              </div>
-              <div className="lay-row">
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.34} />
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="new" scale={0.34} />
-                <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.34} />
+              <div className="lay-boardwrap">
+                <div className="lay-row lay-board">
+                  <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} scale={0.74} />
+                  <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.74} />
+                  <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.74} />
+                </div>
+                <div className="lay-row lay-board">
+                  <SPiece id="slot" size="s" icon={STOCK_ICONS.star} scale={0.74} />
+                  <SPiece id="slot" size="s" icon={STOCK_ICONS.gem} overlay="new" scale={0.74} />
+                  <SPiece id="slot" size="s" icon={STOCK_ICONS.heart} scale={0.74} />
+                </div>
               </div>
               <div className="sc-push"><SPiece id="progress" value={0.44} ambient scale={0.46} /></div>
               <SPiece id="chip" label="LEVEL 12" icon={null} scale={0.34} />
