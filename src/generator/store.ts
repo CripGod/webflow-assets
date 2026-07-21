@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS, KIT_SHAPE, applyKitDesign, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, KIT_SHAPE, applyKitDesign, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
@@ -25,11 +25,7 @@ export function retintText(c: GenConfig) {
   if (c.type.outline.color2) c.type.outline.color2 = darken(bevel, 0.7);
   c.type.shadow.color = darken(bevel, 0.62);
   c.type.glow.color = glow;
-  // the typeface itself joins the harmony roll
-  if (c.type.fillMode !== "auto") {
-    c.type.fill = hexMix(glow, "#FFFFFF", 0.1);
-    c.type.fill2 = hexMix(bevel, glow, 0.45);
-  }
+  // custom solid/gradient fills are the user's — never overwritten
 }
 
 const LS_KEY = "ui-generator-v10"; // v10: specular modes, solid extrusion, gloss layering
@@ -178,6 +174,10 @@ interface GenStore {
   setTheme: (t: "light" | "dark") => void;
   canvasMode: "design" | "play";
   setCanvasMode: (m: "design" | "play") => void;
+  /** Container variant being edited (circle/oval/strip) — set by the kit
+   *  page's edit buttons so the canvas shows the piece you clicked. */
+  kitKind: "circle" | "oval" | "strip" | null;
+  setKitKind: (k: "circle" | "oval" | "strip" | null) => void;
   inheritDefaults: () => void;
   /** Promote the selected state's design + adjustments to be the new Default.
    *  The state then mirrors the new Default again. */
@@ -536,6 +536,8 @@ export const useGen = create<GenStore>((set, get) => ({
     saveJson(LIB_KEY, library);
     set({ library });
   },
+  kitKind: null,
+  setKitKind: (k) => set({ kitKind: k }),
   inheritDefaults: () => {
     const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
     cfg.stateDesigns = {};
@@ -664,8 +666,7 @@ export const useGen = create<GenStore>((set, get) => ({
     const roll = (n: number) => Math.floor(Math.random() * n);
     get().update((c) => {
       c.effects = next.effects; // lighting stays put — rolled light angles tilted the speculars askew
-      // typography joins the roll
-      c.type.font = GAME_FONTS[roll(GAME_FONTS.length)].name;
+      // typography is the user's voice — a roll never touches the font
       // pattern rolls tone-on-tone so it stays harmonious
       const pats: GenConfig["candy"]["pattern"]["type"][] = ["none", "stripes", "dots", "checker", "halftone", "stars"];
       c.candy.pattern.type = pats[roll(pats.length)];

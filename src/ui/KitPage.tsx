@@ -66,7 +66,7 @@ interface PieceOpts {
 /** Shared plumbing for every live piece on this page. The page is always
  *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitRow, setFocus, setKitSize } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitRow, setFocus, setKitSize, setKitKind } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
@@ -89,7 +89,7 @@ function usePiece(p: PieceOpts) {
       row: p.id === "datarow" ? kitRow : undefined,
       kind: p.kind, tone: p.tone,
     },
-    onEdit: () => setFocus(p.id),
+    onEdit: () => { setKitKind(p.kind ?? null); setFocus(p.id); },
   };
 }
 
@@ -349,7 +349,7 @@ function MotionDemo({ name, cls, piece, purpose, dur, ease }: {
   return (
     <button className="kp-part kp-mo" title={`Replay ${name}`} onClick={() => setTick((t) => t + 1)}>
       <span key={tick} className={`kp-mostage ${cls}`}>
-        <PPiece {...piece} scale={piece.scale ?? 0.26} />
+        <PPiece {...piece} scale={piece.scale ?? 0.52} />
       </span>
       <span className="kp-partname">{name}</span>
       <span className="kp-mopurpose">{purpose}</span>

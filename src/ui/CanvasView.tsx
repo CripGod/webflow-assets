@@ -10,7 +10,7 @@ import { BoardView } from "./Board";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitRow } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitRow, kitKind } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -35,8 +35,8 @@ export function CanvasView() {
   const fSize = focus ? (kitSizes[focus] ?? "l") : "l";
   const fOy = focus ? kitTextOy[`${focus}:${fSize}`] : undefined;
   const heroSvg = useMemo(
-    () => (focus ? renderKit(cfg, focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined }) : renderBevel(cfg, displayed)),
-    [cfg, displayed, focus, kitShapes, fSize, fOy, kitRow]
+    () => (focus ? renderKit(cfg, focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined, kind: focus === "panel" ? (kitKind ?? undefined) : undefined }) : renderBevel(cfg, displayed)),
+    [cfg, displayed, focus, kitShapes, fSize, fOy, kitRow, kitKind]
   );
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(

@@ -17,10 +17,10 @@ import type { GenConfig } from "@/generator/model";
 
 const LAYERS = [
   { key: "highlight", t: "Highlight", sub: "gloss & specular", y: 1.66 },
-  { key: "bevel", t: "Bevel", sub: "shell & wall", y: 1.11 },
-  { key: "pattern", t: "Pattern", sub: "face texture", y: 0.56 },
-  { key: "fill", t: "Inner Fill", sub: "candy face", y: 0.01 },
-  { key: "type", t: "Type Layer", sub: "live label", y: -0.55 },
+  { key: "type", t: "Type Layer", sub: "live label", y: 1.11 },
+  { key: "bevel", t: "Bevel", sub: "shell & wall", y: 0.56 },
+  { key: "pattern", t: "Pattern", sub: "face texture", y: 0.01 },
+  { key: "fill", t: "Inner Fill", sub: "candy face", y: -0.55 },
   { key: "glow", t: "Glow", sub: "inner glow", y: -1.1 },
   { key: "shadow", t: "Shadow", sub: "grounding", y: -1.66 },
 ] as const;
@@ -66,13 +66,28 @@ function typeTex(cfg: GenConfig): THREE.CanvasTexture {
   cv.width = 1400; cv.height = 380;
   const ctx = cv.getContext("2d")!;
   const label = (cfg.content.label || "PLAY NOW").toUpperCase();
+  const T4 = cfg.type;
   const ink = hexMix(cfg.effects.Glow ?? "#8FF0FF", "#FFFFFF", 0.55);
   const draw = () => {
     ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.font = `${cfg.type.italic ? "italic " : ""}800 175px "${cfg.type.font}", Inter, sans-serif`;
+    ctx.font = `${T4.italic ? "italic " : ""}800 175px "${T4.font}", Inter, sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = ink;
+    // the label carries the real type fill — solid and gradient included
+    let paint: string | CanvasGradient = ink;
+    if (T4.fillMode === "solid") paint = T4.fill;
+    else if (T4.fillMode === "gradient") {
+      const g = ctx.createLinearGradient(0, cv.height / 2 - 88, 0, cv.height / 2 + 88);
+      g.addColorStop(0, T4.fill); g.addColorStop(1, T4.fill2);
+      paint = g;
+    }
     ctx.shadowColor = cfg.effects.Glow ?? "#8FF0FF"; ctx.shadowBlur = 34;
+    if (T4.outline.on) {
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = T4.outline.color;
+      ctx.lineWidth = Math.max(2, T4.outline.width * (175 / 52));
+      ctx.strokeText(label, cv.width / 2, cv.height / 2, cv.width - 140);
+    }
+    ctx.fillStyle = paint;
     ctx.fillText(label, cv.width / 2, cv.height / 2, cv.width - 140);
   };
   draw();
@@ -333,51 +348,48 @@ export function HeroGL() {
           m2.position.x += (pm.x - p0.x) * perPx;
         }
       }
-      // vertical spacing: art + label block must clear the next satellite,
-      // whatever proportions the current style rasterizes to — and the whole
-      // column recenters (shrinking if needed) so nothing clips the stage
-      const LABEL_PX = 100;
+      // deterministic packing: measure each art's projected height, stack
+      // them with one even label gap, shrink if the column outgrows the
+      // stage, and center the result — no cut-offs, no dead air
+      const LABEL_PX = 82, M = 16;
       const perPyOf = (m2: THREE.Mesh) => {
         const p0 = proj(v.set(m2.position.x, m2.userData.baseY, 0), satGroup);
         const p1 = proj(v.set(m2.position.x, m2.userData.baseY - 0.1, 0), satGroup);
         return 0.1 / Math.max(0.0001, p1.y - p0.y);
       };
-      const spacePass = () => {
-        for (const [ui, li] of [[0, 1], [1, 2]] as const) {
-          const u = sats[ui], l2 = sats[li];
-          const uBottom = proj(v.set(u.position.x, u.userData.baseY - ((u.scale.y || 1) / 2) * 0.92, 0), satGroup).y + LABEL_PX;
-          const lTop = proj(v.set(l2.position.x, l2.userData.baseY + (l2.scale.y || 1) / 2, 0), satGroup).y;
-          const overlap = uBottom + 16 - lTop;
-          if (overlap > 0) {
-            l2.userData.baseY -= overlap * perPyOf(l2);
-            l2.position.y = l2.userData.baseY;
-            scene.updateMatrixWorld(true);
-          }
-        }
+      const artH = (m2: THREE.Mesh) => {
+        const top = proj(v.set(m2.position.x, m2.userData.baseY + (m2.scale.y || 1) / 2, 0), satGroup).y;
+        const bot = proj(v.set(m2.position.x, m2.userData.baseY - (m2.scale.y || 1) / 2, 0), satGroup).y;
+        return Math.max(12, bot - top);
       };
-      const colSpan = () => {
-        const top0 = proj(v.set(sats[0].position.x, sats[0].userData.baseY + (sats[0].scale.y || 1) / 2, 0), satGroup).y;
-        const bot2 = proj(v.set(sats[2].position.x, sats[2].userData.baseY - ((sats[2].scale.y || 1) / 2) * 0.92, 0), satGroup).y + LABEL_PX;
-        return { top0, bot2 };
-      };
-      spacePass();
-      const s1 = colSpan();
-      const room = H - 52;
-      if (s1.bot2 - s1.top0 > room) {
-        const f = Math.max(0.7, room / (s1.bot2 - s1.top0));
+      // idempotent: always start from each satellite's natural size, then
+      // shrink the ART portion alone until art + fixed label blocks fit
+      for (const m2 of sats) {
+        if (m2.userData.natH) m2.scale.set(m2.userData.natW, m2.userData.natH, 1);
+      }
+      scene.updateMatrixWorld(true);
+      let hs = sats.map(artH);
+      const FIXED = (LABEL_PX + M) * 3 - M;
+      const artSum = () => hs.reduce((a, b3) => a + b3, 0);
+      const need = () => artSum() + FIXED;
+      const room = H - 40;
+      if (need() > room) {
+        const f = Math.max(0.45, (room - FIXED) / Math.max(1, artSum()));
         for (const m2 of sats) m2.scale.set(m2.scale.x * f, m2.scale.y * f, 1);
         scene.updateMatrixWorld(true);
-        spacePass();
+        hs = sats.map(artH);
       }
-      const s2 = colSpan();
-      const shift = H / 2 - (s2.top0 + s2.bot2) / 2;
-      if (Math.abs(shift) > 6) {
-        for (const m2 of sats) {
-          m2.userData.baseY -= shift * perPyOf(m2);
-          m2.position.y = m2.userData.baseY;
-        }
+      let cursor = Math.max(20, (H - Math.min(need(), room)) / 2);
+      const colTop = cursor;
+      sats.forEach((m2, i2) => {
+        const topNow = proj(v.set(m2.position.x, m2.userData.baseY + (m2.scale.y || 1) / 2, 0), satGroup).y;
+        m2.userData.baseY -= (cursor - topNow) * perPyOf(m2);
+        m2.position.y = m2.userData.baseY;
         scene.updateMatrixWorld(true);
-      }
+        cursor += hs[i2] + LABEL_PX + M;
+      });
+      // packing result, readable from the DOM for verification
+      wrap.dataset.satfit = `${Math.round(colTop)}:${Math.round(cursor - M)}:${Math.round(H)}`;
     };
 
     const projectAll = () => {
@@ -542,7 +554,9 @@ export function HeroGL() {
           m.map?.dispose();
           m.map = tex; m.opacity = 1; m.needsUpdate = true;
           const wh = mesh.userData.h as number;
-          mesh.scale.set((w / h) * wh, wh, 1);
+          mesh.userData.natW = (w / h) * wh;
+          mesh.userData.natH = wh;
+          mesh.scale.set(mesh.userData.natW, wh, 1);
           R2.alignSats();
           if (R2.still) R2.renderOnce();
         });

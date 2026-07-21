@@ -654,7 +654,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     else if (PT.type === "stars") patternDef = `<pattern ${cell}${rot}><path d="${starPath(ps)}" fill="${patC}"/></pattern>`;
     else if (PT.type === "checker") patternDef = `<pattern ${cell}${rot}><rect width="${(ps / 2).toFixed(1)}" height="${(ps / 2).toFixed(1)}" fill="${patC}"/><rect x="${(ps / 2).toFixed(1)}" y="${(ps / 2).toFixed(1)}" width="${(ps / 2).toFixed(1)}" height="${(ps / 2).toFixed(1)}" fill="${patC}"/></pattern>`;
     else if (PT.type === "halftone") {
-      patternDef = `<pattern ${cell} patternTransform="rotate(45)"><circle cx="${(ps / 2).toFixed(1)}" cy="${(ps / 2).toFixed(1)}" r="${(ps * 0.3).toFixed(1)}" fill="${patC}"/></pattern>
+      patternDef = `<pattern ${cell}${rot}><circle cx="${(ps / 2).toFixed(1)}" cy="${(ps / 2).toFixed(1)}" r="${(ps * 0.3).toFixed(1)}" fill="${patC}"/></pattern>
       <linearGradient id="${id}pmg" ${axis}><stop offset="0" stop-color="#fff"/><stop offset=".85" stop-color="#000"/></linearGradient>
       <mask id="${id}pm"><rect x="${fx0 - 20}" y="${fy0 - 20}" width="${fw + 40}" height="${fh + 40}" fill="url(#${id}pmg)"/></mask>`;
     }
@@ -1126,6 +1126,40 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
   // the dragger ball can carry its own color; null follows the Bevel role
   const knobC = cfg.knob?.color ?? bevel;
+  /* content-text — the full typography treatment for text the pieces draw
+     themselves (counters, segments, rows): fill mode incl. gradients, case,
+     italic, tracking, outline, shadow and glow all follow the theme. */
+  const contentText = (txt: string, x2: number, y2: number, fs2: number,
+    o2: { anchor?: "start" | "middle" | "end"; opacity?: number; track?: number; keepCase?: boolean } = {}) => {
+    const T4 = cfg.type;
+    const gid4 = "ct" + UID++;
+    const cased4 = o2.keepCase ? txt
+      : T4.case === "upper" ? txt.toUpperCase()
+      : T4.case === "lower" ? txt.toLowerCase()
+      : T4.case === "title" ? txt.replace(/\b\w/g, (m2) => m2.toUpperCase())
+      : txt;
+    let defs4 = "", fill4 = "#FFFFFF";
+    if (T4.fillMode === "solid") fill4 = T4.fill;
+    else if (T4.fillMode === "gradient") {
+      defs4 += `<linearGradient id="${gid4}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${T4.fill}"/><stop offset="1" stop-color="${T4.fill2}"/></linearGradient>`;
+      fill4 = `url(#${gid4}g)`;
+    }
+    const fsc4 = fs2 / 40;
+    const prims4: string[] = [];
+    const fd4 = (dx3: string, dy3: string, dev: number, col: string, op3: string) =>
+      `<feDropShadow dx="${dx3}" dy="${dy3}" stdDeviation="${dev.toFixed(1)}" flood-color="${col}" flood-opacity="${op3}"/>`;
+    if (T4.shadow.on) prims4.push(fd4((T4.shadow.x * fsc4).toFixed(1), (T4.shadow.y * fsc4).toFixed(1), T4.shadow.blur * fsc4 * 0.5, T4.shadow.color, (T4.shadow.opacity / 100).toFixed(2)));
+    if (T4.glow.on && state !== "disabled") {
+      prims4.push(fd4("0", "0", T4.glow.size * 0.3, T4.glow.color, (T4.glow.opacity / 100).toFixed(2)));
+      prims4.push(fd4("0", "0", T4.glow.size * 0.8, T4.glow.color, ((T4.glow.opacity / 100) * 0.6).toFixed(2)));
+    }
+    if (prims4.length) defs4 += `<filter id="${gid4}f" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">${prims4.join("")}</filter>`;
+    const outline4 = T4.outline.on && state !== "disabled"
+      ? ` stroke="${T4.outline.color}" stroke-width="${(T4.outline.width * (fs2 / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
+      : "";
+    return (defs4 ? `<defs>${defs4}</defs>` : "") +
+      `<text x="${x2.toFixed(1)}" y="${y2.toFixed(1)}" font-family="'${T4.font}', Inter, sans-serif" font-size="${fs2.toFixed(1)}" font-weight="${Math.max(700, T4.weight)}"${T4.italic ? ' font-style="italic"' : ""} letter-spacing="${(((o2.track ?? 0) + T4.spacing) / 100).toFixed(3)}em" fill="${fill4}"${(T4.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T4.fillOpacity / 100).toFixed(2)}"` : ""}${outline4}${prims4.length ? ` filter="url(#${gid4}f)"` : ""}${o2.anchor ? ` text-anchor="${o2.anchor}"` : ""} dominant-baseline="central" opacity="${(o2.opacity ?? 1).toFixed(2)}">${esc(cased4)}</text>`;
+  };
   const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
   const font = cfg.type.font;
   const wellOf = (w: number, h: number, inset: number) =>
@@ -1184,7 +1218,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const selX = 39 + bw + segW * sel;
       const well = `<path d="${roundRect(selX + 4, 30 + bw + 4, segW - 8, h - bw * 2 - 8, (h - bw * 2 - 8) * 0.3)}" fill="rgba(255,255,255,0.25)" stroke="rgba(255,255,255,0.35)" stroke-width="1"/>`;
       const t = (label: string, cx: number, op: number) =>
-        `<text x="${cx.toFixed(1)}" y="${(cy + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(30 * k * typeK).toFixed(1)}" font-weight="${Math.max(700, cfg.type.weight)}" fill="#FFFFFF" fill-opacity="${op}" text-anchor="middle" dominant-baseline="central">${esc(label)}</text>`;
+        contentText(label, cx, cy + typeOyK * k, 30 * k * typeK, { anchor: "middle", opacity: op });
       const caps = opts.segments && opts.segments.length === 3 ? opts.segments : ["ONE", "TWO", "THREE"];
       return stampTrack(inject(track, well + caps.map((cap, i) => t(cap, 39 + bw + segW * (i + 0.5), i === sel ? 1 : 0.55)).join("")), 39 + bw, w - bw * 2);
     }
@@ -1302,7 +1336,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const parts =
         candyKnob(39 + 6 * k + medR, cy, medR, bevel) +
         iconGroup(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), { strokeWidth: 2.4 }) +
-        `<text x="${(39 + 20 * k + medR * 2).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK).toFixed(1)}" font-weight="${Math.max(700, cfg.type.weight)}" fill="#FFFFFF" opacity="${dim}" dominant-baseline="central">${esc(val)}</text>` +
+        contentText(val, 39 + 20 * k + medR * 2, cy + 1 + typeOyK * k, fsV * typeK, { keepCase: true, opacity: dim }) +
         (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * typeK * 0.62).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK * 0.8).toFixed(1)}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(maxTxt)}</text>` : "") +
         (opts.addBtn ? candyKnob(39 + w - 8 * k - h * 0.32, cy, h * 0.32, glow) +
           `<text x="${(39 + w - 8 * k - h * 0.32).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="Inter, sans-serif" font-size="${26 * k}" font-weight="800" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">+</text>` : "");
@@ -1325,27 +1359,11 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const dim = state === "disabled" ? 0.45 : 1;
       const title = opts.label ?? R2.title ?? "Shadow Knight";
       const sub = opts.sub ?? R2.sub ?? "Level 12 · Warrior";
-      /* the title carries the typography treatment — outline, shadow, glow */
-      const T3 = cfg.type;
-      const gid2b = "drt" + UID++;
-      const rowPrims: string[] = [];
-      const fds2 = (dx2: string, dy2: string, dev: number, color: string, op: string) =>
-        `<feDropShadow dx="${dx2}" dy="${dy2}" stdDeviation="${dev.toFixed(1)}" flood-color="${color}" flood-opacity="${op}"/>`;
       // the row's own text follows the global type Size like every label
       const sizeK2 = clamp(cfg.type.size / 52, 0.5, 2.2);
       const fsT = 26 * k * sizeK2 * ((R2.titleSize ?? 100) / 100);
       const fsS = 17 * k * Math.max(0.75, sizeK2 * 0.85 + 0.15) * ((R2.subSize ?? 100) / 100);
-      const fscR = fsT / 40;
-      if (T3.shadow.on) rowPrims.push(fds2((T3.shadow.x * fscR).toFixed(1), (T3.shadow.y * fscR).toFixed(1), T3.shadow.blur * fscR * 0.5, T3.shadow.color, (T3.shadow.opacity / 100).toFixed(2)));
-      if (T3.glow.on && state !== "disabled") {
-        rowPrims.push(fds2("0", "0", T3.glow.size * 0.3, T3.glow.color, (T3.glow.opacity / 100).toFixed(2)));
-        rowPrims.push(fds2("0", "0", T3.glow.size * 0.8, T3.glow.color, ((T3.glow.opacity / 100) * 0.6).toFixed(2)));
-      }
-      const rowFxDefs = rowPrims.length ? `<defs><filter id="${gid2b}" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">${rowPrims.join("")}</filter></defs>` : "";
-      const rowFilterAttr = rowPrims.length ? ` filter="url(#${gid2b})"` : "";
-      const rowOutline = T3.outline.on && state !== "disabled"
-        ? ` stroke="${T3.outline.color}" stroke-width="${(T3.outline.width * (fsT / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
-        : "";
+
       const barY = 30 + h - inset - 16 * k;
       const barW = w - (tx - 39) - (showAction ? 90 * k : 34 * k);
       const fillW2 = barW * clamp(value ?? (R2.value !== undefined ? R2.value / 100 : 0.4), 0, 1);
@@ -1361,8 +1379,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
             iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 })
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
-        rowFxDefs +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + ((R2.titleDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsT.toFixed(1)}" font-weight="${Math.max(700, T3.weight)}" letter-spacing="${((R2.titleTrack ?? 0) / 100).toFixed(3)}em" fill="#FFFFFF"${rowOutline}${rowFilterAttr} opacity="${dim}">${esc(title)}</text>` +
+        contentText(title, tx, 30 + inset + 16 * k + ((R2.titleDy ?? 0) + (opts.textOy ?? 0)) * k, fsT, { keepCase: true, track: R2.titleTrack ?? 0, opacity: dim }) +
         `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + ((R2.subDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
         `</g>` +
         (showBar
@@ -1542,7 +1559,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const cy5 = 30 + h5 / 2;
       const bullets = [0, 1, 2].map((i) =>
         `<rect x="${(39 + 16 * k + i * 9 * k).toFixed(1)}" y="${(cy5 - 14 * k + i * 3 * k).toFixed(1)}" width="${5 * k}" height="${(28 - i * 6) * k}" rx="${2.4 * k}" fill="${hexMix(glow, "#FFFFFF", 0.25)}" stroke="${darken(bevel, 0.45)}" stroke-width="1"/>`).join("");
-      const txt = `<text x="${(39 + 48 * k).toFixed(1)}" y="${(cy5 + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(34 * k * typeK).toFixed(1)}" font-weight="${Math.max(700, cfg.type.weight)}" fill="#FFFFFF" dominant-baseline="central">${esc(cur)}</text>` +
+      const txt = contentText(cur, 39 + 48 * k, cy5 + 1 + typeOyK * k, 34 * k * typeK, { keepCase: true }) +
         `<text x="${(39 + 48 * k + cur.length * 21 * k * typeK + 6 * k).toFixed(1)}" y="${(cy5 + 4 + typeOyK * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(18 * k * Math.max(0.8, typeK * 0.85 + 0.15)).toFixed(1)}" font-weight="700" fill="rgba(255,255,255,0.5)" dominant-baseline="central">/ ${esc(res)}</text>`;
       return inject(track, bullets + txt);
     }
