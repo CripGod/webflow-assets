@@ -261,6 +261,8 @@ interface GenStore {
   setSectionFilter: (v: string | null) => void;
   randomizeColors: () => void;
   toggle: (section: string) => void;
+  /** Factory reset: clear every persisted kit artifact and reload. */
+  resetAll: () => void;
 }
 
 /** A saved component remembers *which* kit piece it is (when saved while one
@@ -730,6 +732,20 @@ export const useGen = create<GenStore>((set, get) => ({
     get().update((c) => { c.effects = next.effects; retintText(c); });
   },
   toggle: (s) => set((st) => ({ open: { ...st.open, [s]: !st.open[s] } })),
+  resetAll: () => {
+    /* Factory reset — wipes every persisted kit artifact (design, locks,
+       per-piece overrides, nudges, rows, library, board, styles, presets,
+       silhouettes, name) and reloads into the shipped default. The page
+       theme is the one preference that survives. */
+    try {
+      const theme = localStorage.getItem("ui-generator-theme");
+      Object.keys(localStorage)
+        .filter((k2) => k2.startsWith("ui-generator"))
+        .forEach((k2) => localStorage.removeItem(k2));
+      if (theme) localStorage.setItem("ui-generator-theme", theme);
+    } catch { /* storage unavailable — reload still restores defaults */ }
+    window.location.reload();
+  },
 }));
 
 // kick off the site-default fetch once the store exists

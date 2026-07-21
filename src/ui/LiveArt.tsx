@@ -81,7 +81,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   // alt-tone pieces (muted titles) render live but ignore hover and press.
   const disabled = kit?.baseState === "disabled";
   const inert = disabled || kit?.tone === "alt";
-  const value = id === "toggle" || id === "checkbox" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
+  const value = id === "toggle" || id === "checkbox" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
     : id === "progress" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
@@ -95,7 +95,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
     : id === "input" && editing ? "hover" // focused input shows the caret
     // switches light up when flipped, they never grow — hover/press stays off
     // checkboxes, toggles and radios so the value change IS the feedback
-    : id === "checkbox" || id === "toggle" || id === "radio" ? (kit?.baseState ?? "default")
+    : id === "checkbox" || id === "toggle" || id === "radio" || id === "orb" ? (kit?.baseState ?? "default")
     : playing ? (live === "default" ? (kit?.baseState ?? "default") : live)
     : (kit?.baseState ?? "default");
 
@@ -218,7 +218,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const pressedHere = useRef(false);
   const activate = (e: React.PointerEvent) => {
     if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
-    else if (id === "toggle" || id === "checkbox") setOn((v) => !v);
+    else if (id === "toggle" || id === "checkbox" || id === "orb") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
     else if (id === "progress" || id === "ring") playProgress();
     else if (isTimer) playTimer();
@@ -317,7 +317,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const anchorStyle = trimStyle ?? (anchorContent && pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined);
   // choice controls render pinned to their resting pose — the hover answer
   // is a light-up on the wrapper (brightness), never a re-render that grows
-  const choice = id === "checkbox" || id === "radio" || id === "toggle";
+  const choice = id === "checkbox" || id === "radio" || id === "toggle" || id === "orb";
   const choiceHover = playing && !inert && choice
     ? { transition: "filter .16s ease", filter: live !== "default" ? "brightness(1.14) saturate(1.05)" : "none" }
     : undefined;

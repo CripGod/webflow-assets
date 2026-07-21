@@ -1529,6 +1529,37 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       }
       return inject(track, parts.join(""));
     }
+    case "orb": {
+      /* Glow orb — a lit candy sphere for streaks, statuses and day markers.
+         value > 0.5 = lit: full material with a halo; off = dark glass.
+         Inherits the theme's roles; the whole piece is the light. */
+      const d3 = ({ s: 56, m: 76, l: 100 } as Record<KitSize, number>)[size] * k;
+      const pad3 = 34;
+      const lit = (value ?? 1) > 0.5 && state !== "disabled";
+      const cx4 = d3 / 2 + pad3, cy4 = d3 / 2 + pad3, r4 = d3 / 2;
+      const gid7 = "ob" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const offFace = desaturate(hexMix(bevel, "#20242E", 0.72), 0.5);
+      const total3 = d3 + pad3 * 2;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${total3}" height="${total3}" viewBox="0 0 ${total3} ${total3}" role="img" aria-label="glow orb" data-orb="${lit ? "1" : "0"}">
+<defs>
+  <radialGradient id="${gid7}" cx="0.34" cy="0.28" r="0.95">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset="0.34" stop-color="${lit ? lighten(bevel, 0.62) : lighten(offFace, 0.25)}"/>
+    <stop offset="0.78" stop-color="${lit ? bevel : offFace}"/>
+    <stop offset="1" stop-color="${lit ? darken(bevel, 0.3) : darken(offFace, 0.35)}"/>
+  </radialGradient>
+  <filter id="${gid7}h" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="${(r4 * 0.42).toFixed(1)}"/></filter>
+</defs>
+<g opacity="${dim}">
+  ${lit ? `<circle cx="${cx4}" cy="${cy4}" r="${(r4 * 1.06).toFixed(1)}" fill="${glow}" filter="url(#${gid7}h)" opacity="0.75"/>` : ""}
+  <circle cx="${cx4}" cy="${cy4}" r="${r4.toFixed(1)}" fill="url(#${gid7})" stroke="${lit ? darken(bevel, 0.42) : darken(offFace, 0.4)}" stroke-width="${Math.max(1.5, r4 * 0.06).toFixed(1)}"/>
+  <circle cx="${cx4}" cy="${cy4}" r="${(r4 * 0.8).toFixed(1)}" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="${lit ? 0.28 : 0.1}"/>
+  <ellipse cx="${(cx4 - r4 * 0.32).toFixed(1)}" cy="${(cy4 - r4 * 0.42).toFixed(1)}" rx="${(r4 * 0.34).toFixed(1)}" ry="${(r4 * 0.2).toFixed(1)}" fill="#FFFFFF" opacity="${lit ? 0.9 : 0.35}"/>
+  <ellipse cx="${cx4}" cy="${(cy4 + r4 * 0.55).toFixed(1)}" rx="${(r4 * 0.5).toFixed(1)}" ry="${(r4 * 0.16).toFixed(1)}" fill="${lit ? glow : "#FFFFFF"}" opacity="${lit ? 0.5 : 0.08}"/>
+</g>
+</svg>`;
+    }
     case "reticle": {
       /* targeting reticle — spatial UI, no shell, semi-transparent strokes.
          kinds: ring (default) and brackets. */
