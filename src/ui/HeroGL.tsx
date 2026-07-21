@@ -306,7 +306,7 @@ export function HeroGL() {
       overlay.setAttribute("viewBox", `0 0 ${W} ${H}`);
     };
     fit();
-    const ro = new ResizeObserver(fit);
+    const ro = new ResizeObserver(() => { fit(); alignSats(); });
     ro.observe(wrap);
 
     const v = new THREE.Vector3();
@@ -321,11 +321,24 @@ export function HeroGL() {
       el.setAttribute("x2", x2.toFixed(1)); el.setAttribute("y2", y2.toFixed(1));
     };
 
+    const alignSats = () => {
+      scene.updateMatrixWorld(true);
+      const pm = proj(v.set(sats[1].position.x, sats[1].position.y, 0), satGroup);
+      for (const m2 of [sats[0], sats[2]]) {
+        for (let it = 0; it < 2; it++) {
+          const p0 = proj(v.set(m2.position.x, m2.position.y, 0), satGroup);
+          const p1 = proj(v.set(m2.position.x + 0.1, m2.position.y, 0), satGroup);
+          const perPx = 0.1 / Math.max(0.0001, p1.x - p0.x);
+          m2.position.x += (pm.x - p0.x) * perPx;
+        }
+      }
+    };
+
     const projectAll = () => {
       LAYERS.forEach((_L, i) => {
         const p = proj(v.set(-2.5, layerMeshes[i].position.y, 0.2), group);
         const lab = labelRefs.current[i];
-        const lx = Math.max(20, W * 0.04);
+        const lx = Math.max(4, W * 0.008);
         if (lab) { lab.style.transform = `translate(${lx}px, ${(p.y - 15).toFixed(1)}px)`; }
         dots[i].setAttribute("cx", p.x.toFixed(1)); dots[i].setAttribute("cy", p.y.toFixed(1));
         setLine(leaders[i], lx + 136, p.y, p.x - 8, p.y);
@@ -357,28 +370,48 @@ export function HeroGL() {
       orbit.setAttribute("rx", (H * 0.62).toFixed(0)); orbit.setAttribute("ry", (H * 0.44).toFixed(0));
     };
 
-    /* pointer — the whole scene leans into the cursor, unmistakably */
-    let px = 0, py = 0, tx = 0, ty = 0;
-    const onMove = (e: PointerEvent) => {
-      const r = wrap.getBoundingClientRect();
-      tx = ((e.clientX - r.left) / r.width - 0.5) * 2;
-      ty = ((e.clientY - r.top) / r.height - 0.5) * 2;
+    /* grab the model and turn it — direct manipulation with a little
+       inertia after release; the idle sway keeps breathing underneath */
+    let dragging = false, lastX = 0, lastY = 0, velX = 0, velY = 0;
+    let userYaw = 0, userPitch = 0;
+    const clampP = (p2: number) => Math.max(-0.55, Math.min(0.7, p2));
+    const onDown = (e: PointerEvent) => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY; velX = 0; velY = 0;
+      wrap.classList.add("kp-gldrag");
+      wrap.setPointerCapture?.(e.pointerId);
     };
-    const onLeave = () => { tx = 0; ty = 0; };
+    const onMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      userYaw += dx * 0.0062;
+      userPitch = clampP(userPitch + dy * 0.005);
+      velX = dx * 0.0062; velY = dy * 0.005;
+    };
+    const onUp = (e: PointerEvent) => {
+      dragging = false;
+      wrap.classList.remove("kp-gldrag");
+      wrap.releasePointerCapture?.(e.pointerId);
+    };
+    wrap.addEventListener("pointerdown", onDown);
     wrap.addEventListener("pointermove", onMove);
-    wrap.addEventListener("pointerleave", onLeave);
+    wrap.addEventListener("pointerup", onUp);
+    wrap.addEventListener("pointercancel", onUp);
 
     const billboard = () => { for (const m2 of sats) m2.quaternion.copy(camera.quaternion); };
 
     let raf = 0, t = 0;
     const frame = () => {
       t += 1 / 60;
-      px += (tx - px) * 0.09; py += (ty - py) * 0.09;
-      group.rotation.y = 0.52 + Math.sin(t * 0.19) * 0.11 + px * 0.34;
-      group.rotation.x = 0.07 + Math.sin(t * 0.13) * 0.025 + py * 0.17;
-      // the explosion breathes, and spreads a little wider under the pointer
-      const spread = 1 + Math.max(0, py) * 0.1;
-      layerMeshes.forEach((pl, i) => { pl.position.y = pl.userData.baseY * spread * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
+      if (!dragging) {
+        // inertia — the spin you threw keeps carrying, then settles
+        userYaw += velX;
+        userPitch = clampP(userPitch + velY);
+        velX *= 0.94; velY *= 0.94;
+      }
+      group.rotation.y = 0.52 + Math.sin(t * 0.19) * 0.11 + userYaw;
+      group.rotation.x = 0.07 + Math.sin(t * 0.13) * 0.025 + userPitch;
+      layerMeshes.forEach((pl, i) => { pl.position.y = pl.userData.baseY * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
       typePlane.position.y = layerMeshes[typeIdx].position.y + 0.27;
       glowMat.opacity = 0.7 + Math.sin(t * 0.9) * 0.22;
       sats.forEach((m2, i) => { m2.position.y = m2.userData.baseY + Math.sin(t * 0.42 + i * 1.9) * 0.09; });
@@ -398,8 +431,10 @@ export function HeroGL() {
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      wrap.removeEventListener("pointerdown", onDown);
       wrap.removeEventListener("pointermove", onMove);
-      wrap.removeEventListener("pointerleave", onLeave);
+      wrap.removeEventListener("pointerup", onUp);
+      wrap.removeEventListener("pointercancel", onUp);
       overlay.innerHTML = "";
       disposables.forEach((d) => d.dispose());
       renderer.dispose();
@@ -469,16 +504,8 @@ export function HeroGL() {
     return () => window.clearTimeout(timer);
   }, [cfg]);
 
-  const glowC = cfg.effects.Glow ?? "#8FF0FF";
-  const bevelC = cfg.effects.Bevel ?? "#0E9CC9";
   return (
-    <div className="kp-glhero" ref={wrapRef} aria-label="Exploded material diagram — live WebGL" style={{
-      // a clean wash, brighter low so the shadow blob has something to read against
-      backgroundImage: [
-        `radial-gradient(ellipse 74% 62% at 55% 38%, ${hexMix(glowC, "#000000", 0)}12, transparent 68%)`,
-        `radial-gradient(ellipse 64% 50% at 44% 82%, ${hexMix(bevelC, "#FFFFFF", 0.35)}24, transparent 72%)`,
-      ].join(", "),
-    }}>
+    <div className="kp-glhero" ref={wrapRef} aria-label="Exploded material diagram — live WebGL">
       {failed ? (
         <div className="kp-glfallback">
           {LAYERS.map((L, i) => (
