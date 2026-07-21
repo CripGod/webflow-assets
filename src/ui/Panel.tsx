@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize } from "@/generator/model";
 import type { GenStateName, BlendMode , PatternType } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -247,7 +247,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
+  const { cfg, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem } = useGen();
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -414,8 +414,14 @@ export function Panel() {
           onClick={inheritDefaults}>
           <Copy size={13} strokeWidth={2} /> Apply Default to all states
         </button>
+        {selectedState !== "default" && (
+          <button className="resetstate makedefault" title={`Promote this exact ${STATE_LABEL[selectedState]} look — design and adjustments — to be the new Default. Nothing gets lost.`}
+            onClick={makeStateDefault}>
+            <Star size={13} strokeWidth={2} /> Make {STATE_LABEL[selectedState]} the new Default
+          </button>
+        )}
         {selectedState !== "default" && cfg.stateDesigns?.[selectedState] && (
-          <div className="helper">This state has its own design — edits here never touch Default.</div>
+          <div className="helper">This state has its own design — edits here never touch Default. Happy accident? <b>Make {STATE_LABEL[selectedState]} the new Default</b> keeps it.</div>
         )}
       </Section>
 
@@ -692,6 +698,13 @@ export function Panel() {
           <label className="checkrow"><input type="checkbox" checked={cfg.barFx?.grad2.vertical ?? true}
             onChange={(e) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.vertical = e.target.checked; })} /> Vertical sweep</label>
         </FxToggle>
+        <div className="sublabel">Dragger ball</div>
+        <label className="check"><input type="checkbox" checked={(cfg.knob?.color ?? null) === null}
+          onChange={(e) => update((c) => { c.knob = { color: e.target.checked ? null : (c.effects.Bevel ?? "#0E9CC9") }; })} /> Knob color from Color map</label>
+        {(cfg.knob?.color ?? null) !== null && (
+          <Well label="Knob color" value={cfg.knob!.color!} onChange={(v) => update((c) => { c.knob = { color: v }; })} />
+        )}
+        <div className="helper">The candy ball on sliders, toggles and joysticks. Following the Color map keeps it on the Bevel role.</div>
         <FxToggle label="Fill glow" on={cfg.barFx?.glow.on ?? false}
           onToggle={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.on = v; })}>
           <Well label="Color" value={cfg.barFx?.glow.color ?? "#8FF0FF"} onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.color = v; })} />
@@ -898,13 +911,13 @@ export function Panel() {
         <Slider label="Size" value={T2.size} min={28} max={140} unit="px" onChange={(v) => update((c) => { c.type.size = v; })} />
         {focus ? (
           <>
-            <Slider label="Vertical nudge" value={kitTextOy[`${focus}:${kitSizes[focus] ?? "m"}`] ?? T2.oy ?? 0} min={-20} max={20} unit="px"
-              onChange={(v) => setKitTextOy(`${focus}:${kitSizes[focus] ?? "m"}`, v)} />
+            <Slider label="Vertical nudge" value={kitTextOy[`${focus}:${effKitSize(kitSizes[focus])}`] ?? T2.oy ?? 0} min={-20} max={20} unit="px"
+              onChange={(v) => setKitTextOy(`${focus}:${effKitSize(kitSizes[focus])}`, v)} />
             <div className="helper">
               Component-specific — this nudge belongs to <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> at its current size and never moves anything else.
-              {kitTextOy[`${focus}:${kitSizes[focus] ?? "m"}`] !== undefined && (
+              {kitTextOy[`${focus}:${effKitSize(kitSizes[focus])}`] !== undefined && (
                 <button className="chipbtn" style={{ marginLeft: 8 }} title="Clear this component's nudge — follow the theme again"
-                  onClick={() => setKitTextOy(`${focus}:${kitSizes[focus] ?? "m"}`, null)}>
+                  onClick={() => setKitTextOy(`${focus}:${effKitSize(kitSizes[focus])}`, null)}>
                   <RotateCcw size={12} strokeWidth={2} />
                 </button>
               )}
@@ -922,7 +935,10 @@ export function Panel() {
           }
           const ws = caps?.weights ?? [T2.weight];
           if (ws.length <= 1) {
-            return <div className="ctl"><label>Weight</label><span className="mr-hint">{ws[0] ?? 400} — single-weight face</span></div>;
+            return (<>
+              <Slider label="Weight" value={T2.weight} min={ws[0] ?? 400} max={900} step={25} unit="" onChange={(v) => update((c) => { c.type.weight = v; })} />
+              <div className="helper">This face ships one master — heavier weights are built optically, fattening the glyphs without touching the metrics.</div>
+            </>);
           }
           return (
             <label className="fieldbox" style={{ minWidth: 0 }}>
@@ -1031,13 +1047,14 @@ export function Panel() {
             </select>
           </div>
           <Slider label="Angle" value={T2.stripes?.angle ?? 45} min={0} max={180} unit="°" onChange={(v) => update((c) => { c.type.stripes = { ...(c.type.stripes ?? { on: true, opacity: 30 }), on: c.type.stripes?.on ?? true, angle: v, opacity: c.type.stripes?.opacity ?? 30 }; })} />
+          <Slider label="Scale" value={T2.stripes?.scale ?? 100} min={25} max={300} unit="%" onChange={(v) => update((c) => { c.type.stripes = { ...(c.type.stripes ?? { on: true, angle: 45, opacity: 30 }), on: c.type.stripes?.on ?? true, angle: c.type.stripes?.angle ?? 45, opacity: c.type.stripes?.opacity ?? 30, scale: v }; })} />
           <Slider label="Opacity" value={T2.stripes?.opacity ?? 30} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.stripes = { ...(c.type.stripes ?? { on: true, angle: 45 }), on: c.type.stripes?.on ?? true, angle: c.type.stripes?.angle ?? 45, opacity: v }; })} />
           <div className="helper">Any face pattern, inside the letterforms — tone-on-tone from the shell color.</div>
         </FxToggle>
-        <FxToggle label="Inflate" on={T2.inflate?.on ?? false}
-          onToggle={(v) => update((c) => { c.type.inflate = { on: v, strength: c.type.inflate?.strength ?? 55 }; })}>
-          <Slider label="Strength" value={T2.inflate?.strength ?? 55} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.inflate = { on: c.type.inflate?.on ?? true, strength: v }; })} />
-          <div className="helper">A balloon highlight across the glyphs that follows the key light — spin the Lighting angle and it travels.</div>
+        <FxToggle label="Highlight glints" on={T2.glints?.on ?? false}
+          onToggle={(v) => update((c) => { c.type.glints = { on: v, opacity: c.type.glints?.opacity ?? 55 }; })}>
+          <Slider label="Opacity" value={T2.glints?.opacity ?? 55} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.type.glints = { on: c.type.glints?.on ?? true, opacity: v }; })} />
+          <div className="helper">Crisp vector highlights riding the letterforms — a specular slab clipped to the glyphs plus star glints. They follow the master Lighting angle, like every highlight in the system.</div>
         </FxToggle>
       </Section>
 

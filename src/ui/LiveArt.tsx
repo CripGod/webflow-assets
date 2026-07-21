@@ -127,8 +127,13 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
      bottom ~22 viewBox units — the bottom keeps room for extrusion depth
      and the cast shadow), all at display scale. Shells then stack at real
      UI rhythm while glows draw freely over the gaps. */
+  // shell-free pieces (reticles, hearts, big numbers, the overlay stick)
+  // render edge-to-edge on their own canvas — no pad exists to reclaim,
+  // and trimming them collides art with neighbours and captions
+  const shellFree = !!kit && (kit.id === "reticle" || kit.id === "lives" || kit.id === "bignum" ||
+    (kit.id === "joystick" && kit.overlay === "ghost"));
   const trimStyle = useMemo(() => {
-    if (!trim || scale === undefined) return undefined;
+    if (!trim || scale === undefined || shellFree) return undefined;
     const s = scale;
     return {
       marginTop: -Math.round((pad + 14) * s),
@@ -136,7 +141,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
       marginBottom: -Math.round((pad + 22) * s),
       marginLeft: -Math.round((pad + 12) * s),
     };
-  }, [trim, scale, pad]);
+  }, [trim, scale, pad, shellFree]);
 
   /* Map a pointer to the control's track using the exact geometry the renderer
      stamped on the svg (viewBox units) — precise at any scale or glow pad. */
@@ -269,7 +274,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   // draggable pieces own their gestures — a slider drag must never pan the page
   const gestureStyle = id === "slider" || id === "segment" || id === "joystick" ? { touchAction: "none" as const } : undefined;
   return (
-    <div ref={ref} className={className} title={title}
+    <div ref={ref} className={shellFree ? `${className ?? ""} kp-shellfree` : className} title={title}
       style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle, ...gestureStyle }}
       {...(playing ? playHandlers
         : onDesignClick ? {

@@ -1347,24 +1347,7 @@ button.kp-fact { cursor: pointer; }
 .kp-wkday { position: relative; z-index: 1; }
 .kp-wkday .gp-piece { margin: -11px -10px; }
 
-/* ── v38: orbital hero, pattern zoom modal, spatial HUD ────────── */
-/* orbital carousel — one elliptical path, depth faked with scale/blur/
-   layering; every item runs the same keyframes at a staggered delay */
-.kp-orbit { min-height: 470px; perspective: none; }
-.kp-orbitcenter { position: absolute; left: 50%; top: 33%; transform: translate(-50%, -50%) scale(1.32); z-index: 5; }
-.kp-orbititem { position: absolute; left: 50%; top: 54%; animation: kp-orbitpath 44s linear infinite; will-change: transform, opacity, filter; }
-.kp-orbit:hover .kp-orbititem { animation-play-state: paused; }
-@keyframes kp-orbitpath {
-  0%   { transform: translate(-50%, -50%) translateX(385px) translateY(6px) scale(1.02); opacity: 1; filter: blur(0); z-index: 7; }
-  25%  { transform: translate(-50%, -50%) translateX(0px) translateY(98px) scale(1.24); opacity: 1; filter: blur(0); z-index: 9; }
-  50%  { transform: translate(-50%, -50%) translateX(-385px) translateY(6px) scale(1.02); opacity: 1; filter: blur(0); z-index: 7; }
-  75%  { transform: translate(-50%, -50%) translateX(0px) translateY(-74px) scale(0.56); opacity: .5; filter: blur(1.8px); z-index: 1; }
-  100% { transform: translate(-50%, -50%) translateX(385px) translateY(6px) scale(1.02); opacity: 1; filter: blur(0); z-index: 7; }
-}
-@media (prefers-reduced-motion: reduce) { .kp-orbititem { animation-play-state: paused !important; } }
-.kp-orbitcenter.kp-dailyb { padding: 16px 22px 14px; }
-.kp-orbitcenter .kp-dbt { font-size: 15px; }
-.kp-orbitcenter .kp-dbs { font-size: 12px; }
+/* ── v38/v39: pattern zoom modal, spatial HUD ────────────────── */
 
 /* pattern zoom modal — phone-true pieces at presentation size */
 .kp-patmodal { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: rgba(8, 10, 18, 0.66); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
@@ -1383,3 +1366,31 @@ button.kp-fact { cursor: pointer; }
 /* the track's node zone grew with the new size floor */
 .kp-tnodezone { height: 208px; }
 .kp-rail3 { top: 118px; }
+
+/* ── v39: WebGL exploded-material hero ─────────────────────────── */
+.kp-glhero { position: relative; flex: 1 1 auto; min-width: 0; min-height: 540px; overflow: hidden;
+  -webkit-mask-image: radial-gradient(96% 92% at 50% 50%, #000 70%, transparent 100%);
+  mask-image: radial-gradient(96% 92% at 50% 50%, #000 70%, transparent 100%); }
+.kp-glcanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.kp-glleads { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; color: var(--st-ink2); font-family: "JetBrains Mono", ui-monospace, monospace; }
+.kp-gllabel { position: absolute; top: 0; left: 0; width: 128px; text-align: left; font-size: 13.5px; font-weight: 650; color: var(--st-ink); pointer-events: none; will-change: transform; }
+.kp-glsat { position: absolute; top: 0; left: 0; width: 200px; display: flex; flex-direction: column; gap: 1px; align-items: center; text-align: center; pointer-events: none; will-change: transform; }
+.kp-glsat b { font-size: 12px; font-weight: 800; letter-spacing: .1em; color: var(--st-ink); }
+.kp-glsat span { font-size: 11.5px; font-weight: 600; color: var(--st-ink2); }
+.kp-glfallback { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 40px; }
+.kp-glfrow { display: flex; gap: 12px; align-items: baseline; font-size: 15px; color: var(--st-ink); }
+.kp-glfrow b { font-size: 12px; color: var(--st-ink2); }
+.kp-glfallback p { font-size: 12.5px; color: var(--st-ink2); max-width: 380px; }
+
+/* shell-free pieces have no renderer pad — give them real breathing room
+   instead of the tray's negative reclaim, so captions never collide */
+.kp-tray .kp-live.kp-shellfree { margin: 2px 4px 10px; }
+
+/* the functional glyph set reads as two full rows on a wide monitor */
+.kp-icons { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+@media (max-width: 1560px) { .kp-icons { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 1080px) { .kp-icons { grid-template-columns: repeat(auto-fill, minmax(98px, 1fr)); } }
+
+/* promote-a-state — the accent variant of the state buttons */
+.resetstate.makedefault { border-color: color-mix(in srgb, #3d8edb 45%, transparent); color: #3d8edb; }
+.resetstate.makedefault:hover { background: color-mix(in srgb, #3d8edb 12%, transparent); }

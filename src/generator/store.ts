@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS, KIT_SHAPE, applyKitDesign, setUserShapes } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, GAME_FONTS, KIT_SHAPE, applyKitDesign, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
@@ -66,6 +66,7 @@ export function hydrate(parsed: Record<string, any>): GenConfig {
     face: { ...d.face, ...parsed.face },
   } as GenConfig;
   if (!cfg.stateDesigns) cfg.stateDesigns = {};
+  if (!cfg.knob) cfg.knob = { color: null };
   // state forks saved before newer candy tokens existed get them merged in
   for (const sd of Object.values(cfg.stateDesigns)) {
     if (sd?.candy) sd.candy = mergeCandy(d.candy, sd.candy);
@@ -178,6 +179,9 @@ interface GenStore {
   canvasMode: "design" | "play";
   setCanvasMode: (m: "design" | "play") => void;
   inheritDefaults: () => void;
+  /** Promote the selected state's design + adjustments to be the new Default.
+   *  The state then mirrors the new Default again. */
+  makeStateDefault: () => void;
   replaceConfig: (next: GenConfig) => void;
   library: LibItem[];
   addToLibrary: (name: string) => void;
@@ -344,11 +348,11 @@ export const useGen = create<GenStore>((set, get) => ({
     if (focus && kitDesigns[focus]) cfg = applyKitDesign(cfg, kitDesigns[focus]);
     // a component-specific text adjustment bakes into the snapshot
     if (focus) {
-      const oy = kitTextOy[`${focus}:${kitSizes[focus] ?? "m"}`];
+      const oy = kitTextOy[`${focus}:${effKitSize(kitSizes[focus])}`];
       if (oy !== undefined) cfg.type.oy = oy;
     }
     const kit: LibKit | undefined = focus
-      ? { id: focus, size: kitSizes[focus] ?? "m", shape: kitShapes[focus] ?? KIT_SHAPE[focus] }
+      ? { id: focus, size: effKitSize(kitSizes[focus]), shape: kitShapes[focus] ?? KIT_SHAPE[focus] }
       : undefined;
     const item: LibItem = { id: "lib" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, cfg, ...(kit ? { kit } : {}) };
     const library = [...get().library, item];
@@ -540,6 +544,21 @@ export const useGen = create<GenStore>((set, get) => ({
     cfg.states.disabled = { ...cfg.states.default };
     get().replaceConfig(cfg);
   },
+  makeStateDefault: () => {
+    const sel = get().selectedState;
+    if (sel === "default") return;
+    const cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
+    const d = cfg.stateDesigns?.[sel];
+    if (d) {
+      // the state's forked design becomes the root design
+      for (const key of DESIGN_KEYS) (cfg as any)[key] = (d as any)[key];
+      delete cfg.stateDesigns[sel];
+    }
+    // its whole-component adjustments become the default baseline too
+    cfg.states.default = { ...cfg.states[sel] };
+    get().replaceConfig(cfg);
+    set({ selectedState: "default" });
+  },
   replaceConfig: (next) => {
     markTouched();
     past.push(get().cfg);
@@ -565,6 +584,7 @@ export const useGen = create<GenStore>((set, get) => ({
       // editing a non-default state: fork its design on first touch, then
       // route all design-field edits into the fork — Default stays untouched
       if (!cfg.stateDesigns) cfg.stateDesigns = {};
+  if (!cfg.knob) cfg.knob = { color: null };
       if (!cfg.stateDesigns[sel]) cfg.stateDesigns[sel] = pickDesign(cfg);
       const d = cfg.stateDesigns[sel]!;
       const t = Object.assign({}, cfg, {

@@ -193,11 +193,15 @@ export interface TypeCfg {
    *  portion of the same material — same font, metrics, outline, everything. */
   highlight?: string;
   /** Pattern fill inside the letterforms (off by default) — any face
-   *  pattern style, tone-on-tone from the shell color. */
-  stripes?: { on: boolean; angle: number; opacity: number; style?: Exclude<PatternType, "none"> };
+   *  pattern style, tone-on-tone from the shell color. scale is a percent
+   *  of the natural cell size (100 = default density). */
+  stripes?: { on: boolean; angle: number; opacity: number; style?: Exclude<PatternType, "none">; scale?: number };
   /** Balloon highlight following the key light — the closest the shell gets
    *  to an inflate effect without touching the glyph geometry. */
   inflate?: { on: boolean; strength: number };
+  /** Crisp vector glints riding the letterforms — a specular slab clipped to
+   *  the glyphs plus star sparkles, all placed by the master lighting angle. */
+  glints?: { on: boolean; opacity: number };
   fillMode: "auto" | "solid" | "gradient";
   fill: string;
   fill2: string;       // gradient bottom
@@ -413,6 +417,16 @@ export interface GenConfig extends StateDesign {
   canvas: string;
   /** Bar-fill styling layers (see BarFx) — optional, defaults off. */
   barFx?: BarFx;
+  /** Dragger ball on sliders, toggles and joysticks — null = derived from
+   *  the Bevel role like everything else. */
+  knob?: { color: string | null };
+}
+
+/** Effective kit size for a component — Small retired (reads as Medium),
+ *  and the default is Large everywhere. One helper so the nudge keys,
+ *  exports and previews can never disagree about a component's size. */
+export function effKitSize(s: KitSize | undefined): KitSize {
+  return s === "s" ? "m" : (s ?? "l");
 }
 
 export interface Preset {
@@ -494,6 +508,7 @@ export function defaultConfig(): GenConfig {
     states: defaultStates(),
     visible: { hover: true, pressed: true, disabled: true },
     canvas: "#000000",
+    knob: { color: null },
   };
 }
 

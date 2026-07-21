@@ -776,9 +776,21 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     : "";
   const textFilter = prims.length ? ` filter="url(#${id}tf)"` : "";
   const outlineStroke = T2.outline.color2 ? `url(#${id}og)` : P(T2.outline.color);
+  /* synthetic weight — single-master display faces can't get heavier from the
+     font file, so weights above the shipped master fatten the glyphs optically
+     with a same-paint stroke. Variable and multi-weight faces never enter. */
+  const fcaps = fontByName(T2.font)?.caps;
+  const singleMaster = !!fcaps?.weights && fcaps.weights.length === 1 && !fcaps.wght;
+  const synW = singleMaster ? clamp((T2.weight - (fcaps!.weights![0] ?? 400)) / 500, 0, 1) * fs * 0.055 : 0;
+  const outlineW = T2.outline.width * (fs / 52);
   const outlineAttrs = T2.outline.on
-    ? ` stroke="${outlineStroke}" stroke-width="${(T2.outline.width * (fs / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
-    : "";
+    ? (synW > 0.05
+      // the fattened glyph carries its own same-paint stroke; the ring moves
+      // to an underlay so it still shows outside the grown letterform
+      ? ` stroke="${tFill}" stroke-width="${synW.toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
+      : ` stroke="${outlineStroke}" stroke-width="${outlineW.toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`)
+    : (synW > 0.05 ? ` stroke="${tFill}" stroke-width="${synW.toFixed(1)}" stroke-linejoin="round" paint-order="stroke"` : "");
+  const outlineUnder = T2.outline.on && synW > 0.05;
 
   const iFx = cfg.icon.fx;
   const iFilters: string[] = [];
@@ -826,6 +838,35 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const textInner = hiIdx >= 0
     ? `${esc(cased.slice(0, hiIdx))}<tspan fill="url(#${id}thl)">${esc(cased.slice(hiIdx, hiIdx + hiLen))}</tspan>${esc(cased.slice(hiIdx + hiLen))}`
     : label;
+
+  /* vector glints — a crisp specular slab clipped to the glyphs plus star
+     sparkles riding the letter faces. Placement follows the master light,
+     exactly like the emboss relief and the shell gloss. */
+  const GL2 = T2.glints;
+  const glintsOn = !!GL2?.on && showText && !disabled;
+  let glintsDefs = "", glintsLayer = "";
+  if (glintsOn) {
+    const gOp = clamp((GL2!.opacity ?? 55) / 100, 0, 1);
+    const gy = cy + 1 + textOy * K;
+    const tx0 = opts.anchorLeft ? tTextX : tTextX - textW / 2;
+    const gcx = tx0 + textW / 2;
+    const bandW = textW * 1.18, bandH = fs * 0.28;
+    // the slab drifts toward the light and tilts perpendicular to it
+    const bcx = gcx + lx * fs * 0.08, bcy = gy + ly * fs * 0.24;
+    const rot = Math.atan2(ly, lx) * 180 / Math.PI + 90;
+    const star4 = (sx: number, sy: number, s: number, sr: number) =>
+      `<path d="M0 ${(-s).toFixed(1)} L${(s * 0.22).toFixed(1)} ${(-s * 0.22).toFixed(1)} L${s.toFixed(1)} 0 L${(s * 0.22).toFixed(1)} ${(s * 0.22).toFixed(1)} L0 ${s.toFixed(1)} L${(-s * 0.22).toFixed(1)} ${(s * 0.22).toFixed(1)} L${(-s).toFixed(1)} 0 L${(-s * 0.22).toFixed(1)} ${(-s * 0.22).toFixed(1)} Z" transform="translate(${sx.toFixed(1)} ${sy.toFixed(1)}) rotate(${sr})" fill="#FFFFFF"/>`;
+    glintsDefs = `<clipPath id="${id}tgc"><text x="${tTextX.toFixed(1)}" y="${gy.toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text></clipPath>`;
+    glintsLayer = `<g clip-path="url(#${id}tgc)" opacity="${gOp.toFixed(2)}">
+        <rect x="${(bcx - bandW / 2).toFixed(1)}" y="${(bcy - bandH / 2).toFixed(1)}" width="${bandW.toFixed(1)}" height="${bandH.toFixed(1)}" rx="${(bandH / 2).toFixed(1)}" fill="#FFFFFF" transform="rotate(${rot.toFixed(1)} ${bcx.toFixed(1)} ${bcy.toFixed(1)})"/>
+        <rect x="${(bcx - bandW * 0.19).toFixed(1)}" y="${(bcy + bandH * 0.75).toFixed(1)}" width="${(bandW * 0.38).toFixed(1)}" height="${(bandH * 0.42).toFixed(1)}" rx="${(bandH * 0.21).toFixed(1)}" fill="#FFFFFF" opacity="0.7" transform="rotate(${rot.toFixed(1)} ${bcx.toFixed(1)} ${bcy.toFixed(1)})"/>
+      </g>
+      <g opacity="${Math.min(1, gOp * 1.15).toFixed(2)}">
+        ${star4(tx0 + textW * 0.16 + lx * fs * 0.06, gy - fs * 0.24 + ly * fs * 0.06, fs * 0.16, 0)}
+        ${star4(tx0 + textW * 0.52 + lx * fs * 0.06, gy + fs * 0.16 + ly * fs * 0.06, fs * 0.09, 18)}
+        ${star4(tx0 + textW * 0.85 + lx * fs * 0.06, gy - fs * 0.1 + ly * fs * 0.06, fs * 0.125, -14)}
+      </g>`;
+  }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw + pad * 2}" height="${vh + pad * 2}" viewBox="${-pad} ${-pad} ${vw + pad * 2} ${vh + pad * 2}" font-family="'${T2.font}', Inter, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
 <defs>
@@ -896,12 +937,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <stop offset="0" stop-color="${hexMix(hiC, "#FFFFFF", 0.7)}"/>
     <stop offset="1" stop-color="${hexMix(glowC, "#FFFFFF", 0.3)}"/>
   </linearGradient>` : ""}
-  ${showText && T2.stripes?.on ? `<pattern id="${id}tst" width="${(fs * 0.3).toFixed(1)}" height="${(fs * 0.3).toFixed(1)}" patternUnits="userSpaceOnUse" patternTransform="rotate(${T2.stripes.angle})">${textPatternCell(T2.stripes.style ?? "stripes", fs * 0.3, darken(bevelC, 0.25))}</pattern>` : ""}
-  ${showText && T2.inflate?.on ? `<linearGradient id="${id}tif" ${axis}>
-    <stop offset="0" stop-color="${hiC}" stop-opacity="0"/>
-    <stop offset="0.45" stop-color="${hiC}" stop-opacity="0"/>
-    <stop offset="1" stop-color="${hiC}" stop-opacity="${clamp((T2.inflate.strength ?? 50) / 100, 0, 1).toFixed(2)}"/>
-  </linearGradient>` : ""}
+  ${showText && T2.stripes?.on ? (() => { const pcell = fs * 0.3 * clamp((T2.stripes!.scale ?? 100) / 100, 0.25, 4); return `<pattern id="${id}tst" width="${pcell.toFixed(1)}" height="${pcell.toFixed(1)}" patternUnits="userSpaceOnUse" patternTransform="rotate(${T2.stripes!.angle})">${textPatternCell(T2.stripes!.style ?? "stripes", pcell, darken(bevelC, 0.25))}</pattern>`; })() : ""}
+  ${glintsDefs}
   ${textFxDef}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
@@ -932,9 +969,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${innerEdge}
     </g>
     <g id="${id}_content" opacity="${(T.content / 100).toFixed(2)}">
+      ${showText && outlineUnder ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="none" stroke="${outlineStroke}" stroke-width="${(outlineW + synW).toFixed(1)}" stroke-linejoin="round" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
       ${showText ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="${tFill}"${(T2.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T2.fillOpacity / 100).toFixed(2)}"` : ""}${outlineAttrs} text-anchor="${tAnchor}" dominant-baseline="central"${textFilter}>${textInner}</text>` : ""}
       ${showText && T2.stripes?.on ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tst)" opacity="${clamp((T2.stripes.opacity ?? 30) / 100, 0, 1).toFixed(2)}" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
-      ${showText && T2.inflate?.on ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle("mix-blend-mode:screen")} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tif)" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
+      ${glintsLayer}
       ${iconDef ? (inheritTypo
         ? `<g${prims.length ? ` filter="url(#${id}tf)"` : ""}>${
             T2.outline.on && !disabled
@@ -1069,6 +1107,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   const k = SIZE_K[size];
   const bw = cfg.bevel.width;
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
+  // the dragger ball can carry its own color; null follows the Bevel role
+  const knobC = cfg.knob?.color ?? bevel;
   const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
   const font = cfg.type.font;
   const wellOf = (w: number, h: number, inset: number) =>
@@ -1157,7 +1197,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const kx = on ? 39 + w - inset - 5 - knobR : 39 + inset + 5 + knobR;
       const ky = 30 + h / 2;
       const dot = state === "disabled" ? "#A7AAB4" : on ? glow : "#9AA1AC";
-      return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="${on ? 0.92 : 0.96}"/>` + candyKnob(kx, ky, knobR, bevel, dot));
+      return inject(track, `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="${on ? 0.92 : 0.96}"/>` + candyKnob(kx, ky, knobR, knobC, dot));
     }
     case "slider": {
       const w = 460 * k, h = 64 * k;
@@ -1182,7 +1222,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${sfx.defs}</defs>
          ${fillW > 1 ? `${sfx.open}<path d="${roundRect(bx, by, fillW, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${sfx.close}
          <path d="${roundRect(bx, by + bh * 0.08, fillW, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${sfx.over}` : ""}` +
-        candyKnob(knobX, knobY, kr, bevel)), bx, trackW);
+        candyKnob(knobX, knobY, kr, knobC)), bx, trackW);
     }
     case "progress": {
       const w = 520 * k, h = 64 * k;
@@ -1306,6 +1346,46 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       // mobile touch stick: circular well, dashed travel ring, candy knob.
       // opts.stick deflects the knob; data-stick lets the host drive it live.
       const d2 = ({ s: 210, m: 270, l: 340 } as const)[size];
+      if (opts.overlay === "ghost") {
+        // the overlay stick is its own construction — pure strokes and glass
+        // fills designed to sit on live gameplay, not a faded solid control
+        const pad2 = 18;
+        const cxg = d2 / 2 + pad2, cyg = d2 / 2 + pad2;
+        const R = d2 / 2, krg = d2 * 0.27;
+        const maxOffG = R - krg - 10;
+        const sxg = clamp(opts.stick?.[0] ?? 0, -1, 1), syg = clamp(opts.stick?.[1] ?? 0, -1, 1);
+        const magG = Math.hypot(sxg, syg), fg = magG > 1 ? 1 / magG : 1;
+        const kxg = cxg + sxg * fg * maxOffG, kyg = cyg + syg * fg * maxOffG;
+        const rim = hexMix(glow, "#FFFFFF", 0.42);
+        const tick = (a: number) => {
+          const c = Math.cos(a), s3 = Math.sin(a);
+          return `<line x1="${(cxg + c * (R - 7)).toFixed(1)}" y1="${(cyg + s3 * (R - 7)).toFixed(1)}" x2="${(cxg + c * (R + 5)).toFixed(1)}" y2="${(cyg + s3 * (R + 5)).toFixed(1)}" stroke="${rim}" stroke-width="3" stroke-linecap="round" opacity="0.8"/>`;
+        };
+        const chev = (a: number) => {
+          const c = Math.cos(a), s3 = Math.sin(a);
+          const px = cxg + c * (R - 24), py = cyg + s3 * (R - 24);
+          const deg = a * 180 / Math.PI + 90;
+          return `<path d="M-8 4 L0 -5 L8 4" fill="none" stroke="${rim}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="0.55" transform="translate(${px.toFixed(1)} ${py.toFixed(1)}) rotate(${deg.toFixed(0)})"/>`;
+        };
+        const gid = "gj" + UID++;
+        const gsvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${d2 + pad2 * 2}" height="${d2 + pad2 * 2}" viewBox="0 0 ${d2 + pad2 * 2} ${d2 + pad2 * 2}" role="img" aria-label="joystick overlay, ${state} state">
+<defs>
+  <radialGradient id="${gid}w"><stop offset="0.55" stop-color="${glow}" stop-opacity="0.05"/><stop offset="0.92" stop-color="${glow}" stop-opacity="0.16"/><stop offset="1" stop-color="${glow}" stop-opacity="0.02"/></radialGradient>
+  <radialGradient id="${gid}k" cx="0.38" cy="0.32" r="0.95"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.6" stop-color="${rim}" stop-opacity="0.16"/><stop offset="1" stop-color="${rim}" stop-opacity="0.05"/></radialGradient>
+</defs>
+<g>
+  <circle cx="${cxg}" cy="${cyg}" r="${R}" fill="url(#${gid}w)" stroke="${rim}" stroke-width="2.5" opacity="0.9"/>
+  <circle cx="${cxg}" cy="${cyg}" r="${(R - 5).toFixed(1)}" fill="none" stroke="${rim}" stroke-width="1" opacity="0.35"/>
+  <circle cx="${cxg}" cy="${cyg}" r="${(maxOffG + krg * 0.45).toFixed(1)}" fill="none" stroke="${rim}" stroke-width="1.8" stroke-dasharray="2 9" stroke-linecap="round" opacity="0.7"/>
+  ${tick(0)}${tick(Math.PI / 2)}${tick(Math.PI)}${tick(-Math.PI / 2)}
+  ${chev(-Math.PI / 2)}${chev(0)}${chev(Math.PI / 2)}${chev(Math.PI)}
+  <circle cx="${kxg.toFixed(1)}" cy="${kyg.toFixed(1)}" r="${krg.toFixed(1)}" fill="url(#${gid}k)" stroke="${rim}" stroke-width="2.5" opacity="0.95"/>
+  <circle cx="${kxg.toFixed(1)}" cy="${kyg.toFixed(1)}" r="${(krg * 0.42).toFixed(1)}" fill="none" stroke="${rim}" stroke-width="1.5" opacity="0.55"/>
+  <circle cx="${kxg.toFixed(1)}" cy="${kyg.toFixed(1)}" r="${(krg * 0.14).toFixed(1)}" fill="${hexMix(glow, "#FFFFFF", 0.6)}" opacity="0.95"/>
+</g>
+</svg>`;
+        return gsvg.replace("<svg ", `<svg data-stick="${cxg} ${cyg} ${maxOffG.toFixed(1)}" `);
+      }
       const track = build(cfg, state, { x: 33, y: 27, h: d2, fs: 0, iconSize: 0, tokenH: 132 }, { iconDef: null, label: "", fixedW: d2, shapeOverride: "pill" });
       const inset2 = bw + 5;
       const cx2 = 33 + d2 / 2, cy2 = 27 + d2 / 2;
@@ -1316,8 +1396,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const svg2 = inject(track,
         `<path d="${roundRect(33 + inset2, 27 + inset2, d2 - inset2 * 2, d2 - inset2 * 2, (d2 - inset2 * 2) / 2)}" fill="${wellFill}" opacity="0.94"/>
          <circle cx="${cx2}" cy="${cy2}" r="${(maxOff + kr2 * 0.5).toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="2" stroke-dasharray="3 8"/>` +
-        candyKnob(cx2 + sx2 * f2 * maxOff, cy2 + sy3 * f2 * maxOff, kr2, bevel, state === "disabled" ? "#A7AAB4" : glow));
-      return svg2.replace("<svg ", `<svg data-stick="${cx2} ${cy2} ${maxOff.toFixed(1)}" ${opts.overlay === "ghost" ? 'style="opacity:0.48" ' : ""}`);
+        candyKnob(cx2 + sx2 * f2 * maxOff, cy2 + sy3 * f2 * maxOff, kr2, knobC, state === "disabled" ? "#A7AAB4" : glow));
+      return svg2.replace("<svg ", `<svg data-stick="${cx2} ${cy2} ${maxOff.toFixed(1)}" `);
     }
     case "slot": {
       /* Portrait / item slot — square frame with stackable status overlays.
