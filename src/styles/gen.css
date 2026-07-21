@@ -830,9 +830,9 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-slotgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
 .kp-slotgrid .kp-piece { border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); padding: 4px 4px 7px; }
 .kp-slotgrid .kp-live { margin: -12px -6px; }
-.kp-ringrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 10px; margin-top: 10px; align-items: end; }
-.kp-ringrow .kp-piece { border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); padding: 4px 4px 7px; }
-.kp-ringrow .kp-live { margin: -6px 0; }
+.kp-ringrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; margin-top: 10px; align-items: end; }
+.kp-ringrow .kp-piece { border: 1px solid var(--kp-line); border-radius: 12px; background: var(--kp-card); padding: 10px 8px 12px; }
+.kp-ringrow .kp-cap { margin-top: 4px; }
 
 /* reward track — nodes on one rhythm with stateful connectors */
 .kp-track2 { display: flex; align-items: flex-start; gap: 0; margin-top: 10px; padding: 12px 8px 6px; border: 1px dashed var(--kp-line); border-radius: 16px; overflow-x: auto; }

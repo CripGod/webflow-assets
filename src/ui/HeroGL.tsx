@@ -18,8 +18,8 @@ import type { GenConfig } from "@/generator/model";
 const LAYERS = [
   { key: "highlight", t: "Highlight", sub: "gloss & specular", y: 1.66 },
   { key: "bevel", t: "Bevel", sub: "shell & wall", y: 1.11 },
-  { key: "fill", t: "Inner Fill", sub: "candy face", y: 0.56 },
-  { key: "pattern", t: "Pattern", sub: "face texture", y: 0.01 },
+  { key: "pattern", t: "Pattern", sub: "face texture", y: 0.56 },
+  { key: "fill", t: "Inner Fill", sub: "candy face", y: 0.01 },
   { key: "type", t: "Type Layer", sub: "live label", y: -0.55 },
   { key: "glow", t: "Glow", sub: "inner glow", y: -1.1 },
   { key: "shadow", t: "Shadow", sub: "grounding", y: -1.66 },
@@ -133,6 +133,7 @@ interface Rig {
   keyLight: THREE.DirectionalLight;
   still: boolean;
   renderOnce: () => void;
+  alignSats: () => void;
   disposables: { dispose(): void }[];
 }
 
@@ -173,7 +174,7 @@ export function HeroGL() {
     scene.add(keyLight);
 
     const group = new THREE.Group();
-    group.position.set(-1.55, 0.05, 0);
+    group.position.set(-1.12, 0.05, 0);
     group.rotation.set(0.07, 0.52, 0);
     scene.add(group);
 
@@ -272,7 +273,7 @@ export function HeroGL() {
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     rig.current = {
       renderer, scene, camera, group, layerMeshes, typePlane, glowMat, shadowMat, patternMat,
-      satGroup, sats, keyLight, still, renderOnce: () => {}, disposables,
+      satGroup, sats, keyLight, still, renderOnce: () => {}, alignSats: () => {}, disposables,
     };
     wrap.dataset.gl = "on";
 
@@ -332,13 +333,58 @@ export function HeroGL() {
           m2.position.x += (pm.x - p0.x) * perPx;
         }
       }
+      // vertical spacing: art + label block must clear the next satellite,
+      // whatever proportions the current style rasterizes to — and the whole
+      // column recenters (shrinking if needed) so nothing clips the stage
+      const LABEL_PX = 100;
+      const perPyOf = (m2: THREE.Mesh) => {
+        const p0 = proj(v.set(m2.position.x, m2.userData.baseY, 0), satGroup);
+        const p1 = proj(v.set(m2.position.x, m2.userData.baseY - 0.1, 0), satGroup);
+        return 0.1 / Math.max(0.0001, p1.y - p0.y);
+      };
+      const spacePass = () => {
+        for (const [ui, li] of [[0, 1], [1, 2]] as const) {
+          const u = sats[ui], l2 = sats[li];
+          const uBottom = proj(v.set(u.position.x, u.userData.baseY - ((u.scale.y || 1) / 2) * 0.92, 0), satGroup).y + LABEL_PX;
+          const lTop = proj(v.set(l2.position.x, l2.userData.baseY + (l2.scale.y || 1) / 2, 0), satGroup).y;
+          const overlap = uBottom + 16 - lTop;
+          if (overlap > 0) {
+            l2.userData.baseY -= overlap * perPyOf(l2);
+            l2.position.y = l2.userData.baseY;
+            scene.updateMatrixWorld(true);
+          }
+        }
+      };
+      const colSpan = () => {
+        const top0 = proj(v.set(sats[0].position.x, sats[0].userData.baseY + (sats[0].scale.y || 1) / 2, 0), satGroup).y;
+        const bot2 = proj(v.set(sats[2].position.x, sats[2].userData.baseY - ((sats[2].scale.y || 1) / 2) * 0.92, 0), satGroup).y + LABEL_PX;
+        return { top0, bot2 };
+      };
+      spacePass();
+      const s1 = colSpan();
+      const room = H - 52;
+      if (s1.bot2 - s1.top0 > room) {
+        const f = Math.max(0.7, room / (s1.bot2 - s1.top0));
+        for (const m2 of sats) m2.scale.set(m2.scale.x * f, m2.scale.y * f, 1);
+        scene.updateMatrixWorld(true);
+        spacePass();
+      }
+      const s2 = colSpan();
+      const shift = H / 2 - (s2.top0 + s2.bot2) / 2;
+      if (Math.abs(shift) > 6) {
+        for (const m2 of sats) {
+          m2.userData.baseY -= shift * perPyOf(m2);
+          m2.position.y = m2.userData.baseY;
+        }
+        scene.updateMatrixWorld(true);
+      }
     };
 
     const projectAll = () => {
       LAYERS.forEach((_L, i) => {
         const p = proj(v.set(-2.5, layerMeshes[i].position.y, 0.2), group);
         const lab = labelRefs.current[i];
-        const lx = Math.max(4, W * 0.008);
+        const lx = 2;
         if (lab) { lab.style.transform = `translate(${lx}px, ${(p.y - 15).toFixed(1)}px)`; }
         dots[i].setAttribute("cx", p.x.toFixed(1)); dots[i].setAttribute("cy", p.y.toFixed(1));
         setLine(leaders[i], lx + 136, p.y, p.x - 8, p.y);
@@ -347,11 +393,11 @@ export function HeroGL() {
         const mesh = sats[i];
         const halfH = (mesh.scale.y || 1) / 2;
         const c2 = proj(v.set(mesh.position.x, mesh.position.y, 0), satGroup);
-        const b2 = proj(v.set(mesh.position.x, mesh.position.y - halfH * 0.6, 0), satGroup);
+        const b2 = proj(v.set(mesh.position.x, mesh.position.y - halfH * 0.92, 0), satGroup);
         const lab = satLabelRefs.current[i];
-        if (lab) { lab.style.transform = `translate(${(c2.x - 100).toFixed(1)}px, ${(b2.y + 10).toFixed(1)}px)`; }
-        satDots[i].setAttribute("cx", c2.x.toFixed(1)); satDots[i].setAttribute("cy", (b2.y + 4).toFixed(1));
-        setLine(satLeaders[i], c2.x, b2.y - 6, c2.x, b2.y + 2);
+        if (lab) { lab.style.transform = `translate(${(c2.x - 100).toFixed(1)}px, ${(b2.y + 12).toFixed(1)}px)`; }
+        satDots[i].setAttribute("cx", c2.x.toFixed(1)); satDots[i].setAttribute("cy", (b2.y + 5).toFixed(1));
+        setLine(satLeaders[i], c2.x, b2.y - 4, c2.x, b2.y + 3);
       });
       const t1 = proj(v.set(-2.3, 2.3, 0), group), t2 = proj(v.set(2.3, 2.3, 0), group);
       const b1 = proj(v.set(-2.3, -2.35, 0), group), b2 = proj(v.set(2.3, -2.35, 0), group);
@@ -414,7 +460,7 @@ export function HeroGL() {
       layerMeshes.forEach((pl, i) => { pl.position.y = pl.userData.baseY * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
       typePlane.position.y = layerMeshes[typeIdx].position.y + 0.27;
       glowMat.opacity = 0.7 + Math.sin(t * 0.9) * 0.22;
-      sats.forEach((m2, i) => { m2.position.y = m2.userData.baseY + Math.sin(t * 0.42 + i * 1.9) * 0.09; });
+      sats.forEach((m2, i) => { m2.position.y = m2.userData.baseY + Math.sin(t * 0.42 + i * 1.9) * 0.05; });
       billboard();
       renderer.render(scene, camera);
       projectAll();
@@ -422,6 +468,7 @@ export function HeroGL() {
     };
     const renderOnce = () => { billboard(); renderer.render(scene, camera); projectAll(); };
     rig.current.renderOnce = renderOnce;
+    rig.current.alignSats = alignSats;
     if (still) {
       renderOnce();
     } else {
@@ -496,6 +543,7 @@ export function HeroGL() {
           m.map = tex; m.opacity = 1; m.needsUpdate = true;
           const wh = mesh.userData.h as number;
           mesh.scale.set((w / h) * wh, wh, 1);
+          R2.alignSats();
           if (R2.still) R2.renderOnce();
         });
       });

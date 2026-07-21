@@ -1325,10 +1325,27 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const dim = state === "disabled" ? 0.45 : 1;
       const title = opts.label ?? R2.title ?? "Shadow Knight";
       const sub = opts.sub ?? R2.sub ?? "Level 12 · Warrior";
+      /* the title carries the typography treatment — outline, shadow, glow */
+      const T3 = cfg.type;
+      const gid2b = "drt" + UID++;
+      const rowPrims: string[] = [];
+      const fds2 = (dx2: string, dy2: string, dev: number, color: string, op: string) =>
+        `<feDropShadow dx="${dx2}" dy="${dy2}" stdDeviation="${dev.toFixed(1)}" flood-color="${color}" flood-opacity="${op}"/>`;
       // the row's own text follows the global type Size like every label
       const sizeK2 = clamp(cfg.type.size / 52, 0.5, 2.2);
       const fsT = 26 * k * sizeK2 * ((R2.titleSize ?? 100) / 100);
       const fsS = 17 * k * Math.max(0.75, sizeK2 * 0.85 + 0.15) * ((R2.subSize ?? 100) / 100);
+      const fscR = fsT / 40;
+      if (T3.shadow.on) rowPrims.push(fds2((T3.shadow.x * fscR).toFixed(1), (T3.shadow.y * fscR).toFixed(1), T3.shadow.blur * fscR * 0.5, T3.shadow.color, (T3.shadow.opacity / 100).toFixed(2)));
+      if (T3.glow.on && state !== "disabled") {
+        rowPrims.push(fds2("0", "0", T3.glow.size * 0.3, T3.glow.color, (T3.glow.opacity / 100).toFixed(2)));
+        rowPrims.push(fds2("0", "0", T3.glow.size * 0.8, T3.glow.color, ((T3.glow.opacity / 100) * 0.6).toFixed(2)));
+      }
+      const rowFxDefs = rowPrims.length ? `<defs><filter id="${gid2b}" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">${rowPrims.join("")}</filter></defs>` : "";
+      const rowFilterAttr = rowPrims.length ? ` filter="url(#${gid2b})"` : "";
+      const rowOutline = T3.outline.on && state !== "disabled"
+        ? ` stroke="${T3.outline.color}" stroke-width="${(T3.outline.width * (fsT / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
+        : "";
       const barY = 30 + h - inset - 16 * k;
       const barW = w - (tx - 39) - (showAction ? 90 * k : 34 * k);
       const fillW2 = barW * clamp(value ?? (R2.value !== undefined ? R2.value / 100 : 0.4), 0, 1);
@@ -1344,7 +1361,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
             iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 })
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + ((R2.titleDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsT.toFixed(1)}" font-weight="800" letter-spacing="${((R2.titleTrack ?? 0) / 100).toFixed(3)}em" fill="#FFFFFF" opacity="${dim}">${esc(title)}</text>` +
+        rowFxDefs +
+        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + ((R2.titleDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${fsT.toFixed(1)}" font-weight="${Math.max(700, T3.weight)}" letter-spacing="${((R2.titleTrack ?? 0) / 100).toFixed(3)}em" fill="#FFFFFF"${rowOutline}${rowFilterAttr} opacity="${dim}">${esc(title)}</text>` +
         `<text x="${tx.toFixed(1)}" y="${(30 + inset + 42 * k + ((R2.subDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
         `</g>` +
         (showBar
@@ -1470,22 +1488,28 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          kinds: ring (default) and brackets. */
       const d3 = ({ s: 150, m: 190, l: 240 } as const)[size];
       const c3 = d3 / 2;
-      const rc = hexRgba(glow, 0.85), rc2 = hexRgba(glow, 0.4);
+      // hover / pressed = locked on: everything closes in and burns brighter
+      const locked = state === "hover" || state === "pressed";
+      const lockC = locked ? hexMix(glow, "#FFFFFF", 0.35) : glow;
+      const rc = hexRgba(lockC, locked ? 1 : 0.85), rc2 = hexRgba(lockC, locked ? 0.6 : 0.4);
+      const kIn = locked ? 0.78 : 1; // lock-on contraction
       const parts3: string[] = [];
       if (opts.kind === ("brackets" as never) || opts.overlay === "brackets") {
-        const L = d3 * 0.2, o2 = d3 * 0.08;
+        const L = d3 * 0.2, o2 = d3 * 0.08 + (locked ? d3 * 0.07 : 0);
         const b4 = (x1: number, y1: number, hx: number, hy: number) =>
-          `<path d="M ${x1} ${y1 + hy * L} L ${x1} ${y1} L ${x1 + hx * L} ${y1}" fill="none" stroke="${rc}" stroke-width="3.5" stroke-linecap="round"/>`;
+          `<path d="M ${x1} ${y1 + hy * L} L ${x1} ${y1} L ${x1 + hx * L} ${y1}" fill="none" stroke="${rc}" stroke-width="${locked ? 4.5 : 3.5}" stroke-linecap="round"/>`;
         parts3.push(b4(o2, o2, 1, 1), b4(d3 - o2, o2, -1, 1), b4(o2, d3 - o2, 1, -1), b4(d3 - o2, d3 - o2, -1, -1));
-        parts3.push(`<circle cx="${c3}" cy="${c3}" r="3.4" fill="${rc}"/>`);
+        if (locked) parts3.push(`<circle cx="${c3}" cy="${c3}" r="${d3 * 0.1}" fill="none" stroke="${rc}" stroke-width="2.5"/>`);
+        parts3.push(`<circle cx="${c3}" cy="${c3}" r="${locked ? 4.6 : 3.4}" fill="${rc}"/>`);
       } else {
-        parts3.push(`<circle cx="${c3}" cy="${c3}" r="${d3 * 0.36}" fill="none" stroke="${rc}" stroke-width="3"/>`);
-        parts3.push(`<circle cx="${c3}" cy="${c3}" r="${d3 * 0.24}" fill="none" stroke="${rc2}" stroke-width="1.6" stroke-dasharray="4 6"/>`);
-        ([[c3, c3 - d3 * 0.36, c3, c3 - d3 * 0.47], [c3, c3 + d3 * 0.36, c3, c3 + d3 * 0.47], [c3 - d3 * 0.36, c3, c3 - d3 * 0.47, c3], [c3 + d3 * 0.36, c3, c3 + d3 * 0.47, c3]] as const)
-          .forEach(([x1, y1, x2, y2]) => parts3.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${rc}" stroke-width="3" stroke-linecap="round"/>`));
-        parts3.push(`<circle cx="${c3}" cy="${c3}" r="3.2" fill="${rc}"/>`);
+        parts3.push(`<circle cx="${c3}" cy="${c3}" r="${(d3 * 0.36 * kIn).toFixed(1)}" fill="none" stroke="${rc}" stroke-width="${locked ? 4 : 3}"/>`);
+        parts3.push(`<circle cx="${c3}" cy="${c3}" r="${(d3 * 0.24 * kIn).toFixed(1)}" fill="none" stroke="${rc2}" stroke-width="1.6"${locked ? "" : ' stroke-dasharray="4 6"'}/>`);
+        const rO = d3 * 0.36 * kIn, rT = locked ? d3 * 0.43 : d3 * 0.47;
+        ([[c3, c3 - rO, c3, c3 - rT], [c3, c3 + rO, c3, c3 + rT], [c3 - rO, c3, c3 - rT, c3], [c3 + rO, c3, c3 + rT, c3]] as const)
+          .forEach(([x1, y1, x2, y2]) => parts3.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${rc}" stroke-width="${locked ? 4 : 3}" stroke-linecap="round"/>`));
+        parts3.push(`<circle cx="${c3}" cy="${c3}" r="${locked ? 4.4 : 3.2}" fill="${rc}"/>`);
       }
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${d3}" height="${d3}" viewBox="0 0 ${d3} ${d3}" role="img" aria-label="reticle" style="filter: drop-shadow(0 0 5px ${hexRgba(glow, 0.5)})">${parts3.join("")}</svg>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${d3}" height="${d3}" viewBox="0 0 ${d3} ${d3}" role="img" aria-label="reticle${locked ? ", locked on" : ""}" style="filter: drop-shadow(0 0 ${locked ? 9 : 5}px ${hexRgba(lockC, locked ? 0.75 : 0.5)})">${parts3.join("")}</svg>`;
     }
     case "minimap": {
       /* mini-map — kinds: round compass, square radar. Well + markers. */
@@ -1564,7 +1588,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   <circle cx="${cx3}" cy="${cy3}" r="${r2}" fill="none" stroke="${wellFill}" stroke-width="${stroke2}"/>
   ${v2 > 0.005 ? `<circle cx="${cx3}" cy="${cy3}" r="${r2}" fill="none" stroke="${glow}" stroke-width="${stroke2}" stroke-linecap="round" stroke-dasharray="${(circ * v2).toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${cx3} ${cy3})" filter="url(#${gid3}g)" opacity="0.55"/>
   <circle cx="${cx3}" cy="${cy3}" r="${r2}" fill="none" stroke="url(#${gid3})" stroke-width="${stroke2}" stroke-linecap="round" stroke-dasharray="${(circ * v2).toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${cx3} ${cy3})"/>` : ""}
-  <text x="${cx3}" y="${cy3 + 1}" font-family="'${font}', Inter, sans-serif" font-size="${(d2 * 0.22).toFixed(1)}" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(label2)}</text>
+  <text x="${cx3}" y="${cy3 + 1}" font-family="'${font}', Inter, sans-serif" font-size="${(d2 * 0.18).toFixed(1)}" font-weight="800" letter-spacing="0.02em" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(label2)}</text>
 </g>
 </svg>`;
     }
