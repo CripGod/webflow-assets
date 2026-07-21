@@ -6,21 +6,23 @@ import { STOCK_ICONS, hexMix } from "@/generator/model";
 import type { GenConfig } from "@/generator/model";
 
 /* ── HeroGL — the exploded material diagram, live in WebGL ──────────────
-   Six extruded plates (Shell / Bevel / Face / Type / Glow / Shadow) float
-   as a breathing stack; satellite components rasterized from the real SVG
-   renderer orbit on the right; dotted leaders, dimension rails and layer
-   labels are projected from 3D space every frame. The whole scene reskins
-   itself from the live config — repaint a role in the editor and the
-   glass changes color here. Auto-animates; pointer adds gentle parallax;
-   prefers-reduced-motion renders a still frame. */
+   The stack IS the color map: every plate is named for the role that
+   paints it (Highlight / Bevel / Inner Fill / Pattern / Type / Glow /
+   Shadow) and tinted with exactly that role's current hex. Plates are
+   toon-shaded with crisp rims; Glow and Shadow render as soft light, not
+   slabs; the Pattern plane carries the real face pattern; satellites are
+   rasterized from the SVG renderer and billboarded so they never skew.
+   Everything reskins live from the config. Auto-animates, leans firmly
+   into the pointer; prefers-reduced-motion renders a still frame. */
 
 const LAYERS = [
-  { key: "shell", t: "Shell", y: 1.55 },
-  { key: "bevel", t: "Bevel", y: 0.93 },
-  { key: "face", t: "Face", y: 0.31 },
-  { key: "type", t: "Type Layer", y: -0.31 },
-  { key: "glow", t: "Glow Plane", y: -0.93 },
-  { key: "shadow", t: "Shadow Plane", y: -1.55 },
+  { key: "highlight", t: "Highlight", sub: "gloss & specular", y: 1.66 },
+  { key: "bevel", t: "Bevel", sub: "shell & wall", y: 1.11 },
+  { key: "fill", t: "Inner Fill", sub: "candy face", y: 0.56 },
+  { key: "pattern", t: "Pattern", sub: "face texture", y: 0.01 },
+  { key: "type", t: "Type Layer", sub: "live label", y: -0.55 },
+  { key: "glow", t: "Glow", sub: "inner glow", y: -1.1 },
+  { key: "shadow", t: "Shadow", sub: "grounding", y: -1.66 },
 ] as const;
 
 const SATS = [
@@ -83,18 +85,54 @@ function typeTex(cfg: GenConfig): THREE.CanvasTexture {
   return tex;
 }
 
+/** The real face pattern, tiled inside a rounded plate silhouette. */
+function patternSvg(c: GenConfig): string {
+  const P0 = c.candy.pattern;
+  const type = P0.type === "none" ? "stripes" : P0.type;
+  const col = P0.color ?? hexMix(c.effects.Bevel ?? "#0E9CC9", "#04060B", 0.35);
+  const op = Math.max(0.3, Math.min(1, (P0.opacity ?? 30) / 100 + 0.2));
+  const ps = Math.max(14, 30 * ((P0.scale ?? 100) / 100));
+  const star = `M${ps * 0.25} ${ps * 0.08} L${ps * 0.31} ${ps * 0.19} L${ps * 0.42} ${ps * 0.25} L${ps * 0.31} ${ps * 0.31} L${ps * 0.25} ${ps * 0.42} L${ps * 0.19} ${ps * 0.31} L${ps * 0.08} ${ps * 0.25} L${ps * 0.19} ${ps * 0.19} Z`;
+  const cell = type === "dots" || type === "halftone"
+    ? `<circle cx="${(ps / 2).toFixed(1)}" cy="${(ps / 2).toFixed(1)}" r="${(ps / 5).toFixed(1)}" fill="${col}"/>`
+    : type === "checker"
+      ? `<rect width="${(ps / 2).toFixed(1)}" height="${(ps / 2).toFixed(1)}" fill="${col}"/><rect x="${(ps / 2).toFixed(1)}" y="${(ps / 2).toFixed(1)}" width="${(ps / 2).toFixed(1)}" height="${(ps / 2).toFixed(1)}" fill="${col}"/>`
+      : type === "stars"
+        ? `<path d="${star}" fill="${col}"/>`
+        : `<rect width="${(ps / 2).toFixed(1)}" height="${ps.toFixed(1)}" fill="${col}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="920" height="440"><defs><pattern id="p" width="${ps.toFixed(1)}" height="${ps.toFixed(1)}" patternUnits="userSpaceOnUse" patternTransform="rotate(${P0.angle ?? 45})">${cell}</pattern></defs><rect x="6" y="6" width="908" height="428" rx="104" fill="url(#p)" opacity="${op.toFixed(2)}" stroke="${col}" stroke-opacity="0.4" stroke-width="2.5"/></svg>`;
+}
+
+/** Soft light blob — a heavily blurred rounded slab, for Glow and Shadow. */
+function blobTex(color: string): THREE.CanvasTexture {
+  const cv = document.createElement("canvas");
+  cv.width = 512; cv.height = 288;
+  const ctx = cv.getContext("2d")!;
+  ctx.filter = "blur(36px)";
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(104, 88, 304, 112, 56);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 interface Rig {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   group: THREE.Group;
-  plates: THREE.Mesh[];
+  layerMeshes: THREE.Mesh[];
   typePlane: THREE.Mesh;
   glowMat: THREE.MeshBasicMaterial;
+  shadowMat: THREE.MeshBasicMaterial;
+  patternMat: THREE.MeshBasicMaterial;
   satGroup: THREE.Group;
   sats: THREE.Mesh[];
-  particles: THREE.Points;
   keyLight: THREE.DirectionalLight;
+  still: boolean;
+  renderOnce: () => void;
   disposables: { dispose(): void }[];
 }
 
@@ -125,11 +163,12 @@ export function HeroGL() {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(28, 2, 0.1, 100);
-    camera.position.set(0, 4.0, 11.8);
+    camera.position.set(0, 4.0, 12.2);
     camera.lookAt(0, -0.15, 0);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 1.7));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    // toon lighting — a firm key over a soft floor gives the cel bands
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
     keyLight.position.set(2, 6, 5);
     scene.add(keyLight);
 
@@ -139,60 +178,81 @@ export function HeroGL() {
     scene.add(group);
 
     const disposables: { dispose(): void }[] = [];
+
+    // stepped ramp for the toon shading — four hard bands
+    const gradTex = new THREE.DataTexture(new Uint8Array([95, 160, 215, 255]), 4, 1, THREE.RedFormat);
+    gradTex.minFilter = THREE.NearestFilter;
+    gradTex.magFilter = THREE.NearestFilter;
+    gradTex.needsUpdate = true;
+    disposables.push(gradTex);
+
     const plateGeo = new THREE.ExtrudeGeometry(roundedRectShape(4.6, 2.2, 0.55), {
       depth: 0.13, bevelEnabled: true, bevelSize: 0.045, bevelThickness: 0.05, bevelSegments: 3, curveSegments: 24,
     });
     plateGeo.rotateX(-Math.PI / 2);
     disposables.push(plateGeo);
-
     const edgeGeo = new THREE.EdgesGeometry(plateGeo, 32);
     disposables.push(edgeGeo);
-    const plates: THREE.Mesh[] = [];
+    const flatGeo = new THREE.PlaneGeometry(4.6, 2.2);
+    flatGeo.rotateX(-Math.PI / 2);
+    disposables.push(flatGeo);
+    const blobGeo = new THREE.PlaneGeometry(6.4, 3.4);
+    blobGeo.rotateX(-Math.PI / 2);
+    disposables.push(blobGeo);
+
+    const toon = (opacity: number) => {
+      const m = new THREE.MeshToonMaterial({ color: "#0E9CC9", gradientMap: gradTex, transparent: true, opacity, side: THREE.DoubleSide });
+      disposables.push(m);
+      return m;
+    };
+
+    const layerMeshes: THREE.Mesh[] = [];
     let glowMat: THREE.MeshBasicMaterial = null!;
+    let shadowMat: THREE.MeshBasicMaterial = null!;
+    let patternMat: THREE.MeshBasicMaterial = null!;
     for (const L of LAYERS) {
-      let mat: THREE.Material;
+      let mesh: THREE.Mesh;
       if (L.key === "glow") {
-        glowMat = new THREE.MeshBasicMaterial({ color: "#8FF0FF", transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false });
-        mat = glowMat;
+        glowMat = new THREE.MeshBasicMaterial({ map: blobTex("#8FF0FF"), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+        disposables.push(glowMat);
+        mesh = new THREE.Mesh(blobGeo, glowMat);
       } else if (L.key === "shadow") {
-        mat = new THREE.MeshBasicMaterial({ color: "#0e1322", transparent: true, opacity: 0.8, depthWrite: false });
+        shadowMat = new THREE.MeshBasicMaterial({ map: blobTex("#05070d"), transparent: true, opacity: 0.9, depthWrite: false });
+        disposables.push(shadowMat);
+        mesh = new THREE.Mesh(blobGeo, shadowMat);
+      } else if (L.key === "pattern") {
+        patternMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
+        disposables.push(patternMat);
+        mesh = new THREE.Mesh(flatGeo, patternMat);
       } else {
-        mat = new THREE.MeshStandardMaterial({ color: "#0E9CC9", transparent: true, opacity: 0.55, roughness: 0.32, metalness: 0.08, side: THREE.DoubleSide });
+        const opacity = L.key === "highlight" ? 0.34 : L.key === "bevel" ? 0.62 : L.key === "fill" ? 0.9 : 0.6;
+        mesh = new THREE.Mesh(plateGeo, toon(opacity));
+        const lm = new THREE.LineBasicMaterial({ color: "#7ADCFF", transparent: true, opacity: 0.65 });
+        disposables.push(lm);
+        mesh.add(new THREE.LineSegments(edgeGeo, lm));
+        mesh.userData.rim = lm;
       }
-      disposables.push(mat);
-      const mesh = new THREE.Mesh(plateGeo, mat);
       mesh.position.y = L.y;
       mesh.userData.baseY = L.y;
       mesh.userData.key = L.key;
-      // crisp rim — the glassy edge line that defines each plate
-      if (L.key !== "glow") {
-        const lm = new THREE.LineBasicMaterial({ color: "#7ADCFF", transparent: true, opacity: L.key === "shadow" ? 0.22 : 0.6 });
-        disposables.push(lm);
-        const rim2 = new THREE.LineSegments(edgeGeo, lm);
-        mesh.add(rim2);
-        mesh.userData.rim = lm;
-      }
-      if (L.key === "glow") mesh.scale.set(1.1, 1, 1.16);
       group.add(mesh);
-      plates.push(mesh);
+      layerMeshes.push(mesh);
     }
 
-    // the type layer carries the live label as a floating plane just above it
+    // the type layer carries the live label as a plane riding its plate front
     const typeGeo = new THREE.PlaneGeometry(4.3, 1.3);
     disposables.push(typeGeo);
     const typeMat = new THREE.MeshBasicMaterial({ map: typeTex(cfgRef.current), transparent: true, depthWrite: false });
     disposables.push(typeMat);
     const typePlane = new THREE.Mesh(typeGeo, typeMat);
-    typePlane.renderOrder = 40;
-    // ride the front of the plate — clear of the layer above at this camera
-    typePlane.position.z = 0.6;
     typePlane.rotation.x = -Math.PI / 2;
+    typePlane.renderOrder = 40;
+    typePlane.position.z = 0.6;
     const typeIdx = LAYERS.findIndex((l) => l.key === "type");
     typePlane.position.y = LAYERS[typeIdx].y + 0.27;
-    typePlane.userData.baseY = typePlane.position.y;
     group.add(typePlane);
 
-    // satellite components — textured from the real SVG renderer
+    // satellite components — textured from the real SVG renderer, billboarded
     const satGroup = new THREE.Group();
     satGroup.position.set(3.05, 0, 0.4);
     scene.add(satGroup);
@@ -209,21 +269,11 @@ export function HeroGL() {
       sats.push(mesh);
     }
 
-    // drifting dust — tiny highlight-colored points
-    const pGeo = new THREE.BufferGeometry();
-    const pts = new Float32Array(140 * 3);
-    for (let i = 0; i < 140; i++) {
-      pts[i * 3] = (Math.random() - 0.5) * 11;
-      pts[i * 3 + 1] = (Math.random() - 0.5) * 5.6;
-      pts[i * 3 + 2] = (Math.random() - 0.5) * 4 - 0.5;
-    }
-    pGeo.setAttribute("position", new THREE.BufferAttribute(pts, 3));
-    const pMat = new THREE.PointsMaterial({ color: "#9fd8ff", size: 0.035, transparent: true, opacity: 0.5, depthWrite: false });
-    disposables.push(pGeo, pMat);
-    const particles = new THREE.Points(pGeo, pMat);
-    scene.add(particles);
-
-    rig.current = { renderer, scene, camera, group, plates, typePlane, glowMat, satGroup, sats, particles, keyLight, disposables };
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    rig.current = {
+      renderer, scene, camera, group, layerMeshes, typePlane, glowMat, shadowMat, patternMat,
+      satGroup, sats, keyLight, still, renderOnce: () => {}, disposables,
+    };
     wrap.dataset.gl = "on";
 
     /* overlay furniture — leaders, dots, dimension rails, orbit ellipse */
@@ -272,16 +322,14 @@ export function HeroGL() {
     };
 
     const projectAll = () => {
-      // layer labels — left column, leaders to each plate's left edge
       LAYERS.forEach((_L, i) => {
-        const p = proj(v.set(-2.5, plates[i].position.y, 0.2), group);
+        const p = proj(v.set(-2.5, layerMeshes[i].position.y, 0.2), group);
         const lab = labelRefs.current[i];
-        const lx = Math.max(20, W * 0.045);
-        if (lab) { lab.style.transform = `translate(${lx}px, ${(p.y - 10).toFixed(1)}px)`; }
+        const lx = Math.max(20, W * 0.04);
+        if (lab) { lab.style.transform = `translate(${lx}px, ${(p.y - 15).toFixed(1)}px)`; }
         dots[i].setAttribute("cx", p.x.toFixed(1)); dots[i].setAttribute("cy", p.y.toFixed(1));
-        setLine(leaders[i], lx + 128, p.y, p.x - 8, p.y);
+        setLine(leaders[i], lx + 136, p.y, p.x - 8, p.y);
       });
-      // satellites — right column
       SATS.forEach((_S, i) => {
         const mesh = sats[i];
         const halfH = (mesh.scale.y || 1) / 2;
@@ -292,9 +340,8 @@ export function HeroGL() {
         satDots[i].setAttribute("cx", c2.x.toFixed(1)); satDots[i].setAttribute("cy", (b2.y + 4).toFixed(1));
         setLine(satLeaders[i], c2.x, b2.y - 6, c2.x, b2.y + 2);
       });
-      // dimension rails — spanning the stack, above and below
-      const t1 = proj(v.set(-2.3, 2.2, 0), group), t2 = proj(v.set(2.3, 2.2, 0), group);
-      const b1 = proj(v.set(-2.3, -2.25, 0), group), b2 = proj(v.set(2.3, -2.25, 0), group);
+      const t1 = proj(v.set(-2.3, 2.3, 0), group), t2 = proj(v.set(2.3, 2.3, 0), group);
+      const b1 = proj(v.set(-2.3, -2.35, 0), group), b2 = proj(v.set(2.3, -2.35, 0), group);
       setLine(railTop, t1.x, t1.y, t2.x, t2.y);
       setLine(railBot, b1.x, b1.y, b2.x, b2.y);
       setLine(railTicks[0], t1.x, t1.y - 5, t1.x, t1.y + 5);
@@ -305,13 +352,12 @@ export function HeroGL() {
       railTopText.setAttribute("y", (Math.min(t1.y, t2.y) - 8).toFixed(1));
       railBotText.setAttribute("x", ((b1.x + b2.x) / 2).toFixed(1));
       railBotText.setAttribute("y", (Math.max(b1.y, b2.y) + 18).toFixed(1));
-      // the faint orbit — centered on the stack
       const c = proj(v.set(0, 0, 0), group);
       orbit.setAttribute("cx", c.x.toFixed(1)); orbit.setAttribute("cy", c.y.toFixed(1));
       orbit.setAttribute("rx", (H * 0.62).toFixed(0)); orbit.setAttribute("ry", (H * 0.44).toFixed(0));
     };
 
-    /* pointer parallax — the scene leans toward the cursor, gently */
+    /* pointer — the whole scene leans into the cursor, unmistakably */
     let px = 0, py = 0, tx = 0, ty = 0;
     const onMove = (e: PointerEvent) => {
       const r = wrap.getBoundingClientRect();
@@ -322,26 +368,29 @@ export function HeroGL() {
     wrap.addEventListener("pointermove", onMove);
     wrap.addEventListener("pointerleave", onLeave);
 
-    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    const billboard = () => { for (const m2 of sats) m2.quaternion.copy(camera.quaternion); };
+
     let raf = 0, t = 0;
     const frame = () => {
       t += 1 / 60;
-      px += (tx - px) * 0.04; py += (ty - py) * 0.04;
-      group.rotation.y = 0.52 + Math.sin(t * 0.19) * 0.13 + px * 0.14;
-      group.rotation.x = 0.07 + Math.sin(t * 0.13) * 0.028 + py * 0.07;
-      // the explosion breathes — every plate drifts on its own phase
-      plates.forEach((pl, i) => { pl.position.y = pl.userData.baseY * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
-      typePlane.position.y = plates[typeIdx].position.y + 0.27;
-      glowMat.opacity = 0.34 + Math.sin(t * 0.9) * 0.1;
+      px += (tx - px) * 0.09; py += (ty - py) * 0.09;
+      group.rotation.y = 0.52 + Math.sin(t * 0.19) * 0.11 + px * 0.34;
+      group.rotation.x = 0.07 + Math.sin(t * 0.13) * 0.025 + py * 0.17;
+      // the explosion breathes, and spreads a little wider under the pointer
+      const spread = 1 + Math.max(0, py) * 0.1;
+      layerMeshes.forEach((pl, i) => { pl.position.y = pl.userData.baseY * spread * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
+      typePlane.position.y = layerMeshes[typeIdx].position.y + 0.27;
+      glowMat.opacity = 0.7 + Math.sin(t * 0.9) * 0.22;
       sats.forEach((m2, i) => { m2.position.y = m2.userData.baseY + Math.sin(t * 0.42 + i * 1.9) * 0.09; });
-      particles.rotation.y = t * 0.018;
+      billboard();
       renderer.render(scene, camera);
       projectAll();
       raf = requestAnimationFrame(frame);
     };
+    const renderOnce = () => { billboard(); renderer.render(scene, camera); projectAll(); };
+    rig.current.renderOnce = renderOnce;
     if (still) {
-      renderer.render(scene, camera);
-      projectAll();
+      renderOnce();
     } else {
       raf = requestAnimationFrame(frame);
     }
@@ -358,7 +407,7 @@ export function HeroGL() {
     };
   }, []);
 
-  /* reskin: colors, label texture and satellite rasters follow the config */
+  /* reskin: every layer follows its own color role, live */
   useEffect(() => {
     if (!rig.current) return;
     const timer = window.setTimeout(() => {
@@ -366,27 +415,37 @@ export function HeroGL() {
       if (!R) return;
       const c = cfgRef.current;
       const bevel = c.effects.Bevel ?? "#0E9CC9";
-      const face = c.effects["Inner Fill"] ?? "#12B2E2";
+      const fill = c.effects["Inner Fill"] ?? "#12B2E2";
       const glow = c.effects.Glow ?? "#8FF0FF";
-      for (const pl of R.plates) {
+      const hi = c.effects.Highlight ?? "#EAFBFF";
+      const shadow = c.effects.Shadow ?? "#05070d";
+      for (const pl of R.layerMeshes) {
         const key = pl.userData.key as string;
-        const m = pl.material as THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
         const rim2 = pl.userData.rim as THREE.LineBasicMaterial | undefined;
-        if (key === "shell") { m.color.set(hexMix(bevel, "#FFFFFF", 0.45)); m.opacity = 0.38; (m as THREE.MeshStandardMaterial).emissive?.set(new THREE.Color(bevel).multiplyScalar(0.3)); rim2?.color.set(hexMix(bevel, "#FFFFFF", 0.7)); }
-        if (key === "bevel") { m.color.set(bevel); m.opacity = 0.6; rim2?.color.set(hexMix(bevel, "#FFFFFF", 0.45)); }
-        if (key === "face") { m.color.set(face); m.opacity = 0.9; (m as THREE.MeshStandardMaterial).emissive?.set(new THREE.Color(face).multiplyScalar(0.25)); rim2?.color.set(hexMix(face, "#FFFFFF", 0.5)); }
-        if (key === "type") { m.color.set("#0b0e17"); m.opacity = 0.58; rim2?.color.set(hexMix(glow, "#FFFFFF", 0.2)); }
-        if (key === "glow") { m.color.set(glow); }
-        if (key === "shadow") { rim2?.color.set(hexMix(bevel, "#FFFFFF", 0.1)); }
+        if (key === "highlight") { (pl.material as THREE.MeshToonMaterial).color.set(hi); rim2?.color.set(hexMix(hi, "#FFFFFF", 0.4)); }
+        if (key === "bevel") { (pl.material as THREE.MeshToonMaterial).color.set(bevel); rim2?.color.set(hexMix(bevel, "#FFFFFF", 0.45)); }
+        if (key === "fill") { (pl.material as THREE.MeshToonMaterial).color.set(fill); rim2?.color.set(hexMix(fill, "#FFFFFF", 0.5)); }
+        if (key === "type") { (pl.material as THREE.MeshToonMaterial).color.set("#0b0e17"); rim2?.color.set(hexMix(glow, "#FFFFFF", 0.2)); }
       }
       R.keyLight.position.set(Math.cos((c.lighting.angle * Math.PI) / 180) * 5, Math.sin((c.lighting.angle * Math.PI) / 180) * 5 + 2.5, 4.5);
-      (R.particles.material as THREE.PointsMaterial).color.set(hexMix(glow, "#FFFFFF", 0.4));
-      // label plane
+      // soft light layers redraw in their role colors
+      R.glowMat.map?.dispose();
+      R.glowMat.map = blobTex(glow);
+      R.shadowMat.map?.dispose();
+      R.shadowMat.map = blobTex(hexMix(shadow, "#000000", 0.35));
+      // the pattern plane carries the real face pattern
+      svgTex(patternSvg(c), (tex) => {
+        const R2 = rig.current;
+        if (!R2) { tex.dispose(); return; }
+        R2.patternMat.map?.dispose();
+        R2.patternMat.map = tex;
+        R2.patternMat.needsUpdate = true;
+        if (R2.still) R2.renderOnce();
+      });
       const tm = R.typePlane.material as THREE.MeshBasicMaterial;
       tm.map?.dispose();
       tm.map = typeTex(c);
       tm.needsUpdate = true;
-      // satellites re-raster from the live renderer
       const svgs = [
         renderKit(c, "iconbtn", "m", "default", undefined, undefined, { icon: STOCK_ICONS.gem }),
         renderKit(c, "progress", "m", "default", 0.72),
@@ -402,8 +461,10 @@ export function HeroGL() {
           m.map = tex; m.opacity = 1; m.needsUpdate = true;
           const wh = mesh.userData.h as number;
           mesh.scale.set((w / h) * wh, wh, 1);
+          if (R2.still) R2.renderOnce();
         });
       });
+      if (R.still) R.renderOnce();
     }, 140);
     return () => window.clearTimeout(timer);
   }, [cfg]);
@@ -412,28 +473,27 @@ export function HeroGL() {
   const bevelC = cfg.effects.Bevel ?? "#0E9CC9";
   return (
     <div className="kp-glhero" ref={wrapRef} aria-label="Exploded material diagram — live WebGL" style={{
+      // a clean wash, brighter low so the shadow blob has something to read against
       backgroundImage: [
-        `radial-gradient(ellipse 62% 54% at 52% 40%, ${hexMix(glowC, "#000000", 0)}1a, transparent 70%)`,
-        `radial-gradient(ellipse 50% 44% at 26% 74%, ${hexMix(bevelC, "#000000", 0)}14, transparent 70%)`,
-        "radial-gradient(rgba(150,160,200,0.35) 1px, transparent 1.6px)",
-        "radial-gradient(rgba(150,160,200,0.22) 1px, transparent 1.4px)",
+        `radial-gradient(ellipse 74% 62% at 55% 38%, ${hexMix(glowC, "#000000", 0)}12, transparent 68%)`,
+        `radial-gradient(ellipse 64% 50% at 44% 82%, ${hexMix(bevelC, "#FFFFFF", 0.35)}24, transparent 72%)`,
       ].join(", "),
-      backgroundSize: "100% 100%, 100% 100%, 110px 110px, 66px 66px",
-      backgroundPosition: "0 0, 0 0, 12px 8px, 40px 50px",
     }}>
       {failed ? (
         <div className="kp-glfallback">
           {LAYERS.map((L, i) => (
             <div key={L.key} className="kp-glfrow"><b>{String(i + 1).padStart(2, "0")}</b><span>{L.t}</span></div>
           ))}
-          <p>WebGL isn't available here — the material still explodes into these six layers, top to bottom.</p>
+          <p>WebGL isn't available here — the material still explodes into these seven layers, top to bottom.</p>
         </div>
       ) : (
         <>
           <canvas ref={canvasRef} className="kp-glcanvas" />
           <svg ref={svgRef} className="kp-glleads" aria-hidden="true" />
           {LAYERS.map((L, i) => (
-            <div key={L.key} className="kp-gllabel" ref={(el) => { labelRefs.current[i] = el; }}>{L.t}</div>
+            <div key={L.key} className="kp-gllabel" ref={(el) => { labelRefs.current[i] = el; }}>
+              <b>{L.t}</b><span>{L.sub}</span>
+            </div>
           ))}
           {SATS.map((S, i) => (
             <div key={S.t} className="kp-glsat" ref={(el) => { satLabelRefs.current[i] = el; }}>
