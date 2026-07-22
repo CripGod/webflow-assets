@@ -237,6 +237,17 @@ export const TEXT_PRESETS: { id: string; name: string }[] = [
   { id: "arcade", name: "Arcade" },
   { id: "chiseled", name: "Chiseled" },
   { id: "glass", name: "Glass" },
+  // v67 · genre treatments — popular video-game type languages
+  { id: "fps-stencil", name: "FPS Stencil" },
+  { id: "rpg-gilded", name: "Gilded RPG" },
+  { id: "moba-arcane", name: "Arcane MOBA" },
+  { id: "platform-bubble", name: "Bubble Platformer" },
+  { id: "racer-chrome", name: "Chrome Racer" },
+  { id: "fighter-impact", name: "Impact Fighter" },
+  { id: "strategy-imperium", name: "Imperium Strategy" },
+  { id: "horror-blight", name: "Blight Horror" },
+  { id: "survival-scavenge", name: "Scavenger Survival" },
+  { id: "sandbox-blocky", name: "Blocky Sandbox" },
 ];
 
 /** Presets populate the typography controls — nothing locks; keep tweaking after. */
@@ -279,6 +290,82 @@ export function applyTextPreset(t: TypeCfg, id: string, palette: { dark: string;
     t.fillMode = "solid"; t.fill = "#FFFFFF"; t.fillOpacity = 34;
     t.emboss = { on: true, strength: -48, softness: 72, distance: 2, hiOpacity: 60, shOpacity: 60, hiColor: "#FFFFFF", shColor: "#04080E" };
     t.shadow = { on: true, color: "#FFFFFF", x: 0, y: 1, blur: 0.5, opacity: 35 };
+    return;
+  }
+  /* ── v67 genre treatments ── */
+  if (id === "fps-stencil") {
+    // milspec HUD: flat plate, hard offset shadow, zero softness
+    t.fillMode = "solid"; t.fill = "#E8ECEF";
+    t.shadow = { on: true, color: "#0A0E12", x: 3, y: 3, blur: 0, opacity: 85 };
+    return;
+  }
+  if (id === "rpg-gilded") {
+    // loot-screen gold: warm gradient, engraved edge, ember glow
+    t.fillMode = "gradient"; t.fill = "#FFE9A8"; t.fill2 = "#C9891B";
+    t.outline = { on: true, color: "#4A2C05", color2: null, width: 2 };
+    t.emboss = { on: true, strength: 42, softness: 28, distance: 2, hiOpacity: 80, shOpacity: 55, hiColor: "#FFF6D8", shColor: "#2A1602" };
+    t.glow = { on: true, color: "#FFB63D", size: 10, opacity: 55 };
+    return;
+  }
+  if (id === "moba-arcane") {
+    // spell-blue rune light: icy gradient with a strong cast
+    t.fillMode = "gradient"; t.fill = "#CDE9FF"; t.fill2 = "#6FA8FF";
+    t.outline = { on: true, color: "#152352", color2: null, width: 2.2 };
+    t.glow = { on: true, color: "#6FB4FF", size: 14, opacity: 90 };
+    return;
+  }
+  if (id === "platform-bubble") {
+    // Saturday-morning platformer: fat white letters, thick outline, bounce shadow
+    t.fillMode = "solid"; t.fill = "#FFFFFF";
+    t.outline = { on: true, color: palette.dark, color2: null, width: 4.2 };
+    t.shadow = { on: true, color: palette.dark, x: 0, y: 4, blur: 0, opacity: 70 };
+    t.emboss = { on: true, strength: 32, softness: 35, distance: 2, hiOpacity: 70, shOpacity: 45, hiColor: "#FFFFFF", shColor: "#04080E" };
+    return;
+  }
+  if (id === "racer-chrome") {
+    // paddock chrome: cold metal gradient with a speed-smeared shadow
+    t.fillMode = "gradient"; t.fill = "#F4FBFF"; t.fill2 = "#93AABB";
+    t.outline = { on: true, color: "#22303C", color2: null, width: 1.8 };
+    t.shadow = { on: true, color: "#0B1218", x: 5, y: 2, blur: 1, opacity: 60 };
+    return;
+  }
+  if (id === "fighter-impact") {
+    // versus-screen slam: hot yellow, brutal black block shadow
+    t.fillMode = "solid"; t.fill = "#FFE24A";
+    t.outline = { on: true, color: "#14060A", color2: null, width: 4.5 };
+    t.shadow = { on: true, color: "#14060A", x: 5, y: 5, blur: 0, opacity: 90 };
+    t.emboss = { on: true, strength: 26, softness: 20, distance: 2, hiOpacity: 70, shOpacity: 55, hiColor: "#FFF7C9", shColor: "#3A0E00" };
+    return;
+  }
+  if (id === "strategy-imperium") {
+    // campaign-map brass: parchment tone, engraved, quiet
+    t.fillMode = "solid"; t.fill = "#EADFC8";
+    t.outline = { on: true, color: "#3B2B12", color2: null, width: 1.6 };
+    t.emboss = { on: true, strength: -46, softness: 26, distance: 2, hiOpacity: 55, shOpacity: 70, hiColor: "#FFF4DC", shColor: "#1E1204" };
+    t.shadow = { on: true, color: "#1E1204", x: 0, y: 2, blur: 2, opacity: 40 };
+    return;
+  }
+  if (id === "horror-blight") {
+    // survival horror: bone-pale letters sinking into the plate, sick glow
+    t.fillMode = "solid"; t.fill = "#D8D4C8";
+    t.emboss = { on: true, strength: -62, softness: 55, distance: 2.5, hiOpacity: 40, shOpacity: 80, hiColor: "#EFEBDD", shColor: "#020304" };
+    t.shadow = { on: true, color: "#000000", x: 0, y: 3, blur: 4, opacity: 70 };
+    t.glow = { on: true, color: "#8E1B12", size: 12, opacity: 40 };
+    return;
+  }
+  if (id === "survival-scavenge") {
+    // scrap-metal stencil: olive drab, worn soft shadow, faint moss glow
+    t.fillMode = "solid"; t.fill = "#C9CDBB";
+    t.shadow = { on: true, color: "#12160C", x: 0, y: 2, blur: 3, opacity: 60 };
+    t.emboss = { on: true, strength: -30, softness: 40, distance: 2, hiOpacity: 45, shOpacity: 60, hiColor: "#E9EDD9", shColor: "#0A0D06" };
+    t.glow = { on: true, color: "#7A8F4D", size: 8, opacity: 30 };
+    return;
+  }
+  if (id === "sandbox-blocky") {
+    // voxel sandbox: pure white, single hard pixel-drop, nothing soft
+    t.fillMode = "solid"; t.fill = "#FFFFFF";
+    t.outline = { on: true, color: palette.dark, color2: null, width: 2.8 };
+    t.shadow = { on: true, color: palette.dark, x: 4, y: 4, blur: 0, opacity: 100 };
     return;
   }
 }
@@ -619,6 +706,16 @@ type Harmony = "analogous" | "complementary" | "split" | "triadic" | "monochrome
 
 export function randomizeConfig(c: GenConfig): GenConfig {
   const r = (min: number, max: number) => Math.round(min + Math.random() * (max - min));
+  // v67: a third of rolls jump to a different preset CONSTRUCTION first
+  // (shape, bevel, candy build) so randomize explores the whole wardrobe,
+  // then the palette work below recolors it
+  if (Math.random() < 0.34) {
+    const pr = PRESETS[Math.floor(Math.random() * PRESETS.length)];
+    c = { ...c, shape: pr.shape, bevel: { ...pr.bevel } };
+    const nc = JSON.parse(JSON.stringify(c.candy)) as CandyTokens;
+    applyPresetCandy(nc, pr);
+    c = { ...c, candy: nc };
+  }
   const h = r(0, 359);
   // contrast-first: complementary-family schemes dominate; shell sits well
   // below the face, the accent well above — every roll separates cleanly.
@@ -634,13 +731,15 @@ export function randomizeConfig(c: GenConfig): GenConfig {
   // lighting and speculars are intentionally untouched: a roll changes the
   // palette + wrap, never the light rig or reflections the user has set up.
   const patRoll = Math.random();
-  const patType: PatternType = patRoll < 0.38 ? "stripes" : patRoll < 0.56 ? "none" : patRoll < 0.72 ? "dots" : patRoll < 0.84 ? "halftone" : patRoll < 0.93 ? "stars" : "checker";
+  // v67: every pattern family pulls real weight — "none" is the rare roll,
+  // and the exotic wraps (halftone, stars, checker) show up for real
+  const patType: PatternType = patRoll < 0.2 ? "stripes" : patRoll < 0.3 ? "none" : patRoll < 0.5 ? "dots" : patRoll < 0.68 ? "halftone" : patRoll < 0.84 ? "stars" : "checker";
   const candy = JSON.parse(JSON.stringify(c.candy)) as CandyTokens;
   candy.pattern = {
     type: patType,
     scale: r(30, 100),
     angle: r(0, 180),
-    opacity: patType === "none" ? c.candy.pattern.opacity : r(14, 65),
+    opacity: patType === "none" ? c.candy.pattern.opacity : r(24, 68),
     color: Math.random() < 0.5 ? null : hslHex(shellHue, r(55, 80), r(24, 40)),
   };
   candy.gloss = { ...candy.gloss, layer: Math.random() < 0.5 ? "above" : "below" };
@@ -666,7 +765,7 @@ export type KitComponentId =
   | "primary" | "secondary" | "small" | "ghost" | "iconbtn"
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
-  | "slider" | "progress" | "segbar" | "input" | "dropdown" | "panel"
+  | "slider" | "progress" | "segbar" | "vsbar" | "hotbar" | "input" | "dropdown" | "panel"
   | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
   | "flipclock" | "stopwatch" | "timerdigits"
@@ -690,6 +789,8 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "slider", name: "Slider" },
   { id: "progress", name: "Progress bar" },
   { id: "segbar", name: "Segmented bar" },
+  { id: "vsbar", name: "VS health bar" },
+  { id: "hotbar", name: "Hotbar" },
   { id: "input", name: "Input field" },
   { id: "dropdown", name: "Dropdown" },
   { id: "panel", name: "Panel" },

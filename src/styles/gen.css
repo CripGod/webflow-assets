@@ -1874,3 +1874,41 @@ button.inv2-slot:hover { border-color: var(--inv-acc); color: var(--st-ink); }
 .slab-shellvs svg { width: 100%; height: auto; display: block; opacity: 0.9; }
 .slab-parts { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; flex: 1; min-width: 200px; padding-top: 6px; }
 .slab-partchip { font-size: 10.5px; color: #C6C9D8; background: #1d1d2e; border: 1px solid #2E2E44; border-radius: 999px; padding: 4px 10px; }
+
+/* ── v67 ─────────────────────────────────────────────────────────── */
+/* connectors carry the theme pattern (set as --kp-pattile on the page) */
+.kp-rail3 i { background-image: var(--kp-pattile, none), linear-gradient(180deg, color-mix(in srgb, var(--kp-glowline) 85%, #fff 10%), color-mix(in srgb, var(--kp-glowline) 70%, #000 20%)); box-shadow: 0 1px 4px rgba(0,0,0,0.4), 0 0 12px color-mix(in srgb, var(--kp-glowline) 45%, transparent); }
+.kp-line.done { background-image: var(--kp-pattile, none), linear-gradient(180deg, color-mix(in srgb, var(--kp-glowline) 92%, #fff 14%), var(--kp-glowline) 45%, color-mix(in srgb, var(--kp-glowline) 60%, #000 25%)); }
+
+/* share + viewer */
+.kp-share { background: transparent; color: var(--kp-ink-soft, #9aa1b5); border: 1px solid var(--kp-line); border-radius: 10px; padding: 8px 14px; font-size: 12.5px; cursor: pointer; margin-left: 8px; }
+.kp-share:hover { color: var(--kp-ink, #e8e9f0); border-color: var(--kp-glowline); }
+.kp-viewnote { font-size: 12.5px; color: var(--kp-ink-soft, #9aa1b5); border: 1px dashed var(--kp-line); border-radius: 10px; padding: 8px 14px; }
+
+/* parent-eligibility error */
+.parenterr { color: #F5A66B; border-left: 2px solid #F5A66B; padding-left: 8px; }
+
+/* global shine sweep — a soft specular band gliding over every live piece */
+.kp-shine .kp-live { position: relative; overflow: hidden; }
+.kp-shine .kp-live::after {
+  content: ""; position: absolute; inset: -30% -60%; pointer-events: none;
+  background: linear-gradient(115deg, transparent 42%, rgba(255,255,255,0.16) 50%, rgba(255,255,255,0.34) 52%, rgba(255,255,255,0.16) 54%, transparent 62%);
+  transform: translateX(-70%);
+  animation: kpShine 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  mix-blend-mode: screen;
+}
+@keyframes kpShine { 0% { transform: translateX(-70%); } 55% { transform: translateX(70%); } 100% { transform: translateX(70%); } }
+@media (prefers-reduced-motion: reduce) { .kp-shine .kp-live::after { animation: none; display: none; } }
+
+/* claim celebration: white-hot ignition + themed particle burst */
+.fx-igniting { position: relative; }
+.fx-igniting svg { animation: fxHot 0.42s ease-out; }
+@keyframes fxHot { 0% { filter: brightness(1) } 18% { filter: brightness(2.6) saturate(0.25) drop-shadow(0 0 18px rgba(255,255,255,0.9)); } 100% { filter: brightness(1); } }
+.fx-burstwrap { position: absolute; inset: 0; display: block; pointer-events: none; }
+.fx-burstwrap i { position: absolute; left: 50%; top: 50%; border-radius: 50%; opacity: 0; animation: fxPart 0.95s cubic-bezier(0.16, 0.8, 0.3, 1) 0.12s forwards; box-shadow: 0 0 8px currentColor; }
+@keyframes fxPart {
+  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .fx-burstwrap i { animation: none; display: none; } .fx-igniting svg { animation: none; } }

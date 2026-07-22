@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { GenConfig, GenStateName, Shape, SpecularMode } from "../generator/model";
 import { defaultConfig, STOCK_ICONS, SPECULAR_MODES, PRESETS, presetById, applyPresetCandy, fontByName } from "../generator/model";
-import { renderShell, shellPaths, shapePath } from "../generator/bevel";
+import { renderShell, shellPaths, shapePath, offsetPathInward } from "../generator/bevel";
 import { IMPORTED_SHAPES, validateImported, auditInset, type ImportedSilhouette } from "../generator/importedShapes";
 import { renderSkinRecipe, type ButtonSkinRecipe } from "../generator/skins";
 import { SKIN_RECIPES } from "../generator/skinRecipes";
@@ -75,9 +75,9 @@ const SKINS: Record<string, LabSkin> = {
 type RatingStatus = "PASS" | "PASS WITH PARAMETER LIMITS" | "NEEDS GENERIC ENGINE IMPROVEMENT" | "NOT SUITABLE FOR CURRENT ENGINE";
 const RATINGS: Record<string, { status: RatingStatus; reason: string }> = {
   twinGrip: { status: "PASS", reason: "Measured clean through the entire bevel range (≈26u); crevice excursion peaks at 0.6u — under the rim stroke. One honest compromise: the engine derives extrusion tone from the Bevel role, so the gold rim and the brief's navy extrusion can't both be literal." },
-  slimeSurge: { status: "PASS WITH PARAMETER LIMITS", reason: "Reads beautifully at the default ≈7u inset, but bounding-box insetting is not a true offset on deep lobe crevices: past ≈2u the face kisses the outer there (1.6u at default). The generic outer-path clip keeps paint inside the shell; treat bevel beyond ~14u as out of spec." },
+  slimeSurge: { status: "PASS", reason: "v67: with true inward offsets the lobe crevices keep a parallel wall at every tested inset — the earlier scaled-inset kisses are gone." },
   cogLock: { status: "PASS", reason: "Friendliest of the eight: face inset measured clean through the whole range (≈26u), narrowest feature 24u. The hybrid finish (low gloss + grain) reads mechanical with zero custom seams or bolts." },
-  monsterBite: { status: "NEEDS GENERIC ENGINE IMPROVEMENT", reason: "The paired bite notches are deep concavities: the scaled face escapes the outer by ≈4u at the default inset (worst of the eight). The generic outer-path clip contains the paint so the button still reads, but the notch shoulders lose their bevel wall — full fidelity needs a true inward path offset instead of bounding-box scaling." },
+  monsterBite: { status: "PASS", reason: "v67: the engine now derives inner shapes through a TRUE inward offset (the generic improvement this shape was waiting for) — the face parallels the bite notches instead of escaping into them; walls hold at the default inset." },
   bossCrown: { status: "PASS WITH PARAMETER LIMITS", reason: "Wave 2, provisional. Crown-peak crevices measured clean only to ≈5u of face inset, so maxBevelRatio 0.05 clamps the face regardless of the slider; within that limit the peaks keep their identity from perimeter geometry alone." },
   prizeBow: { status: "PASS", reason: "Wave 2, provisional. Bow lobes inset cleanly through the full measured range (excursion ≤0.5u); the outline alone carries the bow read — no ribbon objects anywhere." },
   turboWing: { status: "PASS WITH PARAMETER LIMITS", reason: "Wave 2, provisional. Fins measured clean to ≈9u of face inset; maxBevelRatio 0.09 caps deeper settings. The straight-line geometry keeps the label band generous." },
@@ -238,9 +238,11 @@ function Card({ s, ov, globals }: {
     const bwF = (s.maxBevelRatio !== undefined ? Math.min(bw, h * s.maxBevelRatio) : bw) * (s.faceInsetScale ?? 1);
     const bwSrc = (bwF / h) * 100;
     const shape = cfg.shape;
+    const outerSrc = shapePath(shape, 0, 0, 200, 100, soft);
     return {
       bwSrc,
-      ...auditInset((inset) => shapePath(shape, inset, inset, 200 - inset * 2, 100 - inset * 2, inset === 0 ? soft : Math.max(0, soft - 8)), bwSrc),
+      // v67: audit the REAL derivation — true inward offset, scaled fallback
+      ...auditInset((inset) => inset === 0 ? outerSrc : (offsetPathInward(outerSrc, inset) || shapePath(shape, inset, inset, 200 - inset * 2, 100 - inset * 2, Math.max(0, soft - 8))), bwSrc),
     };
   }, [cfg, h, s]);
 

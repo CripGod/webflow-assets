@@ -94,7 +94,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   const inert = disabled || kit?.tone === "alt";
   const value = id === "toggle" || id === "checkbox" || id === "radio" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
-    : id === "progress" || id === "segbar" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" || id === "speedo" || id === "speedo2" || id === "tacho" || id === "startlights" ? (playing && !disabled ? pval : kit?.value)
+    : id === "progress" || id === "segbar" || id === "vsbar" || id === "hotbar" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" || id === "speedo" || id === "speedo2" || id === "tacho" || id === "startlights" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
     : kit?.value;
 
@@ -187,6 +187,22 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
       setPval(target);
       return;
     }
+    if (id === "tacho") {
+      // v67: the rev meter REDLINES — slam past the red threshold, hold with
+      // a violent needle oscillation, then fall back to the resting value
+      const redT = Math.max(target, 0.94);
+      const t0r = performance.now();
+      const stepR = (t: number) => {
+        const dt = t - t0r;
+        if (dt < 850) { const u = dt / 850; setPval(redT * (1 - (1 - u) ** 3)); raf.current = requestAnimationFrame(stepR); }
+        else if (dt < 2700) { setPval(clamp01(redT - 0.02 + Math.sin(dt * 0.09) * 0.028 + (Math.random() - 0.5) * 0.05)); raf.current = requestAnimationFrame(stepR); }
+        else if (dt < 3300) { const u = (dt - 2700) / 600; setPval(redT + (target - redT) * (1 - (1 - u) ** 2)); raf.current = requestAnimationFrame(stepR); }
+        else setPval(target);
+      };
+      setPval(0);
+      raf.current = requestAnimationFrame(stepR);
+      return;
+    }
     setPval(0);
     const t0 = performance.now();
     const step = (t: number) => {
@@ -222,7 +238,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   // ambient progress: bars, rings, timers and gauges quietly replay on their own beat
   const beat = useRef(4600 + Math.random() * 2400);
   useEffect(() => {
-    if (!ambient || (id !== "progress" && id !== "segbar" && id !== "ring" && !isTimer && !isGauge) || !playing) return;
+    if (!ambient || (id !== "progress" && id !== "segbar" && id !== "vsbar" && id !== "hotbar" && id !== "ring" && !isTimer && !isGauge) || !playing) return;
     const t = window.setInterval(isTimer ? playTimer : playProgress, beat.current);
     return () => window.clearInterval(t);
   }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -232,11 +248,26 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
      click target — a native `click` never fires. The wrapper div is stable,
      so pointerup on it is the reliable activation signal. */
   const pressedHere = useRef(false);
+  const [burst, setBurst] = useState(0);
+  /* claim celebration: white-hot ignition then a themed particle burst —
+     colors come from the kit's own effect wells, never stock confetti */
+  const burstHtml = burst ? `<span class="fx-burstwrap" aria-hidden="true">` + Array.from({ length: 26 }, (_, i) => {
+    const a = (i / 26) * Math.PI * 2 + (i % 3) * 0.31;
+    const dist = 58 + ((i * 37) % 92);
+    const c = [cfg.effects.Bevel ?? "#59A7C9", cfg.effects.Glow ?? "#8FF0FF", cfg.effects.Highlight ?? "#FFFFFF"][i % 3];
+    const s = 5 + ((i * 13) % 8);
+    return `<i style="--dx:${(Math.cos(a) * dist).toFixed(0)}px;--dy:${(Math.sin(a) * dist).toFixed(0)}px;width:${s}px;height:${s}px;background:${c}"></i>`;
+  }).join("") + `</span>` : "";
+  const fireBurst = () => {
+    setBurst(Date.now());
+    window.setTimeout(() => setBurst(0), 1200);
+  };
   const activate = (e: React.PointerEvent) => {
+    if ((kit?.label ?? "").toUpperCase().includes("CLAIM")) fireBurst();
     if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
     else if (id === "toggle" || id === "checkbox" || id === "radio" || id === "orb") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
-    else if (id === "progress" || id === "segbar" || id === "ring" || isGauge) playProgress();
+    else if (id === "progress" || id === "segbar" || id === "vsbar" || id === "hotbar" || id === "ring" || isGauge) playProgress();
     else if (isTimer) playTimer();
     else if (id === "segment") {
       const c = trackCoord(e);
@@ -352,13 +383,13 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   // draggable pieces own their gestures — a slider drag must never pan the page
   const gestureStyle = id === "slider" || id === "segment" || id === "joystick" ? { touchAction: "none" as const } : undefined;
   return (
-    <div ref={ref} className={shellFree ? `${className ?? ""} kp-shellfree` : className} title={title}
+    <div ref={ref} className={`${shellFree ? `${className ?? ""} kp-shellfree` : className ?? ""}${burst ? " fx-igniting" : ""}`} title={title}
       style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle, ...gestureStyle, ...choiceHover }}
       {...(playing ? playHandlers
         : onDesignClick ? {
             onClick: onDesignClick, role: "button", tabIndex: 0,
             onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onDesignClick(); } },
           } : {})}
-      dangerouslySetInnerHTML={{ __html: svg }} />
+      dangerouslySetInnerHTML={{ __html: svg + burstHtml }} />
   );
 }
