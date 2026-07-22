@@ -1267,9 +1267,11 @@ button.kp-fact { cursor: pointer; }
 /* reward track v3 — one glowing rail, five milestone stops */
 .kp-track3 { position: relative; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-items: start; margin-top: 12px; padding: 18px 10px 4px; }
 .kp-rail3 { position: absolute; left: 4%; right: 2.5%; top: 84px; height: 10px; z-index: 0; }
+/* dim continuation past the current milestone — unearned track */
+.kp-rail3::before { content: ""; position: absolute; inset: 0; border-radius: 6px; background: rgba(140,146,168,.16); }
 .kp-rail3 i {
-  position: absolute; inset: 0; border-radius: 6px;
-  background: linear-gradient(90deg, rgba(120,210,255,.85), rgba(160,240,255,.55) 48%, rgba(140,146,168,.2) 52%, rgba(140,146,168,.16));
+  position: absolute; inset: 0; right: auto; width: var(--rail-fill, 52%); border-radius: 6px;
+  background: linear-gradient(90deg, rgba(120,210,255,.85), rgba(160,240,255,.55));
   box-shadow: 0 0 14px rgba(140,220,255,.35);
 }
 .kp-rail3 em { position: absolute; right: -13px; top: 50%; transform: translateY(-50%); border: 9px solid transparent; border-left: 13px solid rgba(140,146,168,.4); border-right: 0; }

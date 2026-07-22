@@ -795,7 +795,20 @@ export function Panel() {
 
       {/* ── C · Structure — the object's build ────────────── */}
       <Section id="structure" title="Structure">
-        <Slider label="Wall width" value={D.bevel.width} min={2} max={34} unit="px" onChange={(v) => update((c) => { c.bevel.width = v; })} />
+        {(() => {
+          /* the banner's tail geometry only reads clean between 9 and 33 —
+             its slider is contained to that range (other shapes keep 2–34) */
+          const effShape = focus ? (kitShapes[focus] ?? KIT_SHAPE[focus] ?? D.shape) : D.shape;
+          const wMin = effShape === "banner" ? 9 : 2, wMax = effShape === "banner" ? 33 : 34;
+          return (
+            <>
+              <Slider label="Wall width" value={Math.min(wMax, Math.max(wMin, D.bevel.width))} min={wMin} max={wMax} unit="px"
+                onChange={(v) => update((c) => { c.bevel.width = v; c.bevel.off = false; })} />
+              <label className="check"><input type="checkbox" checked={D.bevel.off ?? false}
+                onChange={(e) => update((c) => { c.bevel.off = e.target.checked; })} /> No wall — face fills the whole silhouette</label>
+            </>
+          );
+        })()}
         <Slider label="Rim width" value={C.rim.width} min={0} max={10} unit="px" onChange={(v) => update((c) => { c.candy.rim.width = v; })} />
         <Slider label="Rim brightness" value={C.rim.brightness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.rim.brightness = v; })} />
         <Slider label="Inner edge" value={C.innerEdge.strength} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerEdge.strength = v; })} />

@@ -496,7 +496,7 @@ export interface StateDesign {
   shape: Shape;
   effects: Partial<Record<EffectRole, string>>;
   face: { mode: "light" | "dark"; contrast: number; midpoint: number };
-  bevel: { width: number; softness: number };
+  bevel: { width: number; softness: number; off?: boolean };
   candy: CandyTokens;
   lighting: { angle: number; highlight: number; lowlight: number; tint?: string | null };
   shadow: { distance: number; blur: number; opacity: number };
