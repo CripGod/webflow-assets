@@ -795,7 +795,7 @@ export function Panel() {
 
       {/* ── C · Structure — the object's build ────────────── */}
       <Section id="structure" title="Structure">
-        <Slider label="Wall width" value={D.bevel.width} min={4} max={26} unit="px" onChange={(v) => update((c) => { c.bevel.width = v; })} />
+        <Slider label="Wall width" value={D.bevel.width} min={2} max={34} unit="px" onChange={(v) => update((c) => { c.bevel.width = v; })} />
         <Slider label="Rim width" value={C.rim.width} min={0} max={10} unit="px" onChange={(v) => update((c) => { c.candy.rim.width = v; })} />
         <Slider label="Rim brightness" value={C.rim.brightness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.rim.brightness = v; })} />
         <Slider label="Inner edge" value={C.innerEdge.strength} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.innerEdge.strength = v; })} />
