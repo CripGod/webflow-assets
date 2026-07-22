@@ -160,7 +160,13 @@ export async function downloadEngineExport(st: EngineExportState, catalog?: () =
     const lbSvg = shell("leaderboard", { part: "base" });
     await addPng("leaderboard/base.9.png", lbSvg, { component: "leaderboard", part: "base", nineSlice: sliceOf(lbSvg, "leaderboard", 250), pivot: { x: 0.5, y: 0.5 }, tintable: false, usage: "Position-list panel. Heading, rows and the highlighted player row are live engine content." });
   }
-  await addPng("trophy/base.png", shell("trophy"), { component: "trophy", part: "base", nineSlice: null, pivot: { x: 0.5, y: 0.5 }, tintable: false, usage: "1st-place trophy. The rank numeral is live engine text over the bowl." });
+  {
+    const lpSvg = shell("laptimes", { part: "base" });
+    await addPng("laptimes/base.9.png", lpSvg, { component: "laptimes", part: "base", nineSlice: sliceOf(lpSvg, "laptimes", 240), pivot: { x: 0.5, y: 0.5 }, tintable: false, usage: "Lap-comparison panel. Traces, legend and delta are live engine content." });
+    const tmSvg = shell("telemetry", { part: "base" });
+    await addPng("telemetry/base.9.png", tmSvg, { component: "telemetry", part: "base", nineSlice: sliceOf(tmSvg, "telemetry", 240), pivot: { x: 0.5, y: 0.5 }, tintable: false, usage: "Telemetry panel. Throttle/brake/speed traces are live engine content." });
+  }
+  await addPng("startlights/base.png", shell("startlights", { part: "base" }), { component: "startlights", part: "base", nineSlice: null, pivot: { x: 0.5, y: 0.5 }, tintable: false, usage: "Start-light gantry, all pods dark. Light the pods with tinted circles (alarm red) from the engine's countdown." });
 
   /* ── shared FX blobs — engines compose their own shadows/glows ── */
   const blob = (color: string, opacity: number) =>
