@@ -85,6 +85,13 @@ button { font-family: inherit; color: inherit; }
 .rail button:hover { background: var(--soft); }
 .rail button.on { background: var(--soft); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
 .rail .gap { flex: 1; }
+/* destinations — The Kit and The Board lead the rail as first-class places,
+   visually louder than the editor sections below the divider */
+.rail button.rail-dest { color: var(--ink); background: var(--soft); box-shadow: inset 0 0 0 1px var(--line); }
+.rail button.rail-dest:hover { box-shadow: inset 0 0 0 1px var(--line2); }
+.rail button.rail-dest.on { background: #17181c; color: #fff; box-shadow: 0 6px 16px rgba(15,17,26,.25); }
+[data-theme="dark"] .rail button.rail-dest.on { background: #e9eaef; color: #17181c; box-shadow: 0 6px 16px rgba(0,0,0,.4); }
+.rail-div { width: 30px; height: 1px; background: var(--line); margin: 3px 0 5px; flex: none; }
 
 /* panel */
 /* The inspector column is the single scroll container. The scrollbar lane is
@@ -118,7 +125,7 @@ button { font-family: inherit; color: inherit; }
 .mini-swatch { width: 26px; height: 26px; border-radius: 7px; border: 1px solid rgba(0,0,0,.10); }
 
 .ctl { display: flex; align-items: center; gap: 12px; }
-.ctl label { font-size: 12.5px; font-weight: 500; color: var(--ink2); width: 98px; flex: none; white-space: nowrap; }
+.ctl label { font-size: 12.5px; font-weight: 500; color: var(--ink2); width: 98px; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctl .val { width: 40px; text-align: right; font-size: 12.5px; color: var(--ink2); font-variant-numeric: tabular-nums; flex: none; }
 input[type="range"] { -webkit-appearance: none; appearance: none; flex: 1; height: 3px; background: var(--line2); border-radius: 3px; cursor: pointer; }
 input[type="range"]::-webkit-slider-thumb {
@@ -1283,7 +1290,7 @@ button.kp-fact { cursor: pointer; }
 .board2 { display: grid; grid-template-columns: 238px minmax(0, 1fr) 270px; height: 100%; min-height: 620px; }
 .bd-assets, .bd-side { display: flex; flex-direction: column; min-width: 0; padding: 16px 14px; background: var(--card); }
 .bd-assets { border-right: 1px solid var(--line); }
-.bd-side { border-left: 1px solid var(--line); }
+.bd-side { border-left: 1px solid var(--line); overflow-y: auto; overflow-x: hidden; }
 .bd-h { font-size: 13px; font-weight: 800; color: var(--ink); }
 .bd-search { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px; margin-top: 10px; border: 1px solid var(--line2); border-radius: 10px; color: var(--ink2); }
 .bd-search input { flex: 1; border: 0; outline: 0; background: none; font: inherit; font-size: 12.5px; color: var(--ink); min-width: 0; }
@@ -1312,14 +1319,19 @@ button.kp-fact { cursor: pointer; }
 .bd-bg { position: absolute; inset: 0; background-size: cover; background-position: center; }
 .bd-canvas { position: absolute; top: 0; left: 0; transform-origin: top left; }
 .bd-empty { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(235,238,255,.38); font-size: 15px; }
-.board-item.sel { outline: 1.5px dashed rgba(120,190,255,.95); outline-offset: 5px; border-radius: 8px; }
+/* the selection outline is a measured overlay — StagePiece reads the
+   renderer's data-shell stamp so the dashes hug the actual shell, not the
+   glow-padded canvas around it */
+.board-selbox { position: absolute; pointer-events: none; outline: 1.5px dashed rgba(120,190,255,.95); outline-offset: 5px; border-radius: 8px; }
 .bd-selname { margin-top: 6px; font-size: 15px; font-weight: 800; color: var(--ink); }
 .bd-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
 .bd-row2 label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; color: var(--ink2); }
 .bd-row2 input { height: 32px; border: 1px solid var(--line2); border-radius: 8px; padding: 0 8px; font: inherit; font-size: 12.5px; color: var(--ink); background: var(--bg, #fff); width: 100%; }
 .bd-slider { display: flex; flex-direction: column; gap: 4px; margin-top: 13px; font-size: 11.5px; font-weight: 700; color: var(--ink2); }
-.bd-actions { display: flex; gap: 8px; margin-top: 15px; }
-.bd-actions button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; border: 1px solid var(--line2); border-radius: 9px; background: var(--card); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+/* two columns, never wider than the panel — three inline buttons used to
+   shove the inspector past the right edge */
+.bd-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; min-width: 0; }
+.bd-actions button { min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 6px; border: 1px solid var(--line2); border-radius: 9px; background: var(--card); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bd-actions button:hover { border-color: var(--ink); }
 .bd-actions .danger { color: #c4453d; }
 .bd-note { display: flex; align-items: flex-start; gap: 6px; margin-top: 11px; font-size: 11.5px; line-height: 1.5; color: var(--ink2); }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, applyKitTextFill, fontByName, hexMix, isDarkBg, effKitSize } from "@/generator/model";
+import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, applyKitTextFill, fontByName, hexMix, isDarkBg, effKitSize, resolveKitIcon } from "@/generator/model";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
@@ -10,7 +10,6 @@ import { downloadSettings, downloadSvg, downloadZip, downloadSpriteSheet, buildS
 import { downloadEngineExport } from "@/generator/engineExport";
 import { LiveArt } from "./LiveArt";
 import { HeroGL } from "./HeroGL";
-import { RacingHud } from "./RacingHud";
 
 /* The Kit — a living guideline sheet in five levels: Foundations, Components,
    Assemblies, Build Parts, Screen Patterns. One renderer draws everything,
@@ -126,7 +125,7 @@ interface PieceOpts {
 /** Shared plumbing for every live piece on this page. The page is always
  *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextFill, kitIcons, kitRow, setFocus, setKitSize, setKitKind } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextFill, kitIcons, kitLabels, kitRow, setFocus, setKitSize, setKitKind } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
@@ -140,10 +139,11 @@ function usePiece(p: PieceOpts) {
     sizable: p.size === undefined,
     name: KIT_COMPONENTS.find((c) => c.id === p.id)?.name ?? p.id,
     kit: {
-      id: p.id, size, shape: p.shape ?? kitShapes[p.id], label: p.label, segments: p.segments,
-      // a swapped component icon beats the specimen's demo glyph; an
-      // explicit "no icon" stays empty
-      icon: p.icon === null ? null : kitIcons[p.id] ?? p.icon, value: p.value, baseState: p.baseState,
+      id: p.id, size, shape: p.shape ?? kitShapes[p.id],
+      // user content overrides beat the specimen's demo text and glyph;
+      // an explicit "no icon" instance stays empty
+      label: kitLabels[p.id] ?? p.label, segments: p.segments,
+      icon: resolveKitIcon(kitIcons[p.id], p.icon), value: p.value, baseState: p.baseState,
       sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay, iconScale: p.iconScale,
       // explicit per-component vertical text adjustment (0 is a valid value)
       textOy: kitTextOy[`${p.id}:${size}`],
@@ -152,7 +152,12 @@ function usePiece(p: PieceOpts) {
       row: p.id === "datarow" ? kitRow : undefined,
       kind: p.kind, tone: p.tone,
     },
-    onEdit: () => { setKitKind(p.kind ?? null); setFocus(p.id); },
+    onEdit: () => {
+      setKitKind(p.kind ?? null); setFocus(p.id);
+      // arriving from a piece's Edit button, surface its content controls —
+      // text and icon swaps live there and collapsed sections hide them
+      useGen.setState((st) => ({ open: { ...st.open, kiticon: true } }));
+    },
   };
 }
 
@@ -767,8 +772,9 @@ export function KitPage() {
           expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`],
           row: cid === "datarow" ? st.kitRow : undefined, ...extra,
         };
-        // a swapped component icon rides every catalog entry that draws one
-        if (o.icon !== null) o.icon = st.kitIcons[cid] ?? o.icon;
+        // user content overrides ride every catalog entry
+        o.icon = resolveKitIcon(st.kitIcons[cid], o.icon);
+        if (o.label === undefined) o.label = st.kitLabels[cid];
         return { name, svg: renderKit(pieceCfg(cid), cid, effKitSize(st.kitSizes[cid]), gstate, v, st.kitShapes[cid], o) };
       };
       const entries = [
@@ -1967,20 +1973,8 @@ export function KitPage() {
           </div>
         )}
 
-        {(patTab === "all" || patTab === "core") && (
-          <div className="pat-group">
-            <div className="pat-ghead">
-              <h3>Racing HUD</h3>
-              <p>A full cockpit HUD as one responsive 16:9 SVG in the kit's own colors — night race at the Kazuri Ring. Panels, meters and rows come from shared systems; every readout is data-driven, nothing is a photograph.</p>
-            </div>
-            <div className="pat-grid">
-              <Pat n="R1" name="Racing HUD — Kazuri Ring" cat="Full Screen · 16:9" comps={9} asms={8} lead="speedo" wide bare>
-                <RacingHud />
-              </Pat>
-            </div>
-          </div>
-        )}
-
+        {/* (the full-screen Racing HUD pattern is parked — RacingHud.tsx
+            stays in the tree for when the kit is ready for it) */}
         {(patTab === "all" || patTab === "outcome") && (
           <div className="pat-group">
             <div className="pat-ghead">

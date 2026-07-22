@@ -237,9 +237,13 @@ interface GenStore {
    *  color while global Typography keeps driving everything else. */
   kitTextFill: Partial<Record<KitComponentId, string>>;
   setKitTextFill: (id: KitComponentId, color: string | null) => void;
-  /** Per-component icon swap — null restores the stock glyph. */
-  kitIcons: Partial<Record<KitComponentId, IconDef>>;
-  setKitIcon: (id: KitComponentId, def: IconDef | null) => void;
+  /** Per-component icon swap — "none" removes the glyph (text recenters),
+   *  null restores the stock one. */
+  kitIcons: Partial<Record<KitComponentId, IconDef | "none">>;
+  setKitIcon: (id: KitComponentId, def: IconDef | "none" | null) => void;
+  /** Per-component label override — null restores the specimen text. */
+  kitLabels: Partial<Record<KitComponentId, string>>;
+  setKitLabel: (id: KitComponentId, label: string | null) => void;
   /** Data rows (and objectives built from them) carry their own two-text-group
    *  content model — independent size, tracking and vertical placement per
    *  group, plus slot toggles. Too intricate for the generic text controls. */
@@ -360,7 +364,31 @@ type LooseSet = (p: any) => void;
 let histKey = "";
 let histT = 0;
 const saveBoards = (get: () => { boards: BoardDef[]; activeBoard: string }) =>
-  saveJson(BOARD_KEY, { v: 2, active: get().activeBoard, boards: get().boards.map((b) => ({ ...b, bgImage: undefined })) });
+  // data-URL backgrounds persist (one image per board); blob URLs cannot
+  // survive a reload, so they stay session-only
+  saveJson(BOARD_KEY, { v: 2, active: get().activeBoard, boards: get().boards.map((b) => ({ ...b, bgImage: b.bgImage?.startsWith("data:") ? b.bgImage : undefined })) });
+
+/** Downscale an uploaded background to a storable data URL (≤1920px,
+ *  JPEG) — small enough to persist, big enough for a 16:9 board. */
+export async function fileToBgDataUrl(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = url;
+    });
+    const s = Math.min(1, 1920 / img.width, 1920 / img.height);
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(img.width * s));
+    cv.height = Math.max(1, Math.round(img.height * s));
+    cv.getContext("2d")!.drawImage(img, 0, 0, cv.width, cv.height);
+    return cv.toDataURL("image/jpeg", 0.85);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 const pushBoardHistory = (get: BoardsGet, set: LooseSet, key: string | null) => {
   const now = Date.now();
   if (key && key === histKey && now - histT < 900) { histT = now; return; }
@@ -383,7 +411,7 @@ function loadBoards(): { boards: BoardDef[]; activeBoard: string } {
     return { boards: [{ id: "ab1", name: "Board 1", aspect, items: raw as BoardItem[] }], activeBoard: "ab1" };
   }
   if (raw && typeof raw === "object" && Array.isArray((raw as { boards?: unknown }).boards) && (raw as { boards: BoardDef[] }).boards.length) {
-    const bs = (raw as { boards: BoardDef[] }).boards.map((b) => ({ ...b, bgImage: null }));
+    const bs = (raw as { boards: BoardDef[] }).boards.map((b) => ({ ...b, bgImage: b.bgImage?.startsWith("data:") ? b.bgImage : null }));
     const act = (raw as { active?: string }).active;
     return { boards: bs, activeBoard: act && bs.some((b) => b.id === act) ? act : bs[0].id };
   }
@@ -608,13 +636,21 @@ export const useGen = create<GenStore>((set, get) => ({
   },
   /* v57: per-component icon swap — the override rides opts.icon everywhere
      the component draws a glyph (kit page, board, exports). */
-  kitIcons: loadJson<Partial<Record<KitComponentId, IconDef>>>("ui-generator-kiticons", {}),
+  kitIcons: loadJson<Partial<Record<KitComponentId, IconDef | "none">>>("ui-generator-kiticons", {}),
   setKitIcon: (id, def) => {
     markTouched();
     const kitIcons = { ...get().kitIcons };
     if (def) kitIcons[id] = def; else delete kitIcons[id];
     saveJson("ui-generator-kiticons", kitIcons);
     set({ kitIcons });
+  },
+  kitLabels: loadJson<Partial<Record<KitComponentId, string>>>("ui-generator-kitlabels", {}),
+  setKitLabel: (id, label) => {
+    markTouched();
+    const kitLabels = { ...get().kitLabels };
+    if (label !== null && label !== "") kitLabels[id] = label; else delete kitLabels[id];
+    saveJson("ui-generator-kitlabels", kitLabels);
+    set({ kitLabels });
   },
   kitDesigns: loadJson<Partial<Record<KitComponentId, KitDesign>>>("ui-generator-kitdesigns", {}),
   setKitDesign: (id, d) => {

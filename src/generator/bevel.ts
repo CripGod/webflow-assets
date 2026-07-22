@@ -1157,6 +1157,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   // content text on kit pieces (counters, rows, segments) follows the global
   // type Size and vertical nudge exactly like built labels do
   const typeK = clamp(cfg.type.size / 52, 0.5, 2.2);
+  // icon stroke weight rides the type controls — 1.0 at the default 24
+  const iconWK = clamp((cfg.icon.strokeWidth ?? 24) / 24, 0.35, 1.8);
   const typeOyK = (opts.textOy ?? cfg.type.oy ?? 0);
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
   // the dragger ball can carry its own color; null follows the Bevel role
@@ -1266,12 +1268,24 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const inset3 = bw + 4;
       const wellP = shapePath(sov ?? cfg.shape, 33 + inset3, 27 + inset3, ch - inset3 * 2, ch - inset3 * 2, Math.max(0, cfg.bevel.softness - 10));
       const ck = lit
-        ? iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, glow, { strokeWidth: 3, filter: `drop-shadow(0 0 6px ${glow})` })
-        : iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, "rgba(255,255,255,0.22)", { strokeWidth: 3 });
+        ? iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, glow, { strokeWidth: 3 * iconWK, filter: `drop-shadow(0 0 6px ${glow})` })
+        : iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, "rgba(255,255,255,0.22)", { strokeWidth: 3 * iconWK });
       return inject(track, `<path d="${wellP}" fill="${wellFill}" opacity="0.9"/>` + ck);
     }
-    case "radio":
-      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k, shapeOverride: sov });
+    case "radio": {
+      // stateful like the checkbox: a dim hollow pip waits in the well and
+      // lights solid when selected — resting state only, marks never grow
+      const lit2 = (value ?? 1) > 0.5;
+      const ch2 = 118 * k;
+      const track2 = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: ch2, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: ch2, shapeOverride: sov });
+      const insetR = bw + 4;
+      const wellR = shapePath(sov ?? cfg.shape, 33 + insetR, 27 + insetR, ch2 - insetR * 2, ch2 - insetR * 2, Math.max(0, cfg.bevel.softness - 10));
+      const rcx = 33 + ch2 / 2, rcy = 27 + ch2 / 2, rr = ch2 * 0.17;
+      const pip = lit2
+        ? `<circle cx="${rcx.toFixed(1)}" cy="${rcy.toFixed(1)}" r="${rr.toFixed(1)}" fill="${glow}" style="filter: drop-shadow(0 0 6px ${glow})"/>`
+        : `<circle cx="${rcx.toFixed(1)}" cy="${rcy.toFixed(1)}" r="${rr.toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="${(2.5 * iconWK).toFixed(2)}"/>`;
+      return inject(track2, `<path d="${wellR}" fill="${wellFill}" opacity="0.9"/>` + pip);
+    }
     case "toggle": {
       const on = (value ?? 1) > 0.5;
       // compact premium proportion: shell ≈ 2–2.5× the knob diameter, with the
@@ -1393,13 +1407,17 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const cy = 30 + h / 2;
       const medR = h * 0.44;
+      const noIcon = opts.icon === null; // removed glyph — the value centers
       const icon = opts.icon ?? STOCK_ICONS.gem;
       const dim = state === "disabled" ? 0.45 : 1;
       const parts =
-        candyKnob(39 + 6 * k + medR, cy, medR, bevel) +
-        iconGroup(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), { strokeWidth: 2.4 }) +
-        contentText(val, 39 + 20 * k + medR * 2, cy + 1 + typeOyK * k, fsV * typeK, { keepCase: true, opacity: dim }) +
-        (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * typeK * 0.62).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK * 0.8).toFixed(1)}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(maxTxt)}</text>` : "") +
+        (noIcon ? "" :
+          candyKnob(39 + 6 * k + medR, cy, medR, bevel) +
+          iconGroup(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), { strokeWidth: 2.4 * iconWK })) +
+        (noIcon
+          ? contentText(`${val}${maxTxt}`, 39 + (w - (opts.addBtn ? 46 * k : 0)) / 2, cy + 1 + typeOyK * k, fsV * typeK, { anchor: "middle", keepCase: true, opacity: dim })
+          : contentText(val, 39 + 20 * k + medR * 2, cy + 1 + typeOyK * k, fsV * typeK, { keepCase: true, opacity: dim }) +
+            (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * typeK * 0.62).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK * 0.8).toFixed(1)}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(maxTxt)}</text>` : "")) +
         (opts.addBtn ? candyKnob(39 + w - 8 * k - h * 0.32, cy, h * 0.32, glow) +
           `<text x="${(39 + w - 8 * k - h * 0.32).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="Inter, sans-serif" font-size="${26 * k}" font-weight="800" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">+</text>` : "");
       return inject(track, parts);
@@ -1438,7 +1456,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          <linearGradient id="${gid2}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>` +
         (showAvatar
           ? `<path d="${roundRect(sx, sy2, slotS, slotS, 10 * k)}" fill="${wellFill}" opacity="0.92"/>` +
-            iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 })
+            (opts.icon === null ? "" : iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 * iconWK }))
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
         contentText(title, tx, 30 + inset + 16 * k + ((R2.titleDy ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k, fsT, { keepCase: true, track: R2.titleTrack ?? 0, opacity: dim }) +
@@ -1454,12 +1472,12 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
           : "") +
         (!showAction ? ""
           : ov === "locked"
-            ? iconGroup(STOCK_ICONS.lock, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, "rgba(255,255,255,0.75)", { strokeWidth: 2.2 })
+            ? iconGroup(STOCK_ICONS.lock, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, "rgba(255,255,255,0.75)", { strokeWidth: 2.2 * iconWK })
             : ov === "check"
-              ? iconGroup(STOCK_ICONS.check, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, glow, { strokeWidth: 2.6 })
+              ? iconGroup(STOCK_ICONS.check, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, glow, { strokeWidth: 2.6 * iconWK })
               : ov === "alert"
-                ? iconGroup(STOCK_ICONS.warning, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2.2 })
-                : iconGroup(STOCK_ICONS.forward, 39 + w - 48 * k, 30 + h / 2 - 12 * k, 24 * k, "rgba(255,255,255,0.6)", { strokeWidth: 2.4 }));
+                ? iconGroup(STOCK_ICONS.warning, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2.2 * iconWK })
+                : iconGroup(STOCK_ICONS.forward, 39 + w - 48 * k, 30 + h / 2 - 12 * k, 24 * k, "rgba(255,255,255,0.6)", { strokeWidth: 2.4 * iconWK }));
       return inject(track, parts);
     }
     case "joystick": {
@@ -1543,10 +1561,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         // the tile — match-3 boards, gem grids.
         const isc = clamp(opts.iconScale ?? 1, 0.5, 1.45);
         if (cfg.type.outline.on) parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, darken(bevel, 0.5), { strokeWidth: 2 + cfg.type.outline.width * 0.7 }));
-        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2 }));
+        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2 * iconWK }));
       }
       if (dimmed) parts.push(`<path d="${wellPath}" fill="rgba(6,8,16,0.62)"/>`);
-      if (ov === "locked") parts.push(iconGroup(STOCK_ICONS.lock, cx2 - 13, cy2 - 13, 26, "rgba(255,255,255,0.85)", { strokeWidth: 2.2 }));
+      if (ov === "locked") parts.push(iconGroup(STOCK_ICONS.lock, cx2 - 13, cy2 - 13, 26, "rgba(255,255,255,0.85)", { strokeWidth: 2.2 * iconWK }));
       if (ov.startsWith("cooldown")) {
         parts.push(`<text x="${cx2.toFixed(1)}" y="${(cy2 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${inner * 0.32}" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(ov.split(":")[1] ?? "12s")}</text>`);
       }
@@ -1566,7 +1584,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       }
       if (ov === "check" || ov === "equipped" || ov === "claimable") {
         parts.push(`<circle cx="${33 + s2 - inset - 2}" cy="${27 + inset + 2}" r="13" fill="${ov === "claimable" ? glow : bevel}" stroke="${darken(bevel, 0.45)}" stroke-width="1.5"/>` +
-          iconGroup(STOCK_ICONS.check, 33 + s2 - inset - 10, 27 + inset - 6, 16, ov === "claimable" ? darken(bevel, 0.6) : "#FFFFFF", { strokeWidth: 3 }));
+          iconGroup(STOCK_ICONS.check, 33 + s2 - inset - 10, 27 + inset - 6, 16, ov === "claimable" ? darken(bevel, 0.6) : "#FFFFFF", { strokeWidth: 3 * iconWK }));
       }
       return inject(track, parts.join(""));
     }
@@ -1676,7 +1694,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         const x0 = i * (hs + gap5);
         const on = i < full;
         return iconGroup(STOCK_ICONS.heart, x0, hs * 0.08, hs, on ? glow : "rgba(140,146,168,0.35)",
-          { strokeWidth: 2.4, filter: on ? `drop-shadow(0 0 6px ${hexRgba(glow, 0.6)})` : undefined });
+          { strokeWidth: 2.4 * iconWK, filter: on ? `drop-shadow(0 0 6px ${hexRgba(glow, 0.6)})` : undefined });
       }).join("");
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${W5}" height="${H5}" viewBox="0 0 ${W5} ${H5}" role="img" aria-label="lives: ${full} of ${n5}">${hearts}</svg>`;
     }

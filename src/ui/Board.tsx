@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Copy, Download, Grid3x3, ImagePlus, LayoutTemplate, Lock, Monitor, Plus, Search, Smartphone, SquarePen, Trash2, X } from "lucide-react";
-import { useGen } from "@/generator/store";
+import { useGen, fileToBgDataUrl } from "@/generator/store";
 import type { BoardDef, BoardItem } from "@/generator/store";
 import { renderBevel, renderKit, glowPadOf } from "@/generator/bevel";
-import { KIT_COMPONENTS, applyKitTextFill } from "@/generator/model";
+import { KIT_COMPONENTS, applyKitTextFill, resolveKitIcon } from "@/generator/model";
 import type { GenConfig, KitComponentId } from "@/generator/model";
 import { download, downloadSvg } from "@/generator/exportUtils";
 import { LiveArt } from "./LiveArt";
@@ -79,7 +79,7 @@ const clone = (c: GenConfig) => (typeof structuredClone === "function" ? structu
 
 export function BoardView({ playing }: { playing: boolean }) {
   const {
-    cfg, boards, activeBoard, library, kitShapes, kitSizes, kitTextFill, kitIcons, kitRow,
+    cfg, boards, activeBoard, library, kitShapes, kitSizes, kitTextFill, kitIcons, kitLabels, kitRow,
     setActiveBoard, addBoard, removeBoard, renameBoard, moveBoard, clearBoard, setBoardBg,
     addBoardItems, setBoardAspect, boardSnap, setBoardSnap, boardSel, setBoardSel,
     addToBoard, addKitToBoard, moveBoardItem, scaleBoardItem, rotateBoardItem, removeBoardItem,
@@ -138,9 +138,9 @@ export function BoardView({ playing }: { playing: boolean }) {
     const name = (id: KitComponentId) => KIT_COMPONENTS.find((c) => c.id === id)?.name ?? id;
     return ASSET_GROUPS.map((g) => ({
       name: g.name,
-      items: g.ids.map((id) => ({ id, name: name(id), svg: renderKit(applyKitTextFill(tc, kitTextFill[id]), id, "s", "default", undefined, kitShapes[id], { icon: kitIcons[id] }) })),
+      items: g.ids.map((id) => ({ id, name: name(id), svg: renderKit(applyKitTextFill(tc, kitTextFill[id]), id, "s", "default", undefined, kitShapes[id], { icon: resolveKitIcon(kitIcons[id], undefined), label: kitLabels[id] }) })),
     }));
-  }, [cfg, kitShapes, kitTextFill, kitIcons]);
+  }, [cfg, kitShapes, kitTextFill, kitIcons, kitLabels]);
 
   const selBoard = boards.find((bd) => bd.items.some((b) => b.id === boardSel)) ?? null;
   const sel = selBoard?.items.find((b) => b.id === boardSel) ?? null;
@@ -148,7 +148,7 @@ export function BoardView({ playing }: { playing: boolean }) {
   /* the exact svg a board item shows — shared by display, export and PNG */
   const svgOf = (b: BoardItem): { svg: string; cfg: GenConfig } => {
     if (b.kitId) {
-      return { svg: renderKit(applyKitTextFill(cfg, kitTextFill[b.kitId]), b.kitId, kitSizes[b.kitId] ?? "l", "default", undefined, kitShapes[b.kitId], { icon: kitIcons[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }), cfg };
+      return { svg: renderKit(applyKitTextFill(cfg, kitTextFill[b.kitId]), b.kitId, kitSizes[b.kitId] ?? "l", "default", undefined, kitShapes[b.kitId], { icon: resolveKitIcon(kitIcons[b.kitId], undefined), label: kitLabels[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }), cfg };
     }
     const item = library.find((l) => l.id === b.libId);
     if (!item) return { svg: "", cfg };
@@ -425,7 +425,7 @@ export function BoardView({ playing }: { playing: boolean }) {
               </>
             )}
             <input ref={bgInput} type="file" accept="image/*" hidden
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) setBoardBg({ bgImage: URL.createObjectURL(f), bgShow: true }); e.target.value = ""; }} />
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void fileToBgDataUrl(f).then((url) => setBoardBg({ bgImage: url, bgShow: true })); e.target.value = ""; }} />
             <div className="bd-h" style={{ marginTop: 18 }}>Stage</div>
             <div className="bd-note">{act.name} · {STAGE[act.aspect][0]} × {STAGE[act.aspect][1]} · shown at {Math.round(fitOf(act) * 100)}% · Export renders at full resolution.</div>
           </>
@@ -445,10 +445,10 @@ function StagePiece({ b, playing, selected, onSelect, onDragStart, onDragMove, o
   onDragMove: (e: React.PointerEvent) => void;
   onDragEnd: () => void;
 }) {
-  const { cfg, library, kitShapes, kitSizes, kitTextFill, kitIcons, kitRow } = useGen();
+  const { cfg, library, kitShapes, kitSizes, kitTextFill, kitIcons, kitLabels, kitRow } = useGen();
   const sc = b.scale ?? 1;
   const artRef = useRef<HTMLDivElement>(null);
-  const [dim, setDim] = useState<{ w: number; h: number } | null>(null);
+  const [dim, setDim] = useState<{ w: number; h: number; shell: [number, number, number, number] | null } | null>(null);
   useEffect(() => {
     const host = artRef.current;
     if (!host) return;
@@ -456,11 +456,17 @@ function StagePiece({ b, playing, selected, onSelect, onDragStart, onDragMove, o
       const svg = host.querySelector("svg");
       const w = svg ? parseFloat(svg.getAttribute("width") ?? "0") : 0;
       const h = svg ? parseFloat(svg.getAttribute("height") ?? "0") : 0;
-      if (w && h) setDim((d) => (d && d.w === w && d.h === h ? d : { w, h }));
+      // the renderer stamps the true shell rect (viewBox units) on the root;
+      // with anchorContent the wrapper origin IS viewBox 0,0, so the shell
+      // maps to CSS by a plain × scale — the selection box hugs the art,
+      // not the glow-padded canvas
+      const raw = svg?.getAttribute("data-shell")?.split(" ").map(Number);
+      const shell = raw && raw.length === 4 && raw.every(Number.isFinite) ? (raw as [number, number, number, number]) : null;
+      if (w && h) setDim((d) => (d && d.w === w && d.h === h && String(d.shell) === String(shell) ? d : { w, h, shell }));
     };
     read();
     const mo = new MutationObserver(read);
-    mo.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ["width", "height"] });
+    mo.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ["width", "height", "data-shell"] });
     return () => mo.disconnect();
   }, []);
   const item = b.kitId ? null : library.find((l) => l.id === b.libId);
@@ -482,12 +488,17 @@ function StagePiece({ b, playing, selected, onSelect, onDragStart, onDragMove, o
       <div ref={artRef} style={{ transform: `scale(${sc})`, transformOrigin: "top left" }}>
         {b.kitId ? (
           <LiveArt cfg={applyKitTextFill(cfg, kitTextFill[b.kitId])} playing={playing} anchorContent
-            kit={{ id: b.kitId, size: kitSizes[b.kitId] ?? "l", shape: kitShapes[b.kitId], icon: kitIcons[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }} />
+            kit={{ id: b.kitId, size: kitSizes[b.kitId] ?? "l", shape: kitShapes[b.kitId], icon: resolveKitIcon(kitIcons[b.kitId], undefined), label: kitLabels[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }} />
         ) : (
           <LiveArt cfg={item!.cfg} playing={playing} anchorContent
             kit={item!.kit ? { id: item!.kit.id, size: item!.kit.size, shape: item!.kit.shape } : undefined} />
         )}
       </div>
+      {selected && (
+        <i className="board-selbox" aria-hidden="true" style={dim?.shell
+          ? { left: dim.shell[0] * sc, top: dim.shell[1] * sc, width: dim.shell[2] * sc, height: dim.shell[3] * sc }
+          : { left: 0, top: 0, width: "100%", height: "100%" }} />
+      )}
     </div>
   );
 }
