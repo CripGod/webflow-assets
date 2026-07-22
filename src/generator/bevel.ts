@@ -1869,7 +1869,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const dim = state === "disabled" ? 0.45 : 1;
       const tw = 150 * k, th = 176 * k, gap2 = 20 * k, pad3 = 40; // pad grew for shell glow air
       const W2 = segs.length * tw + (segs.length - 1) * gap2 + pad3 * 2;
-      const H2 = th + 36 * k + pad3 * 2;
+      const H2 = th + 54 * k + pad3 * 2; // v63: the tag line gets real air below the tiles
       const tileFace = darken(effect(cfg.effects, "Inner Fill"), 0.8);
       const fsD = Math.min(96 * k * typeK, tw * 0.6);
       /* v61: each tile is a REAL themed shell — the full candy stack in the
@@ -1889,14 +1889,14 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
           <clipPath id="${gidT}w"><path d="${wellD}"/></clipPath>
           <path d="${wellD}" fill="${tileFace}"${urgent ? ` stroke="${alarm}" stroke-width="2.5"` : ""}/>
           <g clip-path="url(#${gidT}w)"><rect x="${x}" y="${pad3}" width="${tw}" height="${(th / 2).toFixed(1)}" fill="#FFFFFF" opacity="0.055"/></g>
-          ${contentText(sg, x + tw / 2, midY + 2, fsD, { anchor: "middle", keepCase: true, opacity: dim })}
+          ${contentText(sg, x + tw / 2 + 3 * k, midY + 2, fsD, { anchor: "middle", keepCase: true, opacity: dim })}
           <g clip-path="url(#${gidT}w)">
             <rect x="${x}" y="${(midY - 2).toFixed(1)}" width="${tw}" height="4" fill="#04060C" opacity="0.85"/>
             <rect x="${x}" y="${(midY + 2).toFixed(1)}" width="${tw}" height="1.2" fill="#FFFFFF" opacity="0.1"/>
           </g>
           <circle cx="${(x + insT + 7 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
           <circle cx="${(x + tw - insT - 7 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
-          <text x="${x + tw / 2}" y="${(pad3 + th + 22 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(12.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${urgent ? alarm : (isDarkBg(cfg.canvas) ? hexRgba(glow, 0.8) : darken(bevel, 0.3))}" text-anchor="middle" opacity="${dim}">${esc(tags[i] ?? "")}</text>` +
+          <text x="${x + tw / 2}" y="${(pad3 + th + 38 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(12.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${urgent ? alarm : (isDarkBg(cfg.canvas) ? hexRgba(glow, 0.8) : darken(bevel, 0.3))}" text-anchor="middle" opacity="${dim}">${esc(tags[i] ?? "")}</text>` +
           (i < segs.length - 1
             ? `<circle cx="${(x + tw + gap2 / 2).toFixed(1)}" cy="${(midY - 16 * k).toFixed(1)}" r="${(4 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.25)}"/><circle cx="${(x + tw + gap2 / 2).toFixed(1)}" cy="${(midY + 16 * k).toFixed(1)}" r="${(4 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.25)}"/>`
             : "");
@@ -2000,8 +2000,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const needle = `<g${part === "needle" ? "" : ` transform="rotate(0)"`}>` +
         `<line x1="${(cx3 - Math.cos(ang) * 16 * k).toFixed(1)}" y1="${(cy3 - Math.sin(ang) * 16 * k).toFixed(1)}" x2="${(cx3 + Math.cos(ang) * (r0 - 30 * k)).toFixed(1)}" y2="${(cy3 + Math.sin(ang) * (r0 - 30 * k)).toFixed(1)}" stroke="${alarm}" stroke-width="${(4 * k).toFixed(1)}" stroke-linecap="round"/>` +
         candyKnob(cx3, cy3, 9 * k, bevel) + `</g>`;
-      const readout = contentText(String(Math.round(v3 * 280)), cx3, cy3 + r0 * 0.52, Math.min(d2 * 0.17, r0 * 0.44) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
-        `<text x="${cx3}" y="${(cy3 + r0 * 0.72).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">KM/H</text>`;
+      const readout = contentText(String(Math.round(v3 * 174)), cx3, cy3 + r0 * 0.5, Math.min(d2 * 0.17, r0 * 0.44) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
+        `<text x="${cx3}" y="${(cy3 + r0 * 0.82).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">MPH</text>`;
       const face =
         `<circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gid8})" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>` +
         `<circle cx="${cx3}" cy="${cy3}" r="${(r0 - 9 * k).toFixed(1)}" fill="${wellFill}"/>` + ticks;
@@ -2039,11 +2039,54 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       }
       const arc = `<circle cx="${cx3}" cy="${cy3}" r="${(r0 - 30 * k).toFixed(1)}" fill="none" stroke="${hexRgba(glow, 0.25)}" stroke-width="1.5" stroke-dasharray="3 7"/>`;
       const readout = part === "face" ? "" :
-        contentText(String(Math.round(v3 * 280)), cx3, cy3 + 2, Math.min(d2 * 0.24, r0 * 0.6) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
-        `<text x="${cx3}" y="${(cy3 + r0 * 0.34).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">KM/H</text>`;
+        contentText(String(Math.round(v3 * 174)), cx3, cy3 - 4 * k, Math.min(d2 * 0.24, r0 * 0.6) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
+        `<text x="${cx3}" y="${(cy3 + r0 * 0.46).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">MPH</text>`;
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="HUD speedometer" data-race="speedo2">
 <defs><filter id="${gid8}g" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="0" stdDeviation="${(4 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.7"/></filter></defs>
 <g opacity="${dim}">${segs}${arc}${readout}</g>
+</svg>`;
+    }
+    case "tacho": {
+      /* Rev meter — the third voice of the diegetic instrument language the
+         racing gauges share: dark circular well, marks riding the rim, one
+         glow accent, candy hub, readout on the lower face. Here the marks
+         ARE the value: fat wedge segments sweep 270°, zone-tinted green →
+         amber → red, lit up to the needle. */
+      const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
+      const pad2 = 46;
+      const v3 = clamp(value ?? 0.62, 0, 1);
+      const W2 = d2 + pad2 * 2, H2 = d2 + pad2 * 2;
+      const cx3 = W2 / 2, cy3 = H2 / 2, r0 = d2 / 2;
+      const gidT2 = "tc" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI;
+      const ang = A0 + v3 * SWEEP;
+      const alarm = hexMix("#FF4D5A", bevel, 0.15);
+      const zone = (t: number) => t < 0.6 ? "#3ECF6A" : t < 0.82 ? "#FFC531" : "#FF4D5A";
+      let segsOn = "", segsOff = "";
+      for (let i = 0; i < 28; i++) {
+        const t0 = i / 27;
+        const a = A0 + t0 * SWEEP;
+        const rO = r0 - 11 * k, rI = rO - 15 * k;
+        const seg = `<line x1="${(cx3 + Math.cos(a) * rI).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rI).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rO).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rO).toFixed(1)}" stroke="${zone(t0)}" stroke-width="${(6.5 * k).toFixed(1)}" stroke-linecap="round" opacity="${t0 <= v3 ? "0.96" : "0.14"}"/>`;
+        if (t0 <= v3) segsOn += seg; else segsOff += seg;
+      }
+      const needle = `<line x1="${(cx3 - Math.cos(ang) * 15 * k).toFixed(1)}" y1="${(cy3 - Math.sin(ang) * 15 * k).toFixed(1)}" x2="${(cx3 + Math.cos(ang) * (r0 - 32 * k)).toFixed(1)}" y2="${(cy3 + Math.sin(ang) * (r0 - 32 * k)).toFixed(1)}" stroke="${v3 > 0.82 ? alarm : "#FFFFFF"}" stroke-width="${(3.6 * k).toFixed(1)}" stroke-linecap="round" opacity="0.92"/>`;
+      const readout = contentText((v3 * 9).toFixed(1), cx3, cy3 + r0 * 0.5, Math.min(d2 * 0.16, r0 * 0.42) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
+        `<text x="${cx3}" y="${(cy3 + r0 * 0.82).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">RPM ×1000</text>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="rev meter" data-race="tacho"${v3 > 0.82 ? ' data-urgent="1"' : ""}>
+<defs>
+  <linearGradient id="${gidT2}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${darken(bevel, 0.3)}"/></linearGradient>
+  <filter id="${gidT2}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3.5 * k).toFixed(1)}" flood-color="${v3 > 0.82 ? alarm : "#7CE6A0"}" flood-opacity="0.5"/></filter>
+</defs>
+<g opacity="${dim}">
+  <circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gidT2})" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>
+  <circle cx="${cx3}" cy="${cy3}" r="${(r0 - 8 * k).toFixed(1)}" fill="${wellFill}"/>
+  ${segsOff}<g filter="url(#${gidT2}g)">${segsOn}</g>
+  ${needle}
+  ${candyKnob(cx3, cy3, 9 * k, bevel)}
+  ${readout}
+</g>
 </svg>`;
     }
     case "circuit": {
@@ -2092,7 +2135,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const inset = bw + 8;
       const dim = state === "disabled" ? 0.45 : 1;
       const rows = [
-        { p: "1", d: "NOR", gap: "1:21.548", you: false },
+        { p: "1", d: "HAM", gap: "1:21.548", you: false },
         { p: "2", d: "VER", gap: "+0.842", you: false },
         { p: "3", d: "YOU", gap: "+2.156", you: true },
         { p: "4", d: "LEC", gap: "+3.271", you: false },
