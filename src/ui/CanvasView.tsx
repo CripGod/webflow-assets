@@ -10,7 +10,7 @@ import { BoardView } from "./Board";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitTextFill, kitDesigns, kitRow, kitKind } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitTextFill, kitIcons, kitDesigns, kitRow, kitKind } = useGen();
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -35,8 +35,8 @@ export function CanvasView() {
   const fSize = focus ? (kitSizes[focus] ?? "l") : "l";
   const fOy = focus ? kitTextOy[`${focus}:${fSize}`] : undefined;
   const heroSvg = useMemo(
-    () => (focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined, kind: focus === "panel" ? (kitKind ?? undefined) : undefined }) : renderBevel(cfg, displayed)),
-    [cfg, displayed, focus, kitShapes, fSize, fOy, kitRow, kitKind, kitTextFill, kitDesigns]
+    () => (focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, icon: kitIcons[focus], row: focus === "datarow" ? kitRow : undefined, kind: focus === "panel" ? (kitKind ?? undefined) : undefined }) : renderBevel(cfg, displayed)),
+    [cfg, displayed, focus, kitShapes, fSize, fOy, kitRow, kitKind, kitTextFill, kitIcons, kitDesigns]
   );
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
@@ -65,7 +65,10 @@ export function CanvasView() {
       <div
         ref={scroller}
         className={`canvas${panMode ? " pan" : ""}`}
-        style={bgImage ? {
+        /* the Board owns its own per-artboard backgrounds — the editor's
+           backdrop image must never paint behind it (the old
+           picture-in-picture bug) */
+        style={bgImage && phase !== "board" ? {
           backgroundColor: cfg.canvas,
           backgroundImage: `url(${bgImage})`,
           backgroundSize: "cover",
@@ -213,7 +216,7 @@ export function CanvasView() {
             <button className={`scard clickable${s === selectedState ? " sel" : ""}`} key={s}
               onClick={() => setSelectedState(s)} title={`Edit ${cap}`} aria-pressed={s === selectedState}>
               <div className="scard-title">{cap}{s === selectedState ? " · editing" : ""}</div>
-              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, s, v, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined }) : renderBevel(cfg, s) }} />
+              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, s, v, kitShapes[focus], { textOy: fOy, icon: kitIcons[focus], row: focus === "datarow" ? kitRow : undefined }) : renderBevel(cfg, s) }} />
             </button>
           ))}
         </div>

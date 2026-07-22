@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, applyKitTextFill, fontByName, hexMix, isDarkBg, effKitSize } from "@/generator/model";
@@ -24,63 +23,6 @@ const CHAPTERS: [string, string, string][] = [
   ["patterns", "04", "Screen Patterns"],
   ["resources", "05", "Resources"],
 ];
-
-/* "Edit pattern" sends the pattern's elements to the Board, pre-placed in
-   the pattern's own arrangement — nudge from there. */
-const PATTERN_BOARDS: Record<string, { kitId: KitComponentId; x: number; y: number; scale?: number }[]> = {
-  "Main Menu": [
-    { kitId: "header", x: 560, y: 90, scale: 1.1 }, { kitId: "primary", x: 700, y: 420, scale: 1.1 },
-    { kitId: "small", x: 790, y: 640 }, { kitId: "ghost", x: 790, y: 790 },
-    { kitId: "chip", x: 70, y: 60 }, { kitId: "iconbtn", x: 1680, y: 60, scale: 0.9 }, { kitId: "badge", x: 1540, y: 60, scale: 0.9 },
-  ],
-  "Sign In": [
-    { kitId: "header", x: 600, y: 90 }, { kitId: "input", x: 640, y: 380 }, { kitId: "input", x: 640, y: 540 },
-    { kitId: "primary", x: 710, y: 720 }, { kitId: "ghost", x: 800, y: 890, scale: 0.85 },
-  ],
-  "Settings": [
-    { kitId: "header", x: 620, y: 80 }, { kitId: "slider", x: 640, y: 350 }, { kitId: "slider", x: 640, y: 500 },
-    { kitId: "toggle", x: 700, y: 650 }, { kitId: "toggle", x: 1000, y: 650 }, { kitId: "small", x: 820, y: 830 },
-  ],
-  "Profile": [
-    { kitId: "iconbtn", x: 160, y: 140, scale: 1.3 }, { kitId: "datarow", x: 520, y: 150 },
-    { kitId: "progress", x: 520, y: 360 }, { kitId: "chip", x: 520, y: 500 }, { kitId: "badge", x: 1500, y: 150 },
-  ],
-  "Reward": [
-    { kitId: "badge", x: 830, y: 200, scale: 1.4 }, { kitId: "chip", x: 800, y: 560 }, { kitId: "primary", x: 700, y: 740 },
-  ],
-  "Purchase": [
-    { kitId: "header", x: 620, y: 80 }, { kitId: "segment", x: 640, y: 320 }, { kitId: "chip", x: 700, y: 520 },
-    { kitId: "resource", x: 660, y: 640 }, { kitId: "primary", x: 700, y: 810 },
-  ],
-  "Inventory": [
-    { kitId: "chip", x: 70, y: 55 }, { kitId: "resource", x: 420, y: 55 }, { kitId: "resource", x: 720, y: 55 },
-    { kitId: "iconbtn", x: 1700, y: 55, scale: 0.85 },
-    { kitId: "slot", x: 110, y: 220 }, { kitId: "slot", x: 110, y: 430, scale: 0.8 }, { kitId: "slot", x: 260, y: 430, scale: 0.8 },
-    { kitId: "tab", x: 620, y: 200 }, { kitId: "tab", x: 880, y: 200 }, { kitId: "tab", x: 1140, y: 200 },
-    { kitId: "slot", x: 620, y: 360, scale: 0.9 }, { kitId: "slot", x: 790, y: 360, scale: 0.9 }, { kitId: "slot", x: 960, y: 360, scale: 0.9 },
-    { kitId: "slot", x: 620, y: 540, scale: 0.9 }, { kitId: "slot", x: 790, y: 540, scale: 0.9 }, { kitId: "slot", x: 960, y: 540, scale: 0.9 },
-    { kitId: "progress", x: 620, y: 780 },
-    { kitId: "slot", x: 1480, y: 240 }, { kitId: "primary", x: 1430, y: 560, scale: 0.85 }, { kitId: "ghost", x: 1480, y: 720, scale: 0.8 },
-  ],
-  "Confirmation": [
-    { kitId: "header", x: 600, y: 240 }, { kitId: "small", x: 700, y: 620 }, { kitId: "ghost", x: 980, y: 620 },
-    { kitId: "iconbtn", x: 900, y: 800, scale: 0.8 },
-  ],
-  "Loading": [
-    { kitId: "header", x: 600, y: 300 }, { kitId: "progress", x: 640, y: 580, scale: 1.1 },
-  ],
-  "Results — Victory": [
-    { kitId: "header", x: 540, y: 160, scale: 1.1 }, { kitId: "resource", x: 790, y: 460 },
-    { kitId: "primary", x: 620, y: 680 }, { kitId: "ghost", x: 1060, y: 700 },
-  ],
-  "Empty State": [
-    { kitId: "badge", x: 870, y: 280, scale: 1.2 }, { kitId: "tab", x: 780, y: 500 }, { kitId: "small", x: 830, y: 660 },
-  ],
-  "Connection Error": [
-    { kitId: "badge", x: 870, y: 260, scale: 1.2 }, { kitId: "tab", x: 760, y: 480 },
-    { kitId: "small", x: 700, y: 660 }, { kitId: "ghost", x: 1000, y: 660 },
-  ],
-};
 
 const PIECE_SCALE = 0.62;
 const PATTERN_SCALE = 0.31;
@@ -184,7 +126,7 @@ interface PieceOpts {
 /** Shared plumbing for every live piece on this page. The page is always
  *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextFill, kitRow, setFocus, setKitSize, setKitKind } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextFill, kitIcons, kitRow, setFocus, setKitSize, setKitKind } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
@@ -199,7 +141,9 @@ function usePiece(p: PieceOpts) {
     name: KIT_COMPONENTS.find((c) => c.id === p.id)?.name ?? p.id,
     kit: {
       id: p.id, size, shape: p.shape ?? kitShapes[p.id], label: p.label, segments: p.segments,
-      icon: p.icon, value: p.value, baseState: p.baseState,
+      // a swapped component icon beats the specimen's demo glyph; an
+      // explicit "no icon" stays empty
+      icon: p.icon === null ? null : kitIcons[p.id] ?? p.icon, value: p.value, baseState: p.baseState,
       sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay, iconScale: p.iconScale,
       // explicit per-component vertical text adjustment (0 is a valid value)
       textOy: kitTextOy[`${p.id}:${size}`],
@@ -488,56 +432,27 @@ function InventoryScreen() {
  *  stage as the actual screen, quiet system metadata below. The viewport's
  *  aspect ratio is fixed and every nested piece reserves its largest state,
  *  so no interaction inside can move the card, the grid or the page. */
-function Pat({ n, name, cat, comps, asms, lead, wide, children }: {
+function Pat({ n, name, cat, comps, asms, lead, wide, bare, children }: {
   n: string; name: string; cat: string; comps: number; asms: number;
-  lead: KitComponentId; wide?: boolean; children: React.ReactNode;
+  lead: KitComponentId; wide?: boolean; bare?: boolean; children: React.ReactNode;
 }) {
-  const { setFocus } = useGen();
-  const [big, setBig] = useState(false);
-  useEffect(() => {
-    if (!big) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setBig(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [big]);
+  /* v57: the open/edit entry points are parked — patterns are reference
+     compositions for now, so the header stays quiet. `lead` is kept in the
+     signature for when editing returns. */
+  void lead;
   return (
     <article className={`pat${wide ? " pat-wide" : ""}`}>
       <header className="pat-head">
         <span className="pat-num">{n}</span>
         <h4 className="pat-name">{name}</h4>
         <span className="pat-cat">{cat}</span>
-        {PATTERN_BOARDS[name] && (
-          <button className="pat-open" title={`Recreate ${name} on the Board — elements land in this arrangement, ready to nudge`}
-            onClick={() => { useGen.getState().addBoardItems(PATTERN_BOARDS[name]); useGen.getState().setPhase("board"); }}>
-            Edit on Board →
-          </button>
-        )}
-        <button className="pat-open" onClick={() => setBig(true)}
-          title={`Inspect ${name} at presentation size`}>
-          Open pattern →
-        </button>
       </header>
-      <div className="pat-view"><div className="sc">{children}</div></div>
+      <div className={`pat-view${bare ? " pat-bare" : ""}`}><div className="sc">{children}</div></div>
       <footer className="pat-foot">
         <span>{comps} registered components</span>
         <span>{asms} {asms === 1 ? "assembly" : "assemblies"}</span>
         <span>Fully editable</span>
       </footer>
-      {big && createPortal(
-        <div className="kp-patmodal" role="dialog" aria-modal="true" aria-label={`${name} — enlarged`} onClick={() => setBig(false)}>
-          <div className="kp-patmodal-card" onClick={(e) => e.stopPropagation()}>
-            <header className="pat-head">
-              <span className="pat-num">{n}</span>
-              <h4 className="pat-name">{name}</h4>
-              <span className="pat-cat">{cat} · phone-true sizes, shown big for desktop review</span>
-              <button className="pat-open" onClick={() => { setBig(false); setFocus(lead); }}>Edit in editor →</button>
-              <button className="pat-open" onClick={() => setBig(false)}>Close ✕</button>
-            </header>
-            <div className="pat-view kp-patbig"><div className="sc">{children}</div></div>
-          </div>
-        </div>,
-        document.body
-      )}
     </article>
   );
 }
@@ -808,8 +723,10 @@ export function KitPage() {
   // visible shell centers, whatever each node's scale and trim margins are
   const trackRailRef = useRef<HTMLDivElement>(null);
   const weekRailRef = useRef<HTMLDivElement>(null);
+  const mapRailRef = useRef<HTMLDivElement>(null);
   useShellRail(trackRailRef, ".kp-tnodezone");
   useShellRail(weekRailRef, ".kp-wkday");
+  useShellRail(mapRailRef, ".kp-node");
 
   // hero disclosure + sticky-nav orientation
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -845,13 +762,15 @@ export function KitPage() {
   const sheetEntries = (st: ReturnType<typeof useGen.getState>) => {
     {
       const pieceCfg = (cid: KitComponentId) => applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]);
-      const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}, v?: number, gstate: GenStateName = "default") => ({
-        name,
-        svg: renderKit(pieceCfg(cid), cid, effKitSize(st.kitSizes[cid]), gstate, v, st.kitShapes[cid], {
+      const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}, v?: number, gstate: GenStateName = "default") => {
+        const o = {
           expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`],
           row: cid === "datarow" ? st.kitRow : undefined, ...extra,
-        }),
-      });
+        };
+        // a swapped component icon rides every catalog entry that draws one
+        if (o.icon !== null) o.icon = st.kitIcons[cid] ?? o.icon;
+        return { name, svg: renderKit(pieceCfg(cid), cid, effKitSize(st.kitSizes[cid]), gstate, v, st.kitShapes[cid], o) };
+      };
       const entries = [
         ...KIT_COMPONENTS.map((c2) => rk(c2.id, c2.name)),
         rk("panel", "Container · Round", { kind: "circle" }),
@@ -1498,9 +1417,13 @@ export function KitPage() {
         </div>
         <div className="kp-tray kp-axis kp-race">
           <Piece id="leaderboard" caption="Position list · Top 5" scale={0.52} />
-          <Piece id="trophy" caption="Trophy · 1st place" scale={0.52} />
+          <Piece id="laptimes" caption="Lap comparison · you vs rival" scale={0.52} />
+          <Piece id="telemetry" caption="Telemetry · throttle, brake, speed" scale={0.52} />
         </div>
-        <div className="kp-meta"><span>Speed derives from the value — 0 to 280 across the sweep</span><span>Past 78% the dial enters the red zone and the readout takes the alarm tint</span><span>Kazuri Ring is drawn as a dimensional ribbon — elevation reads from the extruded walls</span><span>The map tracks three markers: you (glow), a rival (white) and the leader (alarm)</span></div>
+        <div className="kp-tray kp-axis kp-race">
+          <Piece id="startlights" caption="Start lights · click to arm" value={0.99} scale={0.52} ambient />
+        </div>
+        <div className="kp-meta"><span>Speed derives from the value — 0 to 280 across the sweep</span><span>Past 78% the dial enters the red zone and the readout takes the alarm tint</span><span>Kazuri Ring is drawn as a dimensional ribbon — elevation reads from the extruded walls</span><span>Graphs carry live engine data in real games — the traces here are specimens</span><span>Start lights arm pod by pod; zero is lights-out</span></div>
       </Sec>
 
       <Chapter n="03" id="parts" label="Build Parts" blurb="The construction vocabulary: parts, containers, assemblies and motion — with downloads." />
@@ -1848,7 +1771,7 @@ export function KitPage() {
           </div>
           <div className="gp-card">
             <div className="gp-title">Waypoints · connectors</div>
-            <div className="kp-map">
+            <div className="kp-map" ref={mapRailRef}>
               <span className="kp-line done" />
               <span className="kp-line" />
               <div className="kp-nodes">
@@ -2048,10 +1971,10 @@ export function KitPage() {
           <div className="pat-group">
             <div className="pat-ghead">
               <h3>Racing HUD</h3>
-              <p>A full cockpit HUD as one responsive 16:9 SVG — night race at the Kazuri Ring. Panels, meters and rows come from shared systems; every readout is data-driven, nothing is a photograph.</p>
+              <p>A full cockpit HUD as one responsive 16:9 SVG in the kit's own colors — night race at the Kazuri Ring. Panels, meters and rows come from shared systems; every readout is data-driven, nothing is a photograph.</p>
             </div>
             <div className="pat-grid">
-              <Pat n="R1" name="Racing HUD — Kazuri Ring" cat="Full Screen · 16:9" comps={9} asms={8} lead="speedo" wide>
+              <Pat n="R1" name="Racing HUD — Kazuri Ring" cat="Full Screen · 16:9" comps={9} asms={8} lead="speedo" wide bare>
                 <RacingHud />
               </Pat>
             </div>

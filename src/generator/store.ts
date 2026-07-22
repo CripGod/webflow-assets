@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { GenConfig, GenStateName, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
+import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
 import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, KIT_SHAPE, applyKitDesign, applyKitTextFill, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
@@ -187,14 +187,28 @@ interface GenStore {
   addToLibrary: (name: string) => void;
   removeFromLibrary: (id: string) => void;
   loadFromLibrary: (id: string) => void;
-  board: BoardItem[];
+  /* ── v57: multiple artboards — each with a name, aspect, items and its
+     own background. Item actions find their item across ALL boards, so
+     selection works anywhere; add actions target the ACTIVE board. */
+  boards: BoardDef[];
+  activeBoard: string;
+  setActiveBoard: (id: string) => void;
+  addBoard: () => void;
+  removeBoard: (id: string) => void;
+  renameBoard: (id: string, name: string) => void;
+  /** Reorder in the pages tray — InDesign style. */
+  moveBoard: (id: string, dir: -1 | 1) => void;
+  clearBoard: (id: string) => void;
+  /** Patch the ACTIVE board's background (image / show / opacity / blur). */
+  setBoardBg: (patch: Partial<Pick<BoardDef, "bgImage" | "bgShow" | "bgOpacity" | "bgBlur">>) => void;
   addToBoard: (libId: string) => void;
   /** Append a pre-placed set of kit pieces (starter templates). */
   addBoardItems: (items: { kitId: KitComponentId; x: number; y: number; scale?: number }[]) => void;
   /** Drop a live kit component on the board — follows the master style. */
   addKitToBoard: (kitId: KitComponentId) => void;
+  duplicateBoardItem: (id: string) => void;
   rotateBoardItem: (id: string, deg: number) => void;
-  boardAspect: "169" | "mobile";
+  /** Sets the ACTIVE board's aspect. */
   setBoardAspect: (a: "169" | "mobile") => void;
   boardSnap: boolean;
   setBoardSnap: (v: boolean) => void;
@@ -203,6 +217,11 @@ interface GenStore {
   moveBoardItem: (id: string, x: number, y: number) => void;
   scaleBoardItem: (id: string, scale: number) => void;
   removeBoardItem: (id: string) => void;
+  /** Board history — 100 levels, coalesced for continuous gestures. */
+  boardPast: string[];
+  boardFuture: string[];
+  undoBoard: () => void;
+  redoBoard: () => void;
   focus: KitComponentId | null;
   setFocus: (f: KitComponentId | null) => void;
   kitShapes: Partial<Record<KitComponentId, Shape>>;
@@ -218,6 +237,9 @@ interface GenStore {
    *  color while global Typography keeps driving everything else. */
   kitTextFill: Partial<Record<KitComponentId, string>>;
   setKitTextFill: (id: KitComponentId, color: string | null) => void;
+  /** Per-component icon swap — null restores the stock glyph. */
+  kitIcons: Partial<Record<KitComponentId, IconDef>>;
+  setKitIcon: (id: KitComponentId, def: IconDef | null) => void;
   /** Data rows (and objectives built from them) carry their own two-text-group
    *  content model — independent size, tracking and vertical placement per
    *  group, plus slot toggles. Too intricate for the generic text controls. */
@@ -244,8 +266,6 @@ interface GenStore {
   setBgImage: (url: string | null) => void;
   helpOn: boolean;
   setHelpOn: (v: boolean) => void;
-  bgShow: boolean; bgOpacity: number; bgBlur: number;
-  setBg: (p: Partial<{ bgShow: boolean; bgOpacity: number; bgBlur: number }>) => void;
   refreshLibraryItem: (id: string) => void;
 
   update: (fn: (c: GenConfig) => void) => void;
@@ -286,6 +306,19 @@ export interface BoardItem {
   /** kit-asset items render the CURRENT design live (no library snapshot) */
   kitId?: KitComponentId;
 }
+/** One artboard — a named, fixed-resolution stage with its own pieces and
+ *  background. Backgrounds are object URLs, so the image itself is
+ *  session-only; everything else persists. */
+export interface BoardDef {
+  id: string;
+  name: string;
+  aspect: "169" | "mobile";
+  items: BoardItem[];
+  bgImage?: string | null;
+  bgShow?: boolean;
+  bgOpacity?: number;
+  bgBlur?: number;
+}
 /** Two independent text groups + slot toggles for the Data Row family. */
 export interface RowCfg {
   title: string; sub: string;
@@ -316,6 +349,45 @@ function loadJson<T>(key: string, fallback: T): T {
 }
 function saveJson(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* quota — keep in memory */ }
+}
+
+/* ── v57: artboard plumbing — persistence, migration, coalesced history ──
+   Backgrounds are object URLs, so they are stripped on save (session-only);
+   continuous gestures (drag / slider) share one history step via their key. */
+type BoardsGet = () => { boards: BoardDef[]; activeBoard: string; boardPast: string[]; boardFuture: string[] };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LooseSet = (p: any) => void;
+let histKey = "";
+let histT = 0;
+const saveBoards = (get: () => { boards: BoardDef[]; activeBoard: string }) =>
+  saveJson(BOARD_KEY, { v: 2, active: get().activeBoard, boards: get().boards.map((b) => ({ ...b, bgImage: undefined })) });
+const pushBoardHistory = (get: BoardsGet, set: LooseSet, key: string | null) => {
+  const now = Date.now();
+  if (key && key === histKey && now - histT < 900) { histT = now; return; }
+  histKey = key ?? "";
+  histT = now;
+  set({ boardPast: [...get().boardPast, JSON.stringify({ boards: get().boards, active: get().activeBoard })].slice(-100), boardFuture: [] });
+};
+const mutateBoards = (get: BoardsGet, set: LooseSet, key: string | null, fn: (bs: BoardDef[]) => BoardDef[]) => {
+  pushBoardHistory(get, set, key);
+  set({ boards: fn(get().boards) });
+  saveBoards(get);
+};
+const mutateItem = (get: BoardsGet, set: LooseSet, key: string, id: string, fn: (b: BoardItem) => BoardItem) =>
+  mutateBoards(get, set, key, (bs) => bs.map((bd) => (bd.items.some((b) => b.id === id) ? { ...bd, items: bd.items.map((b) => (b.id === id ? fn(b) : b)) } : bd)));
+function loadBoards(): { boards: BoardDef[]; activeBoard: string } {
+  const raw = loadJson<unknown>(BOARD_KEY, null);
+  if (Array.isArray(raw)) {
+    // v1 format: a single flat item list — wrap it as Board 1
+    const aspect: "169" | "mobile" = loadJson<string>("ui-generator-boardaspect", "169") === "mobile" ? "mobile" : "169";
+    return { boards: [{ id: "ab1", name: "Board 1", aspect, items: raw as BoardItem[] }], activeBoard: "ab1" };
+  }
+  if (raw && typeof raw === "object" && Array.isArray((raw as { boards?: unknown }).boards) && (raw as { boards: BoardDef[] }).boards.length) {
+    const bs = (raw as { boards: BoardDef[] }).boards.map((b) => ({ ...b, bgImage: null }));
+    const act = (raw as { active?: string }).active;
+    return { boards: bs, activeBoard: act && bs.some((b) => b.id === act) ? act : bs[0].id };
+  }
+  return { boards: [{ id: "ab1", name: "Board 1", aspect: "169", items: [] }], activeBoard: "ab1" };
 }
 
 let saveTimer: number | undefined;
@@ -377,21 +449,53 @@ export const useGen = create<GenStore>((set, get) => ({
   },
   removeFromLibrary: (id) => {
     const library = get().library.filter((l) => l.id !== id);
-    const board = get().board.filter((b) => b.libId !== id);
-    saveJson(LIB_KEY, library); saveJson(BOARD_KEY, board);
-    set({ library, board });
+    saveJson(LIB_KEY, library);
+    set({ library });
+    mutateBoards(get, set, null, (bs) => bs.map((bd) => ({ ...bd, items: bd.items.filter((b) => b.libId !== id) })));
   },
   loadFromLibrary: (id) => {
     const item = get().library.find((l) => l.id === id);
     if (item) get().replaceConfig((typeof structuredClone === "function" ? structuredClone(item.cfg) : JSON.parse(JSON.stringify(item.cfg))) as GenConfig);
   },
-  board: loadJson<BoardItem[]>(BOARD_KEY, []),
+  ...loadBoards(),
+  setActiveBoard: (id) => { if (get().boards.some((b) => b.id === id)) set({ activeBoard: id }); },
+  addBoard: () => {
+    const id = "ab" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const cur = get().boards.find((b) => b.id === get().activeBoard);
+    mutateBoards(get, set, null, (bs) => [...bs, { id, name: `Board ${bs.length + 1}`, aspect: cur?.aspect ?? "169", items: [] }]);
+    set({ activeBoard: id, boardSel: null });
+    saveBoards(get);
+  },
+  removeBoard: (id) => {
+    mutateBoards(get, set, null, (bs) => {
+      const rest = bs.filter((b) => b.id !== id);
+      // never zero artboards — deleting the last one leaves a fresh empty one
+      return rest.length ? rest : [{ id: "ab" + Date.now().toString(36), name: "Board 1", aspect: "169" as const, items: [] }];
+    });
+    const bs = get().boards;
+    if (!bs.some((b) => b.id === get().activeBoard)) set({ activeBoard: bs[0].id, boardSel: null });
+    saveBoards(get);
+  },
+  renameBoard: (id, name) => mutateBoards(get, set, `rename:${id}`, (bs) => bs.map((b) => (b.id === id ? { ...b, name: name.slice(0, 40) } : b))),
+  moveBoard: (id, dir) => mutateBoards(get, set, null, (bs) => {
+    const i = bs.findIndex((b) => b.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= bs.length) return bs;
+    const next = [...bs];
+    [next[i], next[j]] = [next[j], next[i]];
+    return next;
+  }),
+  clearBoard: (id) => {
+    mutateBoards(get, set, null, (bs) => bs.map((b) => (b.id === id ? { ...b, items: [] } : b)));
+    set({ boardSel: null });
+  },
+  setBoardBg: (patch) => mutateBoards(get, set, "bg", (bs) => bs.map((b) => (b.id === get().activeBoard ? { ...b, ...patch } : b))),
   addToBoard: (libId) => {
-    const n = get().board.length;
+    const act = get().boards.find((b) => b.id === get().activeBoard);
+    const n = act?.items.length ?? 0;
     const item: BoardItem = { id: "bd" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), libId, x: 80 + (n % 3) * 340, y: 80 + Math.floor(n / 3) * 220 };
-    const board = [...get().board, item];
-    saveJson(BOARD_KEY, board);
-    set({ board, phase: "board" });
+    mutateBoards(get, set, null, (bs) => bs.map((b) => (b.id === get().activeBoard ? { ...b, items: [...b.items, item] } : b)));
+    set({ phase: "board", boardSel: item.id });
   },
   addBoardItems: (items) => {
     // starter templates: a full set of pieces, pre-sized and pre-placed
@@ -400,42 +504,58 @@ export const useGen = create<GenStore>((set, get) => ({
       id: "bd" + stamp + i + Math.random().toString(36).slice(2, 5),
       libId: "", kitId: it.kitId, x: it.x, y: it.y, ...(it.scale ? { scale: it.scale } : {}),
     }));
-    const board = [...get().board, ...add];
-    saveJson(BOARD_KEY, board);
-    set({ board, boardSel: null });
+    mutateBoards(get, set, null, (bs) => bs.map((b) => (b.id === get().activeBoard ? { ...b, items: [...b.items, ...add] } : b)));
+    set({ boardSel: null });
   },
   addKitToBoard: (kitId) => {
-    const n = get().board.length;
-    const item: BoardItem = { id: "bd" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), libId: "", kitId, x: 640 + (n % 3) * 90, y: 420 + (n % 3) * 60 };
-    const board = [...get().board, item];
-    saveJson(BOARD_KEY, board);
-    set({ board, boardSel: item.id });
+    const act = get().boards.find((b) => b.id === get().activeBoard);
+    const n = act?.items.length ?? 0;
+    const mob = act?.aspect === "mobile";
+    const item: BoardItem = { id: "bd" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), libId: "", kitId, x: (mob ? 60 : 640) + (n % 3) * (mob ? 30 : 90), y: (mob ? 240 : 420) + (n % 3) * 60 };
+    mutateBoards(get, set, null, (bs) => bs.map((b) => (b.id === get().activeBoard ? { ...b, items: [...b.items, item] } : b)));
+    set({ boardSel: item.id });
   },
-  rotateBoardItem: (id, deg) => {
-    const board = get().board.map((b) => (b.id === id ? { ...b, rot: Math.max(-180, Math.min(180, Math.round(deg))) } : b));
-    saveJson(BOARD_KEY, board);
-    set({ board });
+  duplicateBoardItem: (id) => {
+    let copy: BoardItem | null = null;
+    mutateBoards(get, set, null, (bs) => bs.map((bd) => {
+      const src = bd.items.find((b) => b.id === id);
+      if (!src) return bd;
+      copy = { ...src, id: "bd" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), x: src.x + 28, y: src.y + 28 };
+      return { ...bd, items: [...bd.items, copy] };
+    }));
+    if (copy) set({ boardSel: (copy as BoardItem).id });
   },
-  boardAspect: (loadJson<string>("ui-generator-boardaspect", "169") === "mobile" ? "mobile" : "169") as "169" | "mobile",
-  setBoardAspect: (a) => { saveJson("ui-generator-boardaspect", a); set({ boardAspect: a }); },
+  rotateBoardItem: (id, deg) => mutateItem(get, set, `rot:${id}`, id, (b) => ({ ...b, rot: Math.max(-180, Math.min(180, Math.round(deg))) })),
+  setBoardAspect: (a) => mutateBoards(get, set, "aspect", (bs) => bs.map((b) => (b.id === get().activeBoard ? { ...b, aspect: a } : b))),
   boardSnap: loadJson<boolean>("ui-generator-boardsnap", true),
   setBoardSnap: (v) => { saveJson("ui-generator-boardsnap", v); set({ boardSnap: v }); },
   boardSel: null,
   setBoardSel: (id) => set({ boardSel: id }),
-  moveBoardItem: (id, x, y) => {
-    const board = get().board.map((b) => (b.id === id ? { ...b, x, y } : b));
-    set({ board });
-    saveJson(BOARD_KEY, board);
-  },
-  scaleBoardItem: (id, scale) => {
-    const board = get().board.map((b) => (b.id === id ? { ...b, scale: Math.max(0.3, Math.min(2, scale)) } : b));
-    saveJson(BOARD_KEY, board);
-    set({ board });
-  },
+  moveBoardItem: (id, x, y) => mutateItem(get, set, `move:${id}`, id, (b) => ({ ...b, x, y })),
+  scaleBoardItem: (id, scale) => mutateItem(get, set, `scale:${id}`, id, (b) => ({ ...b, scale: Math.max(0.3, Math.min(2, scale)) })),
   removeBoardItem: (id) => {
-    const board = get().board.filter((b) => b.id !== id);
-    saveJson(BOARD_KEY, board);
-    set({ board });
+    mutateBoards(get, set, null, (bs) => bs.map((bd) => ({ ...bd, items: bd.items.filter((b) => b.id !== id) })));
+    if (get().boardSel === id) set({ boardSel: null });
+  },
+  boardPast: [],
+  boardFuture: [],
+  undoBoard: () => {
+    const past = get().boardPast;
+    if (!past.length) return;
+    const present = JSON.stringify({ boards: get().boards, active: get().activeBoard });
+    const prev = JSON.parse(past[past.length - 1]) as { boards: BoardDef[]; active: string };
+    histKey = ""; // an undo breaks any coalescing run
+    set({ boards: prev.boards, activeBoard: prev.active, boardPast: past.slice(0, -1), boardFuture: [...get().boardFuture, present].slice(-100), boardSel: null });
+    saveBoards(get);
+  },
+  redoBoard: () => {
+    const fut = get().boardFuture;
+    if (!fut.length) return;
+    const present = JSON.stringify({ boards: get().boards, active: get().activeBoard });
+    const next = JSON.parse(fut[fut.length - 1]) as { boards: BoardDef[]; active: string };
+    histKey = "";
+    set({ boards: next.boards, activeBoard: next.active, boardFuture: fut.slice(0, -1), boardPast: [...get().boardPast, present].slice(-100), boardSel: null });
+    saveBoards(get);
   },
   focus: null,
   // choosing a piece to edit lifts any rail focus filter — the user asked
@@ -485,6 +605,16 @@ export const useGen = create<GenStore>((set, get) => ({
     if (color) kitTextFill[id] = color; else delete kitTextFill[id];
     saveJson("ui-generator-kittextfill", kitTextFill);
     set({ kitTextFill });
+  },
+  /* v57: per-component icon swap — the override rides opts.icon everywhere
+     the component draws a glyph (kit page, board, exports). */
+  kitIcons: loadJson<Partial<Record<KitComponentId, IconDef>>>("ui-generator-kiticons", {}),
+  setKitIcon: (id, def) => {
+    markTouched();
+    const kitIcons = { ...get().kitIcons };
+    if (def) kitIcons[id] = def; else delete kitIcons[id];
+    saveJson("ui-generator-kiticons", kitIcons);
+    set({ kitIcons });
   },
   kitDesigns: loadJson<Partial<Record<KitComponentId, KitDesign>>>("ui-generator-kitdesigns", {}),
   setKitDesign: (id, d) => {
@@ -563,8 +693,6 @@ export const useGen = create<GenStore>((set, get) => ({
   setBgImage: (url) => set({ bgImage: url }),
   helpOn: false,
   setHelpOn: (v) => set({ helpOn: v }),
-  bgShow: true, bgOpacity: 100, bgBlur: 0,
-  setBg: (p) => set(p),
   refreshLibraryItem: (id) => {
     const clone = typeof structuredClone === "function" ? structuredClone : ((x: unknown) => JSON.parse(JSON.stringify(x)));
     const library = get().library.map((l) => l.id === id ? { ...l, cfg: clone(get().cfg) as GenConfig } : l);

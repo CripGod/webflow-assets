@@ -625,7 +625,8 @@ export type KitComponentId =
   | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
   | "flipclock" | "stopwatch" | "timerdigits"
-  | "speedo" | "speedo2" | "circuit" | "leaderboard" | "trophy";
+  | "speedo" | "speedo2" | "circuit" | "leaderboard" | "trophy"
+  | "laptimes" | "telemetry" | "startlights";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -664,7 +665,10 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "speedo2", name: "Speedo · HUD" },
   { id: "circuit", name: "Race circuit" },
   { id: "leaderboard", name: "Position list" },
-  { id: "trophy", name: "Trophy · 1st" },
+  // ("trophy" renders but is deregistered — off-brand for this kit)
+  { id: "laptimes", name: "Lap comparison" },
+  { id: "telemetry", name: "Telemetry" },
+  { id: "startlights", name: "Start lights" },
 ];
 
 /* A locked component keeps a full design snapshot of its own — the master
@@ -711,6 +715,8 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   datarow: "kenneyRect",
   slot: "kenneyRect",
   leaderboard: "kenneyRect", // rows are rectangular content — oval shells clip them
+  laptimes: "kenneyRect",    // plots are rectangular too
+  telemetry: "kenneyRect",
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the

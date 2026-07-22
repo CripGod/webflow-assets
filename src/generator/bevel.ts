@@ -1992,6 +1992,114 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
 </g>
 </svg>`;
     }
+    case "laptimes": {
+      /* Lap comparison — two lap-time traces on one techy plot. Every value
+         is live engine data in real games; the panel is the kit shell. */
+      const w = 340 * k, h = 240 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 168 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      if (opts.part === "base") return track;
+      const inset = bw + 10;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const gid12 = "lp" + UID++;
+      const x0 = 39 + inset + 14 * k, x1 = 39 + w - inset - 14 * k;
+      const y0 = 30 + inset + 34 * k, y1 = 30 + h - inset - 30 * k;
+      const you = [72, 68, 65, 66, 62, 63, 60, 58];
+      const rival = [70, 69, 66, 67, 64.5, 65, 63, 62];
+      const lo = 56, hi = 74;
+      const pt = (v: number, i: number, arr: number[]) =>
+        `${(x0 + ((x1 - x0) * i) / (arr.length - 1)).toFixed(1)},${(y0 + ((v - lo) / (hi - lo)) * (y1 - y0)).toFixed(1)}`;
+      const grid = [0.25, 0.5, 0.75].map((t) =>
+        `<line x1="${x0.toFixed(1)}" y1="${(y0 + (y1 - y0) * t).toFixed(1)}" x2="${x1.toFixed(1)}" y2="${(y0 + (y1 - y0) * t).toFixed(1)}" stroke="rgba(255,255,255,0.12)" stroke-width="1" stroke-dasharray="3 5"/>`).join("");
+      const youPts = you.map((v, i) => pt(v, i, you)).join(" ");
+      const last = youPts.split(" ").pop()!.split(",");
+      const parts =
+        `<defs><filter id="${gid12}g" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.7"/></filter></defs>` +
+        `<text x="${x0.toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${hexRgba(glow, 0.8)}">LAP COMPARISON</text>` +
+        `<circle cx="${(x1 - 92 * k).toFixed(1)}" cy="${(30 + inset + 12 * k).toFixed(1)}" r="${(3.5 * k).toFixed(1)}" fill="${glow}"/>` +
+        `<text x="${(x1 - 84 * k).toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(10 * k).toFixed(1)}" font-weight="700" fill="rgba(255,255,255,0.75)">YOU</text>` +
+        `<circle cx="${(x1 - 48 * k).toFixed(1)}" cy="${(30 + inset + 12 * k).toFixed(1)}" r="${(3.5 * k).toFixed(1)}" fill="rgba(255,255,255,0.5)"/>` +
+        `<text x="${(x1 - 40 * k).toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(10 * k).toFixed(1)}" font-weight="700" fill="rgba(255,255,255,0.55)">RIVAL</text>` +
+        grid +
+        `<polyline points="${rival.map((v, i) => pt(v, i, rival)).join(" ")}" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="${(2 * k).toFixed(1)}" stroke-dasharray="5 5" stroke-linejoin="round"/>` +
+        `<polyline points="${youPts}" fill="none" stroke="${glow}" stroke-width="${(3 * k).toFixed(1)}" stroke-linejoin="round" stroke-linecap="round" filter="url(#${gid12}g)"/>` +
+        `<circle cx="${last[0]}" cy="${last[1]}" r="${(4.5 * k).toFixed(1)}" fill="${glow}" filter="url(#${gid12}g)"/>` +
+        `<text x="${x0.toFixed(1)}" y="${(y1 + 20 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(9.5 * k).toFixed(1)}" font-weight="700" letter-spacing=".12em" fill="rgba(255,255,255,0.4)">LAP 1</text>` +
+        `<text x="${x1.toFixed(1)}" y="${(y1 + 20 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(9.5 * k).toFixed(1)}" font-weight="700" letter-spacing=".12em" fill="rgba(255,255,255,0.4)" text-anchor="end">LAP 8</text>` +
+        `<text x="${x1.toFixed(1)}" y="${(y0 - 8 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(10.5 * k).toFixed(1)}" font-weight="800" fill="#4ADE80" text-anchor="end">−0.7s / LAP</text>`;
+      return inject(track, `<g opacity="${dim}">${parts}</g>`).replace("<svg ", `<svg data-race="laps" `);
+    }
+    case "telemetry": {
+      /* Telemetry — throttle / brake / speed traces over one sector. The
+         techy pit-wall panel; every trace is live engine data in games. */
+      const w = 340 * k, h = 240 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 168 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      if (opts.part === "base") return track;
+      const inset = bw + 10;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const gid13 = "tm" + UID++;
+      const x0 = 39 + inset + 14 * k, x1 = 39 + w - inset - 14 * k;
+      const y0 = 30 + inset + 34 * k, y1 = 30 + h - inset - 30 * k;
+      const W3 = x1 - x0, H3 = y1 - y0;
+      // normalized traces along the sector (0..1 of plot height)
+      const thr = [1, 1, 0.6, 0.2, 0.5, 1, 1, 0.75, 0.3, 0.7, 1, 1];
+      const brk = [0, 0, 0.5, 0.9, 0.2, 0, 0, 0.3, 0.85, 0.15, 0, 0];
+      const spd = [0.8, 0.9, 0.7, 0.4, 0.55, 0.8, 0.95, 0.75, 0.45, 0.6, 0.85, 0.98];
+      const px = (i: number, arr: number[]) => (x0 + (W3 * i) / (arr.length - 1)).toFixed(1);
+      const py = (v: number) => (y1 - v * H3).toFixed(1);
+      const area = (arr: number[]) => `M ${x0.toFixed(1)} ${y1.toFixed(1)} ` + arr.map((v, i) => `L ${px(i, arr)} ${py(v * 0.5)}`).join(" ") + ` L ${x1.toFixed(1)} ${y1.toFixed(1)} Z`;
+      const vgrid = [0.2, 0.4, 0.6, 0.8].map((t) =>
+        `<line x1="${(x0 + W3 * t).toFixed(1)}" y1="${y0.toFixed(1)}" x2="${(x0 + W3 * t).toFixed(1)}" y2="${y1.toFixed(1)}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`).join("");
+      const parts =
+        `<defs><filter id="${gid13}g" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.65"/></filter></defs>` +
+        `<text x="${x0.toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${hexRgba(glow, 0.8)}">TELEMETRY · S2</text>` +
+        `<text x="${x1.toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(10 * k).toFixed(1)}" font-weight="700" text-anchor="end"><tspan fill="#4ADE80">THR</tspan><tspan fill="rgba(255,255,255,0.3)"> · </tspan><tspan fill="${hexMix("#FF4D5A", bevel, 0.18)}">BRK</tspan><tspan fill="rgba(255,255,255,0.3)"> · </tspan><tspan fill="${glow}">SPD</tspan></text>` +
+        vgrid +
+        `<path d="${area(thr)}" fill="#4ADE80" opacity="0.28"/>` +
+        `<path d="${area(brk)}" fill="${hexMix("#FF4D5A", bevel, 0.18)}" opacity="0.3"/>` +
+        `<polyline points="${spd.map((v, i) => `${px(i, spd)},${py(v)}`).join(" ")}" fill="none" stroke="${glow}" stroke-width="${(2.6 * k).toFixed(1)}" stroke-linejoin="round" stroke-linecap="round" filter="url(#${gid13}g)"/>` +
+        `<line x1="${x0.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke="rgba(255,255,255,0.25)" stroke-width="1.2"/>` +
+        `<text x="${x0.toFixed(1)}" y="${(y1 + 20 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(9.5 * k).toFixed(1)}" font-weight="700" letter-spacing=".12em" fill="rgba(255,255,255,0.4)">T4</text>` +
+        `<text x="${x1.toFixed(1)}" y="${(y1 + 20 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(9.5 * k).toFixed(1)}" font-weight="700" letter-spacing=".12em" fill="rgba(255,255,255,0.4)" text-anchor="end">T7</text>`;
+      return inject(track, `<g opacity="${dim}">${parts}</g>`).replace("<svg ", `<svg data-race="telemetry" `);
+    }
+    case "startlights": {
+      /* Start lights — the five-pod countdown gantry. value lights the pods
+         one by one; zero is lights-out. Click revs the sequence live. */
+      const podR = 22 * k;
+      const gapP = 16 * k;
+      const housW = podR * 2 * 5 + gapP * 6, housH = podR * 2 + 26 * k;
+      const pad5 = 44;
+      const W2 = housW + pad5 * 2, H2 = housH + 34 * k + pad5 * 2;
+      const hx = pad5, hy = pad5 + 14 * k;
+      const v3 = clamp(value ?? 0.6, 0, 1);
+      const lit = Math.round(v3 * 5);
+      const alarm = hexMix("#FF4D5A", bevel, 0.15);
+      const gid14 = "sl" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const isBase = opts.part === "base";
+      let pods = "";
+      for (let i = 0; i < 5; i++) {
+        const cx3 = hx + gapP + podR + i * (podR * 2 + gapP);
+        const cy3 = hy + housH / 2;
+        const on = !isBase && i < lit;
+        pods +=
+          `<circle cx="${cx3.toFixed(1)}" cy="${cy3.toFixed(1)}" r="${(podR + 4 * k).toFixed(1)}" fill="${darken(bevel, 0.62)}" stroke="${darken(bevel, 0.4)}" stroke-width="1.5"/>` +
+          `<circle cx="${cx3.toFixed(1)}" cy="${cy3.toFixed(1)}" r="${podR.toFixed(1)}" fill="${on ? alarm : hexMix(bevel, "#12141C", 0.78)}"${on ? ` filter="url(#${gid14}g)"` : ""}/>` +
+          (on ? `<ellipse cx="${(cx3 - podR * 0.3).toFixed(1)}" cy="${(cy3 - podR * 0.38).toFixed(1)}" rx="${(podR * 0.34).toFixed(1)}" ry="${(podR * 0.2).toFixed(1)}" fill="#FFFFFF" opacity="0.55"/>`
+            : `<circle cx="${cx3.toFixed(1)}" cy="${cy3.toFixed(1)}" r="${(podR * 0.72).toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>`);
+      }
+      const tag = isBase ? "" :
+        `<text x="${(W2 / 2).toFixed(1)}" y="${(hy + housH + 24 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".3em" fill="${lit === 0 ? "#4ADE80" : isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.3)}" text-anchor="middle" opacity="${dim}">${lit === 0 ? "LIGHTS OUT" : "GET READY"}</text>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" data-shell="${hx.toFixed(1)} ${hy.toFixed(1)} ${housW.toFixed(1)} ${housH.toFixed(1)}" role="img" aria-label="start lights" data-race="lights">
+<defs><filter id="${gid14}g" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="0" stdDeviation="${(6 * k).toFixed(1)}" flood-color="${alarm}" flood-opacity="0.8"/></filter></defs>
+<g opacity="${dim}">
+  <rect x="${(W2 / 2 - 3 * k).toFixed(1)}" y="${(pad5 - 12 * k).toFixed(1)}" width="${(6 * k).toFixed(1)}" height="${(16 * k).toFixed(1)}" fill="${darken(bevel, 0.5)}"/>
+  <path d="${roundRect(hx, hy, housW, housH, 14 * k)}" fill="${hexMix(bevel, "#0A0C14", 0.68)}" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>
+  ${pods}
+  ${tag}
+</g>
+</svg>`;
+    }
     case "dropdown": {
       const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy });
       if (state !== "pressed") return btn;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize } from "@/generator/model";
-import type { GenStateName, BlendMode , PatternType } from "@/generator/model";
+import type { GenStateName, BlendMode, PatternType, KitComponentId } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
 import { renderBevel, renderKit, shapePath } from "@/generator/bevel";
@@ -119,7 +119,7 @@ function Section({ id, title, summary, right, children }: {
   const isOpen = !!open[id];
   // focus mode: a rail choice means "show me this" — everything else steps
   // back until the filter is lifted. Contextual sections always show.
-  if (sectionFilter && !(GROUPS[sectionFilter] ?? []).includes(id) && id !== "datarowsec") return null;
+  if (sectionFilter && !(GROUPS[sectionFilter] ?? []).includes(id) && id !== "datarowsec" && id !== "kiticon") return null;
   return (
     <section className="sec" data-sec={id}>
       <div className="sec-head" onClick={() => toggle(id)} role="button" aria-expanded={isOpen} tabIndex={0}
@@ -247,7 +247,8 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, bgShow, bgOpacity, bgBlur, setBg, refreshLibraryItem, replaceConfig, resetAll } = useGen();
+  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, refreshLibraryItem, replaceConfig, resetAll } = useGen();
+  const actBd = boards.find((b) => b.id === activeBoard);
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
@@ -259,18 +260,21 @@ export function Panel() {
   const [browseLib, setBrowseLib] = useState(savedLib);
   const libIsReady = libLoaded(browseLib);
 
+  // v57: the component-icon swap needs the library even while the master
+  // icon section stays parked — load it whenever a swappable piece is focused
+  const iconSwappable = !!focus && (["iconbtn", "chip", "resource", "slot", "datarow", "badge"] as KitComponentId[]).includes(focus);
   useEffect(() => {
-    if (!ICONS_ENABLED) return;
+    if (!ICONS_ENABLED && !iconSwappable) return;
     let live = true;
     if (!libLoaded(browseLib)) {
       void loadLib(browseLib).then(() => { if (live) setLibTick((t) => t + 1); });
     }
     return () => { live = false; };
-  }, [browseLib]);
+  }, [browseLib, iconSwappable]);
 
   const bigGrid = sectionFilter === "icons";
   const results = useMemo(
-    () => (ICONS_ENABLED ? searchLib(browseLib, iconQuery, bigGrid ? 60 : 24) : []),
+    () => (ICONS_ENABLED || iconSwappable ? searchLib(browseLib, iconQuery, bigGrid ? 60 : 24) : []),
     // libTick re-runs the search once an async library lands
     [browseLib, iconQuery, bigGrid, libTick] // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -322,10 +326,10 @@ export function Panel() {
         <section className="sec">
           <div className="sec-head"><h3>Backdrop</h3></div>
           <div className="sec-body">
-            <label className="check"><input type="checkbox" checked={bgShow} onChange={(e) => setBg({ bgShow: e.target.checked })} /> Show background image</label>
-            <Slider label="Opacity" value={bgOpacity} min={0} max={100} unit="%" onChange={(v) => setBg({ bgOpacity: v })} />
-            <Slider label="Blur" value={bgBlur} min={0} max={20} unit="px" onChange={(v) => setBg({ bgBlur: v })} />
-            <div className="helper">Artist-only — the backdrop never ships in exports. Upload or clear the image from the canvas toolbar; canvas color dots switch to a flat color.</div>
+            <label className="check"><input type="checkbox" checked={actBd?.bgShow ?? true} onChange={(e) => setBoardBg({ bgShow: e.target.checked })} /> Show background image</label>
+            <Slider label="Opacity" value={actBd?.bgOpacity ?? 100} min={10} max={100} unit="%" onChange={(v) => setBoardBg({ bgOpacity: v })} />
+            <Slider label="Blur" value={actBd?.bgBlur ?? 0} min={0} max={14} unit="px" onChange={(v) => setBoardBg({ bgBlur: v })} />
+            <div className="helper">The ACTIVE artboard's backdrop — upload it in the board's right panel; it crops to the board bounds and never ships in asset exports.</div>
           </div>
         </section>
         <section className="sec">
@@ -566,6 +570,44 @@ export function Panel() {
         </button>
         <div className="helper">Silhouette is pure geometry — switching it keeps your material, lighting, colors and type exactly as they are.</div>
       </Section>
+
+      {/* ── v57: Component icon — swap the glyph on the focused piece ── */}
+      {iconSwappable && focus && (
+        <Section id="kiticon" title="Component icon"
+          summary={<span>{kitIcons[focus]?.name ?? "stock glyph"}</span>}>
+          <div className="helper">Swap the glyph on <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and every export follow. Icons stay engine-swappable; nothing is baked into the shell.</div>
+          <label className="fieldbox" style={{ minWidth: 0 }}>
+            <span className="fl">Icon library</span>
+            <select value={browseLib} aria-label="Icon library" onChange={(e) => setBrowseLib(e.target.value)}>
+              {ICON_LIBS.map((l) => <option key={l.id} value={l.id}>{l.name} — {l.note}</option>)}
+            </select>
+            <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+          </label>
+          <div className="searchbox">
+            <Search size={15} strokeWidth={2} />
+            <input value={iconQuery} placeholder={`Search ${ICON_LIBS.find((l) => l.id === browseLib)?.name}...`} aria-label="Search component icons"
+              onChange={(e) => setIconQuery(e.target.value)} />
+          </div>
+          {!libIsReady && <div className="helper">Loading library…</div>}
+          <div className="icongrid">
+            {results.map((name) => {
+              const def = getDef(browseLib, name);
+              if (!def) return null;
+              const on = kitIcons[focus]?.lib === browseLib && kitIcons[focus]?.name === name;
+              return (
+                <button key={name} className={on ? "on" : ""} title={name}
+                  onClick={() => setKitIcon(focus, def)}
+                  dangerouslySetInnerHTML={{ __html: previewSvg(def) }} />
+              );
+            })}
+          </div>
+          {kitIcons[focus] && (
+            <button className="resetstate" onClick={() => setKitIcon(focus, null)}>
+              <RotateCcw size={13} strokeWidth={2} /> Back to the stock glyph
+            </button>
+          )}
+        </Section>
+      )}
 
       {outlines && (
         <div className="devoutlines" role="dialog" aria-label="Silhouette outline comparison" onClick={() => setOutlines(false)}>
