@@ -12,6 +12,8 @@ import type { GenConfig, GenStateName, Shape, SpecularMode } from "../generator/
 import { defaultConfig, STOCK_ICONS, SPECULAR_MODES, PRESETS, presetById, applyPresetCandy, fontByName } from "../generator/model";
 import { renderShell, shellPaths, shapePath } from "../generator/bevel";
 import { IMPORTED_SHAPES, validateImported, auditInset, type ImportedSilhouette } from "../generator/importedShapes";
+import { renderSkinRecipe, type ButtonSkinRecipe } from "../generator/skins";
+import { SKIN_RECIPES } from "../generator/skinRecipes";
 import { ensureFont } from "../generator/fonts";
 
 /* Engine-native material presets, mapped from the brief's palettes. The
@@ -137,6 +139,68 @@ function fitFs(cfg: GenConfig, label: string, w: number, h: number, withIcon: bo
   const fit = band / Math.max(1, label.length * factor);
   const fsR = Math.min(house, fit);
   return { fs: fsR / scaleK, bandLimited: fit < house };
+}
+
+/* ── Layered Skin proof card — recipe-driven assembly vs the single shell.
+   Everything rendered here comes from renderSkinRecipe + pure recipe data;
+   the side-by-side single-shell render is the same v64 pipeline. */
+function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; uniform: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const w = 200 * PX, h = 100 * PX;
+  const hero = useMemo(() => renderSkinRecipe(r, "default", w, h, { caps: !uniform, wireframe: wire }), [r, w, h, uniform, wire]);
+  const shellTwin = useMemo(() => {
+    const s = IMPORTED_SHAPES[r.id];
+    const cfg = skinnedConfig(s, {}, true, false);
+    const f = fitFs(cfg, s.label, w * 0.66, h * 0.66, false);
+    return renderShell(cfg, "default", w * 0.66, h * 0.66, { label: s.label, iconDef: null, fs: f.fs });
+  }, [r, w, h]);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(hero); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch { /* clipboard unavailable */ }
+  };
+  return (
+    <article className="slab-card slab-skincard" data-skin-card={r.id}>
+      <header className="slab-cardhead">
+        <div>
+          <h3>{r.name}</h3>
+          <p className="slab-dims">{r.parts.length} authored parts · {r.parts.filter((p) => p.mirrorX).length} mirrored · hull = footprint, shadow, extrusion, max clip</p>
+        </div>
+        <span className="slab-rating slab-rating--pass-lim">LAYERED SKIN</span>
+      </header>
+      <div className="slab-hero">
+        <div className="slab-heroart" dangerouslySetInnerHTML={{ __html: hero }} />
+      </div>
+      <div className="slab-states" data-role="skin-states">
+        {STATES.map((st) => (
+          <figure key={st}>
+            <div dangerouslySetInnerHTML={{ __html: renderSkinRecipe(r, st, w * 0.55, h * 0.55, { caps: !uniform }) }} />
+            <figcaption>{st}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div className="slab-aspects" data-role="skin-aspects">
+        {ASPECTS.map((a) => (
+          <figure key={a.w} data-aspect={a.w}>
+            <div dangerouslySetInnerHTML={{ __html: renderSkinRecipe(r, "default", a.w * 0.82, 82, { caps: !uniform }) }} />
+            <figcaption>{a.note}{uniform ? "" : " · caps"}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div className="slab-row">
+        <figure className="slab-shellvs" data-role="shell-vs">
+          <div dangerouslySetInnerHTML={{ __html: shellTwin }} />
+          <figcaption>same hull, single-shell mode (v64)</figcaption>
+        </figure>
+        <div className="slab-parts" data-role="parts">
+          {[...r.parts].sort((a, b) => a.zIndex - b.zIndex).map((p) => (
+            <span key={p.id} className="slab-partchip">z{p.zIndex} · {p.id}{p.mirrorX ? " ×2" : ""} · {p.material}</span>
+          ))}
+        </div>
+      </div>
+      <div className="slab-actions">
+        <button onClick={() => void copy()}>{copied ? "Copied ✓" : "Copy SVG"}</button>
+      </div>
+    </article>
+  );
 }
 
 function Card({ s, ov, globals }: {
@@ -292,6 +356,8 @@ export function SilhouetteLab() {
   const [caps, setCaps] = useState(false);
   const [icon, setIcon] = useState(false);
   const [wave2, setWave2] = useState(false);
+  const [skinWire, setSkinWire] = useState(false);
+  const [skinUniform, setSkinUniform] = useState(false);
   const [w, setW] = useState(200);
   const [h, setH] = useState(100);
   useEffect(() => { ensureFont("Russo One"); document.title = "Silhouette Feasibility Lab — FORGE"; }, []);
@@ -369,6 +435,18 @@ export function SilhouetteLab() {
           <li>Imported shapes here bypass the production <code>user:</code> 1.42× distortion cap, because observing stretch is the point of this test.</li>
         </ul>
       </details>
+
+      <section className="slab-skinsec" aria-label="Layered Skin proof">
+        <div className="slab-skinhead">
+          <h2>Layered Skin — first proof</h2>
+          <p>The reference art is an <em>assembly</em>, not one inset shell. Here the strict one-path hull keeps its jobs (footprint, shadow, extrusion, max clip) while a data-driven recipe stacks independently authored parts — rear pieces, chassis, an independent face, mirrored caps — through one reusable <code>renderMaterialPath()</code>. No shape-specific components exist; each design is a recipe entry. Cap-preserving stretch runs every part through the same x-map, so mirrored caps stay rigid.</p>
+          <label className="slab-check"><input type="checkbox" checked={skinWire} onChange={(e) => setSkinWire(e.target.checked)} data-ctl="skinwire" /> Show part wireframes</label>
+          <label className="slab-check"><input type="checkbox" checked={skinUniform} onChange={(e) => setSkinUniform(e.target.checked)} data-ctl="skinuniform" /> Uniform stretch (compare)</label>
+        </div>
+        <div className="slab-grid">
+          {SKIN_RECIPES.map((r) => <SkinCard key={r.id} r={r} wire={skinWire} uniform={skinUniform} />)}
+        </div>
+      </section>
 
       <main className="slab-grid">
         {shapes.map((s) => (

@@ -1861,3 +1861,16 @@ button.inv2-slot:hover { border-color: var(--inv-acc); color: var(--st-ink); }
 .slab-actions { display: flex; gap: 8px; margin-top: 12px; }
 .slab-actions button { background: #262638; color: #E8E9F0; border: 1px solid #34344e; border-radius: 9px; padding: 7px 13px; font-size: 12px; cursor: pointer; }
 .slab-actions button:hover { background: #30304a; }
+
+/* ── Layered Skin proof section (lab) ─────────────────────────── */
+.slab-skinsec { margin-bottom: 26px; }
+.slab-skinhead { margin-bottom: 14px; }
+.slab-skinhead h2 { font-size: 19px; margin: 0 0 6px; }
+.slab-skinhead p { margin: 0 0 10px; max-width: 980px; color: #A9ACBE; font-size: 13px; line-height: 1.6; }
+.slab-skinhead code { color: #7ADCFF; }
+.slab-skinhead .slab-check { margin-right: 18px; }
+.slab-skincard { border-color: #33334e; }
+.slab-shellvs { width: 240px; margin: 0; text-align: center; }
+.slab-shellvs svg { width: 100%; height: auto; display: block; opacity: 0.9; }
+.slab-parts { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; flex: 1; min-width: 200px; padding-top: 6px; }
+.slab-partchip { font-size: 10.5px; color: #C6C9D8; background: #1d1d2e; border: 1px solid #2E2E44; border-radius: 999px; padding: 4px 10px; }
