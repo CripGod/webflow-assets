@@ -2,7 +2,7 @@ import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSiz
 import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE , isDarkBg, userShapes } from "./model";
 import { iconGroup } from "./icons";
 import { silhouetteMeta } from "./silhouettes";
-import { importedShape, flattenPath, pointInPoly, type Pt } from "./importedShapes";
+import { importedShape, flattenPath, pointInPoly, selfIntersections, type Pt } from "./importedShapes";
 import rough from "roughjs";
 
 /* Rough.js draws the hand-drawn *line character* over the approved outline —
@@ -224,15 +224,39 @@ export function offsetPathInward(d: string, delta: number): string {
   const rot = dd.slice(ri + 1).concat(dd.slice(0, ri + 1));
   const mid0 = { x: (rot[rot.length - 1].x + rot[0].x) / 2, y: (rot[rot.length - 1].y + rot[0].y) / 2 };
   const ring = [mid0, ...rot];
+  /* attempt ladder: the strict tolerance keeps real curves curved. But when
+     soft corner roundings (r slightly above delta) sit right next to acute
+     tail tips, their surviving chords separate the two edges whose miter
+     must synthesize the receding tip — every corner candidate lands in the
+     thin wedge and gets culled, stranding the offset. Retrying with coarser
+     collapse turns those corners into sharp vertices, which is the correct
+     offset limit there: the wall consumes (r − delta ≈ 0) of rounding. */
+  let dOut = "";
+  for (const k of [0.3, 0.55, 0.85]) {
+    const eps = Math.min(k === 0.3 ? 4.5 : 8, delta * k);
+    /* retries also relax the pinch cull by eps: the chordified boundary sits
+       inside the true curve by up to eps, so a genuinely clear point can
+       measure up to eps short — the excision pass then resolves the tiny
+       tip crossings those borderline points create */
+    const cullT = k === 0.3 ? delta * 0.8 : Math.max(delta * 0.5, delta * 0.8 - eps);
+    dOut = offsetAttempt(ring, delta, eps, Math.max(1.5, delta * k), cullT);
+    if (dOut) break;
+  }
+  if (OFFSET_CACHE.size > 400) OFFSET_CACHE.clear();
+  OFFSET_CACHE.set(key, dOut);
+  return dOut;
+}
+function offsetAttempt(ring: Pt[], delta: number, eps: number, mergeR: number, cullT: number): string {
   /* pre-simplify the SOURCE: micro-roundings (r « delta) collapse to sharp
      vertices so their two straight neighbors become adjacent — that's what
      lets the miter join synthesize the receding tip an offset demands.
      Real curves deviate more than the tolerance and keep their samples. */
-  const dp = simplifyDP(ring, Math.min(1.4, delta * 0.18));
+  const dp = simplifyDP(ring, eps);
   // merge residual near-corner duplets into single sharp vertices
-  const mergeR = Math.max(1.5, delta * 0.22);
+  // (clone — merging averages in place, and the ring is shared by retries)
   const poly: Pt[] = [];
-  for (const p of dp) {
+  for (const q of dp) {
+    const p = { x: q.x, y: q.y };
     const last = poly[poly.length - 1];
     if (last && Math.hypot(p.x - last.x, p.y - last.y) < mergeR) {
       last.x = (last.x + p.x) / 2; last.y = (last.y + p.y) / 2;
@@ -248,7 +272,7 @@ export function offsetPathInward(d: string, delta: number): string {
     if (dev < 0.2) poly.splice(i, 1);
   }
   const n = poly.length;
-  if (n < 5) { OFFSET_CACHE.set(key, ""); return ""; }
+  if (n < 5) return "";
   // per-EDGE inward normals; side picked empirically on the longest edge
   let li = 0, ll = 0;
   for (let i = 0; i < n; i++) {
@@ -289,8 +313,8 @@ export function offsetPathInward(d: string, delta: number): string {
     cand.push(q);
   }
   // cull pinched regions: a true offset point sits ≥ delta from the boundary
-  let kept = cand.filter((p) => pointInPoly(p, poly) && distToBoundary(p, poly) >= delta * 0.8);
-  if (kept.length < 5) { OFFSET_CACHE.set(key, ""); return ""; }
+  let kept = cand.filter((p) => pointInPoly(p, poly) && distToBoundary(p, poly) >= cullT);
+  if (kept.length < 5) return "";
   /* excise loop-backs: concave miters can cross nearby edges around tight
      notches; cut each crossing at its intersection and drop the short loop
      (the standard offset clean-up) */
@@ -308,6 +332,10 @@ export function offsetPathInward(d: string, delta: number): string {
         if (t <= 0.001 || t >= 0.999 || u <= 0.001 || u >= 0.999) continue;
         const X = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
         const innerLen = j - i;
+        // only ever excise SMALL loops — a crossing whose shorter arc is a
+        // big share of the ring is a seam artifact, and cutting it would
+        // chop a diagonal through the face (the "weird math" failure)
+        if (Math.min(innerLen, m - innerLen) > Math.max(8, m * 0.42)) continue;
         kept = innerLen <= m - innerLen
           ? kept.slice(0, i + 1).concat([X], kept.slice(j + 1))
           : [X, ...kept.slice(i + 1, j + 1)];
@@ -317,12 +345,19 @@ export function offsetPathInward(d: string, delta: number): string {
     }
     if (!cut) break;
   }
-  if (kept.length < 5) { OFFSET_CACHE.set(key, ""); return ""; }
-  const out = simplifyDP(kept, 0.35);
-  const dOut = "M " + out.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ") + " Z";
-  if (OFFSET_CACHE.size > 400) OFFSET_CACHE.clear();
-  OFFSET_CACHE.set(key, dOut);
-  return dOut;
+  if (kept.length < 5) return "";
+  // final sanity: a healthy inward offset keeps most of the source area —
+  // anything below that means the cull/excise reconnected across the shape,
+  // so fall back to the classic scaled inset instead of shipping a glitch
+  const shoelace = (ps: Pt[]) => { let s = 0; for (let i = 0; i < ps.length; i++) { const a2 = ps[i], b2 = ps[(i + 1) % ps.length]; s += a2.x * b2.y - b2.x * a2.y; } return Math.abs(s) / 2; };
+  if (shoelace(kept) < shoelace(poly) * 0.45) return "";
+  const out = simplifyDP(kept, 0.35).map((p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 }));
+  // absolute guarantee, checked on the EXACT rounded points that ship: if
+  // any crossing survives excision + simplify + rounding, this combo
+  // declines the true offset and takes the classic scaled inset — a
+  // glitched face never ships
+  if (selfIntersections(out) > 0) return "";
+  return "M " + out.map((p) => `${p.x} ${p.y}`).join(" L ") + " Z";
 }
 
 /** Inner shape at true offset `delta` — falls back to the classic scaled
