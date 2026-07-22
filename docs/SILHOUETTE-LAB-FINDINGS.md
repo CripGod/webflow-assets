@@ -190,3 +190,65 @@ aspect ratios under cap-preserving stretch, part wireframe overlays and the
 v64 single-shell comparison all render from the same recipes. Deliverable
 unchanged: only the two proof cards — the remaining six designs stay gated
 until this pair is approved.
+
+---
+
+# Addendum (v68): Compound Vector Assets — baked construction, live skin
+
+The follow-up direction: do not bake a finished pink ribbon as a fixed
+illustration — bake the ribbon's *construction* and keep the skin live.
+Implemented as the first production-capable compound asset format
+(`src/generator/compound.ts`), proven on the Prize Bow ribbon.
+
+## The format
+
+`CompoundVectorAsset` = viewBox + silhouette + ordered layers. Each layer
+is a path pointing at a **semantic slot**, never a color:
+
+- `base` — fabric/plastic surfaces (receive gradient, bevel, pattern)
+- `fold` — soft dark creases where the form gathers
+- `cavity` — deep interior openings (loop holes)
+- `highlight` — **authored** gloss masks (replace procedural specular)
+- `crease` — bright accent slivers · `edge` — reserved
+
+Layers may declare `clipTo` (shading can never escape its surface) and
+`patternSurface` (pattern eligibility). Three concerns stay separate:
+**asset definition** (geometry + masks, non-editable), **skin
+configuration** (`CompoundSkin`: primary/secondary color, finish, gloss
+strength, fold contrast, edge, pattern), **recipe** (how the asset combines
+with faces, frames, parts). What is deliberately NOT exposed: loop shapes,
+tail direction, fold locations, cavity geometry, highlight-mask shapes,
+layer overlap — the qualities that make it look drawn.
+
+## The pattern system
+
+Procedural tiles (stripes / dots / stars / scales) with color, opacity,
+scale, angle — clipped to `patternSurface` layers only, never shadows,
+cavities, highlights or extrusion, and painted UNDER fold/cavity/highlight
+overlays so the shading shades the pattern. Two placements: `continuous`
+(one composition flows across the whole button — stripes read as one wrap)
+and `mirrored` (the motif reflects about the button axis on the mirrored
+copy — directional motifs stay clean on both sides). Placement works
+because mirrored copies re-map authored-left geometry through the mirror
+while the pattern def's `patternTransform` either stays global or gains a
+reflection about the button axis.
+
+## The ribbon proof
+
+`prizeBowRibbon`: 11 baked layers — tail pair with a V-crease, lower loop,
+upper loop, per-loop cavities, fold wedges gathering toward the knot,
+authored top-edge highlight slivers. The recipe's ribbon part now reads
+`asset: "prizeBowRibbon"` + a `CompoundSkin`; its silhouette still drives
+extrusion, contact shadow and wireframe. The lab card renders the SAME
+geometry as: candy pink · satin sky with mirrored stars · royal purple with
+continuous diagonal stripes · toy green scales · gilded metal satin — plus
+live pattern/placement selects on the hero. Renderer changes are generic:
+`renderCompoundAsset()` + a shared `finishStopsV()` gradient builder; any
+part in any recipe can now reference any compound asset.
+
+## Verification
+
+`tsc -b` clean, `vite build` clean, lab page zero console errors; states,
+aspect stretch, wireframes (now showing all asset layers) and the v64
+comparison all render from the same data. Next candidates once approved:
+frame ornaments and wing/crest assets using the same slot vocabulary.

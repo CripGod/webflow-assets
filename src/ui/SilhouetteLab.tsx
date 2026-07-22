@@ -12,8 +12,9 @@ import type { GenConfig, GenStateName, Shape, SpecularMode } from "../generator/
 import { defaultConfig, STOCK_ICONS, SPECULAR_MODES, PRESETS, presetById, applyPresetCandy, fontByName } from "../generator/model";
 import { renderShell, shellPaths, shapePath } from "../generator/bevel";
 import { IMPORTED_SHAPES, validateImported, auditInset, type ImportedSilhouette } from "../generator/importedShapes";
-import { renderSkinRecipe, type ButtonSkinRecipe } from "../generator/skins";
+import { renderSkinRecipe, type ButtonSkinRecipe, type SkinPart } from "../generator/skins";
 import { SKIN_RECIPES } from "../generator/skinRecipes";
+import { COMPOUND_ASSETS, type CompoundSkin, type PatternType } from "../generator/compound";
 import { ensureFont } from "../generator/fonts";
 
 /* Engine-native material presets, mapped from the brief's palettes. The
@@ -141,13 +142,39 @@ function fitFs(cfg: GenConfig, label: string, w: number, h: number, withIcon: bo
   return { fs: fsR / scaleK, bandLimited: fit < house };
 }
 
+/* Live-skin demonstrations for compound assets: the SAME baked geometry,
+   different skin configurations. Pure data — proves color / pattern /
+   finish / contrast stay generator-driven while the folds stay authored. */
+const ASSET_VARIANTS: Record<string, { name: string; skin: CompoundSkin }[]> = {
+  prizeBow: [
+    { name: "candy pink", skin: {} },
+    { name: "satin sky · stars", skin: { primary: { light: "#9CCBFF", base: "#4D8FE8", dark: "#1D4FA8" }, pattern: { type: "stars", color: "#FFFFFF", opacity: 0.5, scale: 52, angle: -12, placement: "mirrored" } } },
+    { name: "royal stripe", skin: { primary: { light: "#C99CFF", base: "#8C46D8", dark: "#5A1E9E" }, pattern: { type: "stripes", color: "#FFFFFF", opacity: 0.26, scale: 58, angle: 35, placement: "continuous" } } },
+    { name: "toy scales", skin: { primary: { light: "#8FE6A8", base: "#2FA860", dark: "#116B3C" }, pattern: { type: "scales", color: "#0B4A29", opacity: 0.4, scale: 55, angle: 0, placement: "mirrored" } } },
+    { name: "gilded satin", skin: { primary: { light: "#FFE58C", base: "#F0AC14", dark: "#8F4900" }, finish: "metal", glossStrength: 0.7, contrast: 1.2 } },
+  ],
+};
+
+/** Clone a recipe with a skin override applied to its compound-asset parts.
+ *  Geometry untouched — this is exactly the user-facing control surface. */
+function reskinAsset(r: ButtonSkinRecipe, patch: CompoundSkin): ButtonSkinRecipe {
+  return { ...r, parts: r.parts.map((p): SkinPart => p.asset ? { ...p, assetSkin: { ...p.assetSkin, ...patch } } : p) };
+}
+
 /* ── Layered Skin proof card — recipe-driven assembly vs the single shell.
    Everything rendered here comes from renderSkinRecipe + pure recipe data;
    the side-by-side single-shell render is the same v64 pipeline. */
 function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; uniform: boolean }) {
   const [copied, setCopied] = useState(false);
+  const [heroPat, setHeroPat] = useState<PatternType | "">("");
+  const [heroPlace, setHeroPlace] = useState<"continuous" | "mirrored">("mirrored");
+  const hasAsset = r.parts.some((p) => p.asset);
+  const variants = ASSET_VARIANTS[r.id];
   const w = 200 * PX, h = 100 * PX;
-  const hero = useMemo(() => renderSkinRecipe(r, "default", w, h, { caps: !uniform, wireframe: wire }), [r, w, h, uniform, wire]);
+  const rLive = useMemo(() => heroPat === "" ? r : reskinAsset(r, {
+    pattern: heroPat === "none" ? undefined : { type: heroPat, color: "#FFFFFF", opacity: 0.32, scale: 55, angle: heroPat === "stripes" ? 35 : -10, placement: heroPlace },
+  }), [r, heroPat, heroPlace]);
+  const hero = useMemo(() => renderSkinRecipe(rLive, "default", w, h, { caps: !uniform, wireframe: wire }), [rLive, w, h, uniform, wire]);
   const shellTwin = useMemo(() => {
     const s = IMPORTED_SHAPES[r.id];
     const cfg = skinnedConfig(s, {}, true, false);
@@ -169,6 +196,32 @@ function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; un
       <div className="slab-hero">
         <div className="slab-heroart" dangerouslySetInnerHTML={{ __html: hero }} />
       </div>
+      {hasAsset && (
+        <div className="slab-ctlrow" data-role="asset-controls">
+          <label className="slab-ctl slab-ctl--select"><span>Ribbon pattern (live)</span>
+            <select value={heroPat} onChange={(e) => setHeroPat(e.target.value as PatternType | "")} data-ctl="assetpattern">
+              <option value="">per recipe</option>
+              {(["none", "stripes", "dots", "stars", "scales"] as const).map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+          <label className="slab-ctl slab-ctl--select"><span>Placement</span>
+            <select value={heroPlace} onChange={(e) => setHeroPlace(e.target.value as "continuous" | "mirrored")} data-ctl="assetplacement">
+              <option value="mirrored">mirrored per side</option>
+              <option value="continuous">continuous</option>
+            </select>
+          </label>
+        </div>
+      )}
+      {variants && (
+        <div className="slab-states" data-role="asset-variants">
+          {variants.map((v) => (
+            <figure key={v.name}>
+              <div dangerouslySetInnerHTML={{ __html: renderSkinRecipe(reskinAsset(r, v.skin), "default", w * 0.44, h * 0.44, { caps: !uniform }) }} />
+              <figcaption>{v.name}</figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
       <div className="slab-states" data-role="skin-states">
         {STATES.map((st) => (
           <figure key={st}>
@@ -192,7 +245,7 @@ function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; un
         </figure>
         <div className="slab-parts" data-role="parts">
           {[...r.parts].sort((a, b) => a.zIndex - b.zIndex).map((p) => (
-            <span key={p.id} className="slab-partchip">z{p.zIndex} · {p.id}{p.mirrorX ? " ×2" : ""} · {p.finish ?? r.materials[p.material].finish}{p.shadowDensity ? " · casts" : ""}</span>
+            <span key={p.id} className="slab-partchip">z{p.zIndex} · {p.id}{p.mirrorX ? " ×2" : ""} · {p.asset ? `compound(${COMPOUND_ASSETS[p.asset].layers.length} layers)` : p.finish ?? r.materials[p.material].finish}{p.shadowDensity ? " · casts" : ""}</span>
           ))}
         </div>
       </div>
@@ -438,8 +491,8 @@ export function SilhouetteLab() {
 
       <section className="slab-skinsec" aria-label="Layered Skin proof">
         <div className="slab-skinhead">
-          <h2>Layered Skin — refinement pass</h2>
-          <p>The reference art is an <em>assembly</em>, not one inset shell. The strict one-path hull keeps its jobs (footprint, shadow, extrusion, max clip) while a data-driven recipe stacks independently authored parts through one reusable <code>renderMaterialPath()</code>. This pass adds <strong>per-part finish control</strong> — finish type, bevel profile, gloss strength, specular mode, highlight bias, edge darkening, bounce light, saturation — plus per-part <strong>contact shadows</strong>, so front pieces visibly sit ON the pieces behind them instead of sharing one lighting response. No shape-specific components exist; each design is a recipe entry. Cap-preserving stretch runs every part through the same x-map, so mirrored caps stay rigid.</p>
+          <h2>Layered Skin — compound assets</h2>
+          <p>The reference art is an <em>assembly</em>, not one inset shell. The strict one-path hull keeps its jobs (footprint, shadow, extrusion, max clip) while a data-driven recipe stacks independently authored parts — per-part finish, bevel profile, specular, contact shadows. New this pass: the Prize Bow ribbon is the first <strong>compound vector asset</strong> — its construction (loops, tail, fold wedges, loop cavities, authored highlight masks) is <em>baked</em> as semantic-slot geometry, while its skin stays <em>live</em>: base color, fold color, finish, gloss, contrast and a clipped <strong>pattern system</strong> (stripes / dots / stars / scales, continuous or mirrored placement) that touches fabric surfaces only — never shadows, cavities or extrusion. The variant row renders the SAME baked geometry through different skins. No shape-specific components exist; each design is a recipe entry.</p>
           <label className="slab-check"><input type="checkbox" checked={skinWire} onChange={(e) => setSkinWire(e.target.checked)} data-ctl="skinwire" /> Show part wireframes</label>
           <label className="slab-check"><input type="checkbox" checked={skinUniform} onChange={(e) => setSkinUniform(e.target.checked)} data-ctl="skinuniform" /> Uniform stretch (compare)</label>
         </div>

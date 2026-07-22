@@ -66,14 +66,14 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
     hull: IMPORTED_SHAPES.prizeBow.path,
     label: "CLAIM",
     extrusion: 9,
-    /* rear ribbon loops (fold-notched, hull-lobed) → thick ornamental gold
-       frame overlapping the ribbons by ~24u → puffed glass face inside the
-       frame → gold knob jewel seated on the frame's top band */
+    /* rear COMPOUND ribbon asset (baked loops/tail/folds/cavities/authored
+       highlights, live skin) → thick ornamental gold frame overlapping the
+       ribbons by ~24u → puffed glass face inside the frame → gold knob
+       jewel seated on the frame's top band */
     parts: [
       { id: "ribbon", material: "plastic", zIndex: 1, depth: 5, bevel: 2.6, mirrorX: true,
-        glossStrength: 0.7, glossFrac: 0.4, glossDip: 0.06, specularMode: "arc", highlightBias: [-0.15, -0.1],
-        edgeDarkening: 0.4, saturationBoost: 0.3, bounce: 0.12, path:
-        "M 78 50 C 76 30 64 10 44 4 C 24 0 6 10 3 26 C 1.5 37 7 44.5 18 46.5 C 23 47.5 27.5 48.5 30 50 C 27.5 51.5 23 52.5 18 53.5 C 7 55.5 1.5 63 3 74 C 6 90 24 100 44 96 C 64 90 76 70 78 50 Z" },
+        asset: "prizeBowRibbon",
+        assetSkin: { finish: "plastic", glossStrength: 1, contrast: 1 } },
       { id: "frame", material: "metal", zIndex: 2, depth: 3.5, bevel: 2.6,
         specularMode: "streak", highlightBias: [-0.3, -0.28],
         edgeDarkening: 0.5, bounce: 0.5, shadowDensity: 0.6, path:

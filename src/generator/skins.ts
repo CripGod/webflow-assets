@@ -32,6 +32,8 @@ import { transformPath, transformPathCapAware } from "./bevel";
 import { flattenPath, bounds } from "./importedShapes";
 import { lighten, darken, desaturate, saturate, hexMix, hexRgba, fontByName } from "./model";
 import type { GenStateName } from "./model";
+import { COMPOUND_ASSETS, patternDef } from "./compound";
+import type { CompoundVectorAsset, CompoundSkin } from "./compound";
 
 export type MaterialRole = "face" | "frame" | "metal" | "plastic" | "accent";
 export type FinishType = "plastic" | "metal" | "glass" | "matte";
@@ -79,8 +81,16 @@ export interface PartFinish {
 
 export interface SkinPart extends PartFinish {
   id: string;
-  /** Absolute-coordinate path in the 0 0 200 100 recipe space (M L C Q Z). */
-  path: string;
+  /** Absolute-coordinate path in the 0 0 200 100 recipe space (M L C Q Z).
+   *  Required unless `asset` names a compound asset, whose baked geometry
+   *  then replaces the single path entirely. */
+  path?: string;
+  /** Compound vector asset id (COMPOUND_ASSETS) — baked multi-layer
+   *  construction with semantic slots; skinned live via `assetSkin`. */
+  asset?: string;
+  /** Live skin for the compound asset. Colors default to this part's
+   *  material role, so recipes stay palette-driven. */
+  assetSkin?: CompoundSkin;
   /** Any key of the recipe's materials map (the five house roles + extras). */
   material: string;
   zIndex: number;
@@ -184,6 +194,19 @@ function streak(cx: number, cy: number, len: number, th: number): string {
   return `M ${N(ax)} ${N(ay)} L ${N(bx)} ${N(by)} C ${N(bx + dx * k)} ${N(by + dy * k)} ${N(cx2 + dx * k)} ${N(cy2 + dy * k)} ${N(cx2)} ${N(cy2)} L ${N(dx2)} ${N(dy2)} C ${N(dx2 - dx * k)} ${N(dy2 - dy * k)} ${N(ax - dx * k)} ${N(ay - dy * k)} ${N(ax)} ${N(ay)} Z`;
 }
 
+/** Vertical finish gradient stops — shared by single-path parts and
+ *  compound-asset surfaces so every finish keeps one house look. */
+export function finishStopsV(mat: { light: string; base: string; dark: string }, finish: FinishType, P: (c: string) => string, satBoost: number): string {
+  const deepDark = saturate(mat.dark, satBoost * 0.9);
+  if (finish === "metal")
+    return `<stop offset="0" stop-color="${P(lighten(mat.light, 0.2))}"/><stop offset="0.28" stop-color="${P(lighten(mat.light, 0.45))}"/><stop offset="0.55" stop-color="${P(mat.base)}"/><stop offset="0.85" stop-color="${P(deepDark)}"/><stop offset="1" stop-color="${P(darken(deepDark, 0.2))}"/>`;
+  if (finish === "glass")
+    return `<stop offset="0" stop-color="${P(lighten(mat.light, 0.22))}"/><stop offset="0.45" stop-color="${P(hexMix(mat.light, mat.base, 0.62))}"/><stop offset="0.72" stop-color="${P(mat.base)}"/><stop offset="1" stop-color="${P(deepDark)}"/>`;
+  if (finish === "matte")
+    return `<stop offset="0" stop-color="${P(lighten(mat.base, 0.14))}"/><stop offset="0.55" stop-color="${P(mat.base)}"/><stop offset="1" stop-color="${P(mat.dark)}"/>`;
+  return `<stop offset="0" stop-color="${P(mat.light)}"/><stop offset="0.52" stop-color="${P(mat.base)}"/><stop offset="1" stop-color="${P(deepDark)}"/>`;
+}
+
 /** One material region — the reusable per-part treatment. Fill gradient +
  *  profile bevel strokes + finish-specific gloss, specular, edge and bounce
  *  events, all clipped to the part. `mk` maps recipe space → target space
@@ -214,15 +237,9 @@ export function renderMaterialPath(o: {
      top light → deep saturated bottom. */
   const cylinder = metal && gh > gw * 1.15;
   const axis = cylinder ? `x1="0" y1="0" x2="1" y2="0"` : `x1="0" y1="0" x2="0" y2="1"`;
-  const stops = metal
-    ? cylinder
-      ? `<stop offset="0" stop-color="${P(darken(mat.base, 0.32))}"/><stop offset="0.16" stop-color="${P(mat.base)}"/><stop offset="0.38" stop-color="${P(lighten(mat.light, 0.42))}"/><stop offset="0.52" stop-color="${P(mat.light)}"/><stop offset="0.78" stop-color="${P(mat.base)}"/><stop offset="1" stop-color="${P(darken(deepDark, 0.28))}"/>`
-      : `<stop offset="0" stop-color="${P(lighten(mat.light, 0.2))}"/><stop offset="0.28" stop-color="${P(lighten(mat.light, 0.45))}"/><stop offset="0.55" stop-color="${P(mat.base)}"/><stop offset="0.85" stop-color="${P(deepDark)}"/><stop offset="1" stop-color="${P(darken(deepDark, 0.2))}"/>`
-    : glass
-      ? `<stop offset="0" stop-color="${P(lighten(mat.light, 0.22))}"/><stop offset="0.45" stop-color="${P(hexMix(mat.light, mat.base, 0.62))}"/><stop offset="0.72" stop-color="${P(mat.base)}"/><stop offset="1" stop-color="${P(deepDark)}"/>`
-      : fin.finish === "matte"
-        ? `<stop offset="0" stop-color="${P(lighten(mat.base, 0.14))}"/><stop offset="0.55" stop-color="${P(mat.base)}"/><stop offset="1" stop-color="${P(mat.dark)}"/>`
-        : `<stop offset="0" stop-color="${P(mat.light)}"/><stop offset="0.52" stop-color="${P(mat.base)}"/><stop offset="1" stop-color="${P(deepDark)}"/>`;
+  const stops = cylinder
+    ? `<stop offset="0" stop-color="${P(darken(mat.base, 0.32))}"/><stop offset="0.16" stop-color="${P(mat.base)}"/><stop offset="0.38" stop-color="${P(lighten(mat.light, 0.42))}"/><stop offset="0.52" stop-color="${P(mat.light)}"/><stop offset="0.78" stop-color="${P(mat.base)}"/><stop offset="1" stop-color="${P(darken(deepDark, 0.28))}"/>`
+    : finishStopsV(mat, fin.finish, P, fin.saturationBoost);
 
   let defs = `<linearGradient id="${id}g" ${axis}>${stops}</linearGradient>
   <clipPath id="${id}c"><path d="${d}"/></clipPath>`;
@@ -283,6 +300,89 @@ export function renderMaterialPath(o: {
   return { defs, body };
 }
 
+/** Render a compound vector asset — baked construction, live skin. The
+ *  asset supplies geometry and semantic slots; the skin supplies colors,
+ *  pattern, finish, gloss, contrast. Painted per SURFACE GROUP (each
+ *  material layer followed by its clipped overlays), so folds, cavities
+ *  and authored highlights always shade the pattern, and later surfaces
+ *  correctly occlude earlier ones. */
+export function renderCompoundAsset(o: {
+  id: string;
+  asset: CompoundVectorAsset;
+  skin: CompoundSkin;
+  mat: MaterialSpec;               // part's bound material role (color default)
+  mk: (d: string) => string;       // recipe → target mapper (may mirror)
+  P: (c: string) => string;
+  sy: number;
+  bevel: number;
+  mirror: boolean;
+  /** Button's vertical axis in target px — mirrored pattern placement
+   *  reflects the motif about this line. */
+  axisX: number;
+}): { defs: string; body: string } {
+  const { id, asset, skin, P } = o;
+  const primary = skin.primary ?? { light: o.mat.light, base: o.mat.base, dark: o.mat.dark };
+  const finish = skin.finish ?? "plastic";
+  const gloss = skin.glossStrength ?? 1;
+  const contrast = skin.contrast ?? 1;
+  const secondary = skin.secondary ?? darken(primary.dark, 0.18);
+  const edgeC = skin.edge ?? darken(primary.dark, 0.32);
+  const pat = skin.pattern;
+  const bpx = o.bevel * o.sy;
+
+  let defs = `<linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1">${finishStopsV(primary, finish, P, 0.3)}</linearGradient>
+  <linearGradient id="${id}v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.24"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="${darken(primary.dark, 0.3)}" stop-opacity="0.3"/></linearGradient>`;
+  if (pat && pat.type !== "none") {
+    const reflect = o.mirror && pat.placement === "mirrored";
+    const transform = `${reflect ? `translate(${N(o.axisX * 2)} 0) scale(-1 1) ` : ""}rotate(${pat.angle})`;
+    defs += patternDef(`${id}pat`, pat, P(pat.color), transform);
+  }
+
+  /* per-layer clip defs, created lazily for clip targets */
+  const clipIds = new Map<string, string>();
+  const clipFor = (layerId: string): string => {
+    let cid = clipIds.get(layerId);
+    if (!cid) {
+      cid = `${id}c${clipIds.size}`;
+      const l = asset.layers.find((x) => x.id === layerId);
+      defs += `<clipPath id="${cid}"><path d="${o.mk(l?.path ?? asset.silhouette)}"/></clipPath>`;
+      clipIds.set(layerId, cid);
+    }
+    return cid;
+  };
+
+  const slotPaint: Record<string, { fill: string; opacity: number }> = {
+    fold: { fill: P(secondary), opacity: Math.min(1, 0.6 * contrast) },
+    cavity: { fill: P(darken(primary.dark, 0.45)), opacity: Math.min(1, 0.58 * contrast) },
+    highlight: { fill: "#FFFFFF", opacity: Math.min(1, 0.85 * gloss) },
+    crease: { fill: P(lighten(primary.light, 0.35)), opacity: 0.8 },
+    edge: { fill: P(edgeC), opacity: 0.9 },
+  };
+
+  let body = "";
+  let lastMaterial = "";
+  for (const l of asset.layers) {
+    const d = o.mk(l.path);
+    if (l.kind === "material") {
+      lastMaterial = l.id;
+      const cid = clipFor(l.id);
+      body += `<g clip-path="url(#${cid})" data-asset-layer="${l.id}" data-slot="${l.slot}">
+        <path d="${d}" fill="url(#${id}g)"/>
+        ${l.patternSurface && pat && pat.type !== "none" ? `<path d="${d}" fill="url(#${id}pat)" opacity="${N(Math.min(1, pat.opacity))}"/>` : ""}
+        <path d="${d}" fill="url(#${id}v)"/>
+        <path d="${d}" fill="none" stroke="${hexRgba(P(lighten(primary.light, 0.32)), 0.6)}" stroke-width="${N(bpx * 2.2)}" transform="translate(0 ${N(bpx)})"/>
+        <path d="${d}" fill="none" stroke="${hexRgba(P(darken(primary.dark, 0.35)), 0.45)}" stroke-width="${N(bpx * 2)}" transform="translate(0 ${N(-bpx * 0.9)})"/>
+      </g>
+      <path d="${d}" fill="none" stroke="${P(edgeC)}" stroke-width="1.4" opacity="0.9"/>`;
+    } else {
+      const paint = slotPaint[l.slot] ?? { fill: P(primary.base), opacity: 1 };
+      const cid = clipFor(l.clipTo ?? lastMaterial);
+      body += `<g clip-path="url(#${cid})"><path d="${d}" fill="${paint.fill}" opacity="${N(Math.min(1, paint.opacity * (l.opacity ?? 1)))}" data-asset-layer="${l.id}" data-slot="${l.slot}"/></g>`;
+    }
+  }
+  return { defs, body };
+}
+
 const STATE_ADJ: Record<GenStateName, { tone: number; lift: number; glow: number; opacity: number }> = {
   default: { tone: 0, lift: 0, glow: 0, opacity: 1 },
   hover: { tone: 0.07, lift: -3, glow: 0.5, opacity: 1 },
@@ -335,7 +435,8 @@ export function renderSkinRecipe(recipe: ButtonSkinRecipe, state: GenStateName, 
     const mat = recipe.materials[p.material];
     const fin = resolveFinish(p, mat);
     const mkP = e.mirror ? (d: string) => mk(mirrorPathX(d)) : mk;
-    const dP = mkP(p.path);
+    const asset = p.asset ? COMPOUND_ASSETS[p.asset] : undefined;
+    const dP = mkP(asset ? asset.silhouette : p.path ?? "");
     if (fin.shadowDensity > 0.01) {
       usedPartShadow = true;
       stack += `<path d="${dP}" transform="translate(0 ${N(2.8 * sy)})" fill="${darken(chassis.dark, 0.4)}" opacity="${N(fin.shadowDensity * (disabled ? 0.5 : 1))}" filter="url(#${id}pb)" data-part-shadow="${e.key}"/>`;
@@ -346,9 +447,11 @@ export function renderSkinRecipe(recipe: ButtonSkinRecipe, state: GenStateName, 
       for (let s = nS; s >= 1; s--)
         stack += `<path d="${dP}" transform="translate(0 ${N((dpx * s) / nS)})" fill="${P(darken(mat.dark, s === nS ? 0.34 : 0.24))}"${s === nS ? ` stroke="${darken(mat.dark, 0.5)}" stroke-width="0.8"` : ""} data-part-depth="${e.key}"/>`;
     }
-    const m = renderMaterialPath({ id: `${id}p${i}`, path: p.path, mk: mkP, mat, fin, bevel: p.bevel, P, sy });
+    const m = asset
+      ? renderCompoundAsset({ id: `${id}p${i}`, asset, skin: p.assetSkin ?? {}, mat, mk: mkP, P, sy, bevel: p.bevel, mirror: e.mirror, axisX: x + w / 2 })
+      : renderMaterialPath({ id: `${id}p${i}`, path: p.path ?? "", mk: mkP, mat, fin, bevel: p.bevel, P, sy });
     defs += m.defs;
-    stack += `<g data-part="${e.key}" data-material="${p.material}" data-finish="${fin.finish}">${m.body}</g>`;
+    stack += `<g data-part="${e.key}" data-material="${p.material}"${asset ? ` data-asset="${asset.id}"` : ` data-finish="${fin.finish}"`}>${m.body}</g>`;
   });
 
   /* 8 · label — sized to the recipe's safe area, mapped through the SAME
@@ -384,7 +487,14 @@ export function renderSkinRecipe(recipe: ButtonSkinRecipe, state: GenStateName, 
   const wire = opts.wireframe
     ? `<g data-skin-wire="1" fill="none" stroke-width="1.3">
         <path d="${hullD}" stroke="#FF3B30"/>
-        ${expanded.map((e, i) => `<path d="${(e.mirror ? (d: string) => mk(mirrorPathX(d)) : mk)(e.p.path)}" stroke="${["#32E6FF", "#FFCC00", "#5BE49B", "#EC68FF", "#FF9A3D", "#EAF5FF"][i % 6]}" stroke-dasharray="4 3"/>`).join("")}
+        ${expanded.map((e, i) => {
+      const mkW = e.mirror ? (d: string) => mk(mirrorPathX(d)) : mk;
+      const col = ["#32E6FF", "#FFCC00", "#5BE49B", "#EC68FF", "#FF9A3D", "#EAF5FF"][i % 6];
+      const a = e.p.asset ? COMPOUND_ASSETS[e.p.asset] : undefined;
+      return a
+        ? a.layers.map((l) => `<path d="${mkW(l.path)}" stroke="${col}" stroke-width="0.9" stroke-dasharray="3 2"/>`).join("")
+        : `<path d="${mkW(e.p.path ?? "")}" stroke="${col}" stroke-dasharray="4 3"/>`;
+    }).join("")}
       </g>`
     : "";
 
