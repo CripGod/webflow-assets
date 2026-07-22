@@ -1134,6 +1134,12 @@ export interface KitOpts {
   /** Joystick deflection, each axis −1..1. */
   stick?: [number, number];
   label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number; textOx?: number;
+  /** Docked emblem socket — a silhouette-aware mini shell riding a bar's
+   *  end, hosting any glyph (timer, coin, avatar placeholder). The dock
+   *  system is one mechanism shared by every bar-family component. */
+  dock?: { icon?: IconDef | null; side?: "left" | "right" } | null;
+  /** Bar-family config — segment count/gap and snap mode (segbar). */
+  bar?: { segments?: number; gap?: number; snap?: boolean };
   /** Slot icon emphasis — >1 makes the icon the star of the tile. */
   iconScale?: number;
   /** Atomic-part render for the engine export: "face" | "needle" |
@@ -1234,6 +1240,52 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   // style is global; the silhouette can differ per component (user override
   // wins, then the curated default, then the master's shape)
   const sov: Shape | undefined = shapeOv ?? KIT_SHAPE[id];
+
+  /* ── dock system ────────────────────────────────────────────────
+     Renders the emblem SOCKET as a full mini shell (the complete candy
+     stack, silhouette-aware) and embeds it over the host bar, centered on
+     the track axis. The host canvas grows symmetrically so the socket and
+     its glow never clip — in the live app, on the Board or in a PNG. */
+  const applyDock = (host: string, dock: NonNullable<KitOpts["dock"]>, shellX: number, shellW: number, cy: number, D: number): string => {
+    const dIcon = dock.icon === null ? null : (dock.icon ?? STOCK_ICONS.clock ?? null);
+    const piece = build(cfg, state === "disabled" ? "disabled" : "default",
+      { x: 33, y: 27, h: D, fs: 0, iconSize: D * 0.5 }, { iconDef: dIcon, label: "", fixedW: D, shapeOverride: sov });
+    const pvb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(piece);
+    const psh = /data-shell="([-\d. ]+)"/.exec(piece);
+    const pw = /width="([\d.]+)"/.exec(piece);
+    const ph = /height="([\d.]+)"/.exec(piece);
+    if (!pvb || !psh || !pw || !ph) return host;
+    const [sx, sy, sw2, sh2] = psh[1].split(" ").map(Number);
+    const cx = dock.side === "right" ? shellX + shellW - D * 0.46 : shellX + D * 0.46;
+    // inline the piece's CONTENT in a translated group — plain user-space
+    // coordinates, no nested-viewport semantics to trip over
+    const tx = cx - (sx + sw2 / 2), ty = cy - (sy + sh2 / 2);
+    const innerSvg = piece.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+    // the piece's canvas box, mapped into host coordinates
+    const bxL = +pvb[1] + tx, bxT = +pvb[2] + ty;
+    const bxR = bxL + +pvb[3], bxB = bxT + +pvb[4];
+    // grow the host canvas symmetrically so the anchor math (glow-pad
+    // reclaim reads viewBox.x for both axes) stays true everywhere
+    const hvb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(host);
+    if (!hvb) return host;
+    const [, hx, hy, hw, hh] = hvb.map(Number);
+    const need = Math.max(0,
+      hx - (bxL - 4),          // left overflow
+      hy - (bxT - 4),          // top overflow
+      (bxR + 4) - (hx + hw),   // right overflow
+      (bxB + 4) - (hy + hh));  // bottom overflow
+    const ex = Math.ceil(need);
+    let out = host;
+    if (ex > 0) {
+      out = out
+        .replace(/ width="([\d.]+)"/, (_m, w0) => ` width="${(+w0 + ex * 2).toFixed(0)}"`)
+        .replace(/ height="([\d.]+)"/, (_m, h0) => ` height="${(+h0 + ex * 2).toFixed(0)}"`)
+        .replace(/viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/, (_m, a, b, c2, d2) =>
+          `viewBox="${(+a - ex).toFixed(1)} ${(+b - ex).toFixed(1)} ${(+c2 + ex * 2).toFixed(1)} ${(+d2 + ex * 2).toFixed(1)}"`);
+    }
+    const shadow = `<ellipse cx="${cx.toFixed(1)}" cy="${(cy + D * 0.46).toFixed(1)}" rx="${(D * 0.44).toFixed(1)}" ry="${(D * 0.1).toFixed(1)}" fill="rgba(0,0,0,0.35)"/>`;
+    return inject(out, `<g data-dock="${dock.side ?? "left"}">${shadow}<g transform="translate(${tx.toFixed(1)} ${ty.toFixed(1)})">${innerSvg}</g></g>`);
+  };
 
   switch (id) {
     case "primary":
@@ -1346,11 +1398,73 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const fw = trackW * clamp(value ?? 0.62, 0, 1);
       const gid = "pg" + UID++;
       const pfx = barFx(gid, bx, by, fw, bh, bh / 2);
-      return stampTrack(inject(track,
+      let out = stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${pfx.defs}</defs>
          ${fw > 1 ? `${pfx.open}<path d="${roundRect(bx, by, fw, bh, bh / 2)}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${pfx.close}
          <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${pfx.over}` : ""}`), bx, trackW);
+      // emblem bar: the docked socket rides the track end, over the fill
+      if (opts.dock) out = applyDock(out, opts.dock, 39, w, 30 + h / 2, h * 1.9);
+      return out;
+    }
+    case "segbar": {
+      /* Segmented meter — stamina pips, charge cells, boss phases. The well
+         and both END cells inherit the theme silhouette (cells clip to the
+         well path); middle cells stay squared. Snap mode lights whole
+         cells; smooth mode slides one fill under the notches. */
+      const w = 520 * k, h = 72 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const inset = bw + 3;
+      const gapPad = 6 * k;
+      const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
+      const bh = h - inset * 2 - gapPad * 2;
+      const trackW = w - inset * 2 - gapPad * 2;
+      const n = clamp(Math.round(opts.bar?.segments ?? 5), 2, 12);
+      const gap = clamp(opts.bar?.gap ?? 6, 2, 14) * k;
+      const snap = opts.bar?.snap ?? true;
+      const v = clamp(value ?? 0.62, 0, 1);
+      const cellW = (trackW - gap * (n - 1)) / n;
+      const gid = "sg" + UID++;
+      // cells clip to the well silhouette so the first and last inherit the
+      // theme's corners while middle cells stay squared
+      const wellP = wellOf(w, h, inset);
+      const clip = `<clipPath id="${gid}c"><path d="${wellP}"/></clipPath>`;
+      const grad = `<linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>`;
+      const dim = state === "disabled" ? 0.35 : 0.95;
+      let litCells = "", offCells = "";
+      if (snap) {
+        const lit = Math.round(v * n);
+        for (let i = 0; i < n; i++) {
+          const cx0 = bx + i * (cellW + gap);
+          // end cells overreach into the well's rounded zone — the clip
+          // shapes them to the silhouette
+          const x0 = i === 0 ? bx - gapPad - inset : cx0;
+          const x1 = i === n - 1 ? bx + trackW + gapPad + inset : cx0 + cellW;
+          const grow = i === 0 || i === n - 1 ? gapPad : 0;
+          const on = i < lit;
+          const body = `<rect x="${x0.toFixed(1)}" y="${(by - grow).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${(bh + grow * 2).toFixed(1)}" rx="${Math.min(6 * k, cellW * 0.18).toFixed(1)}" fill="${on ? `url(#${gid})` : "rgba(255,255,255,0.07)"}"${on ? ` opacity="${dim}"` : ""}/>`;
+          if (on) litCells += body + `<rect x="${x0.toFixed(1)}" y="${(by + bh * 0.08).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>`;
+          else offCells += body;
+        }
+      } else {
+        const fw2 = trackW * v;
+        if (fw2 > 1) {
+          litCells += `<rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(fw2 + gapPad + inset).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" fill="url(#${gid})" opacity="${dim}"/>
+            <rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by + bh * 0.08).toFixed(1)}" width="${(fw2 + gapPad + inset).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>`;
+        }
+        // the gap notches carve the fill into segments
+        for (let i = 1; i < n; i++) {
+          const gx = bx + i * (cellW + gap) - gap;
+          offCells += `<rect x="${gx.toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${gap.toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" fill="${wellFill}"/>`;
+        }
+      }
+      const pfx = barFx(gid + "f", bx, by, snap ? trackW * (Math.round(v * n) / n) : trackW * v, bh, bh / 2);
+      let out = stampTrack(inject(track,
+        `<path d="${wellP}" fill="${wellFill}" opacity="0.92"/>
+         <defs>${grad}${clip}${pfx.defs}</defs>
+         <g clip-path="url(#${gid}c)" data-seg="${n}">${pfx.open}${litCells}${pfx.close}${offCells}</g>${pfx.over}`), bx, trackW);
+      if (opts.dock) out = applyDock(out, opts.dock, 39, w, 30 + h / 2, h * 1.8);
+      return out;
     }
     case "input": {
       const w = 560 * k, h = 124 * k;
@@ -1753,21 +1867,35 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const urgent = v3 <= 0.25 && state !== "disabled" && !opts.label;
       const alarm = hexMix("#FF4D5A", bevel, 0.18);
       const dim = state === "disabled" ? 0.45 : 1;
-      const tw = 150 * k, th = 176 * k, gap2 = 20 * k, r3 = 20 * k, pad3 = 28;
+      const tw = 150 * k, th = 176 * k, gap2 = 20 * k, pad3 = 40; // pad grew for shell glow air
       const W2 = segs.length * tw + (segs.length - 1) * gap2 + pad3 * 2;
       const H2 = th + 36 * k + pad3 * 2;
       const tileFace = darken(effect(cfg.effects, "Inner Fill"), 0.8);
       const fsD = Math.min(96 * k * typeK, tw * 0.6);
+      /* v61: each tile is a REAL themed shell — the full candy stack in the
+         kit silhouette, portrait — with the split-flap instrument recessed
+         into a dark well so the digits keep their contrast */
       const tiles = segs.map((sg, i) => {
         const x = pad3 + i * (tw + gap2);
         const midY = pad3 + th / 2;
-        return `<rect x="${x}" y="${pad3}" width="${tw}" height="${th}" rx="${r3}" fill="${tileFace}" stroke="${urgent ? alarm : darken(bevel, 0.35)}" stroke-width="2.5"/>
-          <path d="${roundRect(x, pad3, tw, th / 2, r3)}" fill="#FFFFFF" opacity="0.055"/>
+        const shellSvg2 = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: th, fs: 0, iconSize: 0 }, { iconDef: null, label: "", shapeOverride: sov, fixedW: tw });
+        const shm = /data-shell="([-\d. ]+)"/.exec(shellSvg2);
+        const [tsx, tsy] = shm ? shm[1].split(" ").map(Number) : [33, 27];
+        const tileInner = shellSvg2.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+        const insT = bw + 5 * k;
+        const wellD = shapePath(sov ?? cfg.shape, x + insT, pad3 + insT, tw - insT * 2, th - insT * 2, Math.max(0, cfg.bevel.softness - 10));
+        const gidT = "fc" + UID++;
+        return `<g transform="translate(${(x - tsx).toFixed(1)} ${(pad3 - tsy).toFixed(1)})">${tileInner}</g>
+          <clipPath id="${gidT}w"><path d="${wellD}"/></clipPath>
+          <path d="${wellD}" fill="${tileFace}"${urgent ? ` stroke="${alarm}" stroke-width="2.5"` : ""}/>
+          <g clip-path="url(#${gidT}w)"><rect x="${x}" y="${pad3}" width="${tw}" height="${(th / 2).toFixed(1)}" fill="#FFFFFF" opacity="0.055"/></g>
           ${contentText(sg, x + tw / 2, midY + 2, fsD, { anchor: "middle", keepCase: true, opacity: dim })}
-          <rect x="${x}" y="${(midY - 2).toFixed(1)}" width="${tw}" height="4" fill="#04060C" opacity="0.85"/>
-          <rect x="${x}" y="${(midY + 2).toFixed(1)}" width="${tw}" height="1.2" fill="#FFFFFF" opacity="0.1"/>
-          <circle cx="${(x + 11 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
-          <circle cx="${(x + tw - 11 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
+          <g clip-path="url(#${gidT}w)">
+            <rect x="${x}" y="${(midY - 2).toFixed(1)}" width="${tw}" height="4" fill="#04060C" opacity="0.85"/>
+            <rect x="${x}" y="${(midY + 2).toFixed(1)}" width="${tw}" height="1.2" fill="#FFFFFF" opacity="0.1"/>
+          </g>
+          <circle cx="${(x + insT + 7 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
+          <circle cx="${(x + tw - insT - 7 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
           <text x="${x + tw / 2}" y="${(pad3 + th + 22 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(12.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${urgent ? alarm : (isDarkBg(cfg.canvas) ? hexRgba(glow, 0.8) : darken(bevel, 0.3))}" text-anchor="middle" opacity="${dim}">${esc(tags[i] ?? "")}</text>` +
           (i < segs.length - 1
             ? `<circle cx="${(x + tw + gap2 / 2).toFixed(1)}" cy="${(midY - 16 * k).toFixed(1)}" r="${(4 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.25)}"/><circle cx="${(x + tw + gap2 / 2).toFixed(1)}" cy="${(midY + 16 * k).toFixed(1)}" r="${(4 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.25)}"/>`
@@ -1793,33 +1921,40 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const cx3 = W2 / 2, cy3 = pad2 + crownH + d2 / 2;
       const r0 = d2 / 2;
       const gid6 = "sw" + UID++;
+      const faceR0 = r0 * 0.88; // instrument well radius — fits inside any silhouette
       let ticks = "";
       for (let i = 0; i < 60; i++) {
         const major = i % 5 === 0;
         const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
-        const rOut = r0 - 13 * k, rIn = rOut - (major ? 10 * k : 5.5 * k);
+        const rOut = faceR0 - 5 * k, rIn = rOut - (major ? 10 * k : 5.5 * k);
         ticks += `<line x1="${(cx3 + Math.cos(a) * rIn).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rIn).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rOut).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rOut).toFixed(1)}" stroke="#FFFFFF" stroke-width="${major ? 2.4 : 1.2}" opacity="${major ? 0.75 : 0.3}"/>`;
       }
       const aH = v3 * Math.PI * 2 - Math.PI / 2;
-      const rHand = r0 - 26 * k;
-      const arcR = r0 - 17 * k;
+      // v61: the body is a REAL themed shell — the full candy stack at watch
+      // size, silhouette-aware like every button — with a circular
+      // instrument well recessed into its face
+      const faceR = faceR0;
+      const rHand = faceR - 18 * k;
+      const arcR = faceR - 10 * k;
       const large = v3 > 0.5 ? 1 : 0;
       const arc = v3 > 0.01
         ? `<path d="M ${cx3} ${(cy3 - arcR).toFixed(1)} A ${arcR.toFixed(1)} ${arcR.toFixed(1)} 0 ${large} 1 ${(cx3 + Math.cos(aH) * arcR).toFixed(1)} ${(cy3 + Math.sin(aH) * arcR).toFixed(1)}" fill="none" stroke="${urgent ? alarm : glow}" stroke-width="${(5 * k).toFixed(1)}" stroke-linecap="round" opacity="0.4"/>`
         : "";
+      const swShell = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: d2, fs: 0, iconSize: 0 }, { iconDef: null, label: "", shapeOverride: sov, fixedW: d2 });
+      const swSh = /data-shell="([-\d. ]+)"/.exec(swShell);
+      const [ssx, ssy, ssw, ssh] = swSh ? swSh[1].split(" ").map(Number) : [33, 27, d2, d2];
+      const swInner = swShell.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="stopwatch" data-timer="watch"${urgent ? ' data-urgent="1"' : ""}>
 <defs>
   <linearGradient id="${gid6}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>
-  <filter id="${gid6}g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
 </defs>
 <g opacity="${dim}">
   <rect x="${(cx3 - 9 * k).toFixed(1)}" y="${(pad2 + 2 * k).toFixed(1)}" width="${(18 * k).toFixed(1)}" height="${(16 * k).toFixed(1)}" rx="${(4 * k).toFixed(1)}" fill="url(#${gid6})" stroke="${darken(bevel, 0.45)}" stroke-width="1.5"/>
   <rect x="${(cx3 - 13 * k).toFixed(1)}" y="${(pad2).toFixed(1)}" width="${(26 * k).toFixed(1)}" height="${(6 * k).toFixed(1)}" rx="${(3 * k).toFixed(1)}" fill="${darken(bevel, 0.3)}"/>
   <g transform="rotate(-42 ${cx3} ${cy3})"><rect x="${(cx3 - 6 * k).toFixed(1)}" y="${(cy3 - r0 - 12 * k).toFixed(1)}" width="${(12 * k).toFixed(1)}" height="${(14 * k).toFixed(1)}" rx="${(3 * k).toFixed(1)}" fill="${darken(bevel, 0.25)}"/></g>
   <g transform="rotate(42 ${cx3} ${cy3})"><rect x="${(cx3 - 6 * k).toFixed(1)}" y="${(cy3 - r0 - 12 * k).toFixed(1)}" width="${(12 * k).toFixed(1)}" height="${(14 * k).toFixed(1)}" rx="${(3 * k).toFixed(1)}" fill="${darken(bevel, 0.25)}"/></g>
-  <circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gid6})" filter="url(#${gid6}g)" opacity="0.35"/>
-  <circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gid6})" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>
-  <circle cx="${cx3}" cy="${cy3}" r="${(r0 - 9 * k).toFixed(1)}" fill="${wellFill}"/>
+  <g transform="translate(${(cx3 - (ssx + ssw / 2)).toFixed(1)} ${(cy3 - (ssy + ssh / 2)).toFixed(1)})">${swInner}</g>
+  <circle cx="${cx3}" cy="${cy3}" r="${faceR.toFixed(1)}" fill="${wellFill}"/>
   ${ticks}
   ${arc}
   <line x1="${cx3}" y1="${cy3}" x2="${(cx3 + Math.cos(aH) * rHand).toFixed(1)}" y2="${(cy3 + Math.sin(aH) * rHand).toFixed(1)}" stroke="${urgent ? alarm : hexMix(glow, "#FFFFFF", 0.35)}" stroke-width="${(3.4 * k).toFixed(1)}" stroke-linecap="round"/>

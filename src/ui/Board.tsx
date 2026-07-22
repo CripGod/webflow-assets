@@ -20,7 +20,7 @@ const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
   { name: "Buttons", ids: ["primary", "secondary", "small", "ghost", "iconbtn"] },
   { name: "Containers", ids: ["panel", "header", "tab", "dropdown"] },
   { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "orb", "ring", "flipclock", "stopwatch", "timerdigits"] },
-  { name: "Controls", ids: ["toggle", "slider", "progress", "input", "segment", "checkbox", "radio", "joystick"] },
+  { name: "Controls", ids: ["toggle", "slider", "progress", "segbar", "input", "segment", "checkbox", "radio", "joystick"] },
   { name: "Combat & spatial", ids: ["reticle", "minimap", "ammo", "lives", "bignum"] },
   { name: "Racing", ids: ["speedo", "speedo2", "circuit", "leaderboard", "laptimes", "telemetry", "startlights"] },
 ];
@@ -87,7 +87,7 @@ const ovBackground = (mode: string): string =>
 
 export function BoardView({ playing }: { playing: boolean }) {
   const {
-    cfg, boards, activeBoard, library, kitShapes, kitSizes, kitTextFill, kitIcons, kitLabels, kitRow,
+    cfg, boards, activeBoard, library, kitShapes, kitSizes, kitTextFill, kitIcons, kitLabels, kitRow, kitBar,
     setActiveBoard, addBoard, removeBoard, renameBoard, moveBoard, clearBoard, setBoardBg,
     addBoardItems, setBoardAspect, boardSnap, setBoardSnap, boardSel, setBoardSel,
     addToBoard, addKitToBoard, moveBoardItem, scaleBoardItem, rotateBoardItem, removeBoardItem,
@@ -159,7 +159,8 @@ export function BoardView({ playing }: { playing: boolean }) {
   /* the exact svg a board item shows — shared by display, export and PNG */
   const svgOf = (b: BoardItem): { svg: string; cfg: GenConfig } => {
     if (b.kitId) {
-      return { svg: renderKit(applyKitTextFill(cfg, kitTextFill[b.kitId]), b.kitId, kitSizes[b.kitId] ?? "l", "default", undefined, kitShapes[b.kitId], { icon: resolveKitIcon(kitIcons[b.kitId], undefined), label: kitLabels[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }), cfg };
+      const kb = b.kitId === "progress" || b.kitId === "segbar" ? kitBar[b.kitId] : undefined;
+      return { svg: renderKit(applyKitTextFill(cfg, kitTextFill[b.kitId]), b.kitId, kitSizes[b.kitId] ?? "l", "default", undefined, kitShapes[b.kitId], { icon: resolveKitIcon(kitIcons[b.kitId], undefined), label: kitLabels[b.kitId], dock: kb?.dock ? { icon: resolveKitIcon(kitIcons[b.kitId], undefined), side: kb.dockSide ?? "left" } : undefined, bar: kb, row: b.kitId === "datarow" ? kitRow : undefined }), cfg };
     }
     const item = library.find((l) => l.id === b.libId);
     if (!item) return { svg: "", cfg };
@@ -534,7 +535,7 @@ function StagePiece({ b, playing, selected, onSelect, onDragStart, onDragMove, o
   onDragMove: (e: React.PointerEvent) => void;
   onDragEnd: () => void;
 }) {
-  const { cfg, library, kitShapes, kitSizes, kitTextFill, kitIcons, kitLabels, kitRow } = useGen();
+  const { cfg, library, kitShapes, kitSizes, kitTextFill, kitIcons, kitLabels, kitRow, kitBar } = useGen();
   const sc = b.scale ?? 1;
   const artRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState<{ w: number; h: number; shell: [number, number, number, number] | null } | null>(null);
@@ -596,7 +597,10 @@ function StagePiece({ b, playing, selected, onSelect, onDragStart, onDragMove, o
       <div ref={artRef} style={{ transform: `scale(${sc})`, transformOrigin: "top left" }}>
         {b.kitId ? (
           <LiveArt cfg={applyKitTextFill(cfg, kitTextFill[b.kitId])} playing={playing} anchorContent
-            kit={{ id: b.kitId, size: kitSizes[b.kitId] ?? "l", shape: kitShapes[b.kitId], icon: resolveKitIcon(kitIcons[b.kitId], undefined), label: kitLabels[b.kitId], row: b.kitId === "datarow" ? kitRow : undefined }} />
+            kit={{ id: b.kitId, size: kitSizes[b.kitId] ?? "l", shape: kitShapes[b.kitId], icon: resolveKitIcon(kitIcons[b.kitId], undefined), label: kitLabels[b.kitId],
+              dock: (b.kitId === "progress" || b.kitId === "segbar") && kitBar[b.kitId]?.dock ? { icon: resolveKitIcon(kitIcons[b.kitId], undefined), side: kitBar[b.kitId]?.dockSide ?? "left" } : undefined,
+              bar: b.kitId === "progress" || b.kitId === "segbar" ? kitBar[b.kitId] : undefined,
+              row: b.kitId === "datarow" ? kitRow : undefined }} />
         ) : (
           <LiveArt cfg={item!.cfg} playing={playing} anchorContent
             kit={item!.kit ? { id: item!.kit.id, size: item!.kit.size, shape: item!.kit.shape } : undefined} />

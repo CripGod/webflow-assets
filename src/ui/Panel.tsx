@@ -256,7 +256,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
+  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
   const actBd = boards.find((b) => b.id === activeBoard);
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const [iconQuery, setIconQuery] = useState("");
@@ -271,7 +271,7 @@ export function Panel() {
 
   // v57: the component-icon swap needs the library even while the master
   // icon section stays parked — load it whenever a swappable piece is focused
-  const iconSwappable = !!focus && (["iconbtn", "chip", "resource", "slot", "datarow", "badge"] as KitComponentId[]).includes(focus);
+  const iconSwappable = !!focus && (["iconbtn", "chip", "resource", "slot", "datarow", "badge", "progress", "segbar"] as KitComponentId[]).includes(focus);
   const labelEditable = !!focus && (["primary", "secondary", "small", "ghost", "chip", "tab", "header", "badge", "resource", "input", "dropdown", "bignum", "ammo"] as KitComponentId[]).includes(focus);
   useEffect(() => {
     if (!ICONS_ENABLED && !iconSwappable) return;
@@ -641,6 +641,34 @@ export function Panel() {
               <RotateCcw size={13} strokeWidth={2} /> Back to the stock glyph
             </button>
           )}
+          </>)}
+        </Section>
+      )}
+
+      {/* ── v61: Bar — the dock system + segment settings ── */}
+      {focus && (focus === "progress" || focus === "segbar") && (
+        <Section id="barsec" title="Bar"
+          summary={<span>{(kitBar[focus]?.dock ?? false) ? "docked" : "plain"}</span>}>
+          <div className="sublabel">Emblem socket</div>
+          <label className="check"><input type="checkbox" checked={kitBar[focus]?.dock ?? false}
+            onChange={(e) => setKitBar(focus, { dock: e.target.checked })} /> Dock a socket on the track</label>
+          {(kitBar[focus]?.dock ?? false) && (
+            <div className="segmini" role="radiogroup" aria-label="Dock side">
+              {(["left", "right"] as const).map((sd) => (
+                <button key={sd} className={(kitBar[focus]?.dockSide ?? "left") === sd ? "on" : ""} role="radio"
+                  aria-checked={(kitBar[focus]?.dockSide ?? "left") === sd}
+                  onClick={() => setKitBar(focus, { dockSide: sd })}>{sd === "left" ? "Left" : "Right"}</button>
+              ))}
+            </div>
+          )}
+          <div className="helper">A silhouette-aware mini shell riding the bar's end — the full candy stack at emblem size. Its glyph comes from <b>Component content</b> above; remove the icon there for an empty socket (drop art in-engine).</div>
+          {focus === "segbar" && (<>
+            <div className="sublabel">Segments</div>
+            <Slider label="Segments" value={kitBar.segbar?.segments ?? 5} min={2} max={12} unit="" onChange={(v) => setKitBar("segbar", { segments: v })} />
+            <Slider label="Gap" value={kitBar.segbar?.gap ?? 6} min={2} max={14} unit="px" onChange={(v) => setKitBar("segbar", { gap: v })} />
+            <label className="check"><input type="checkbox" checked={kitBar.segbar?.snap ?? true}
+              onChange={(e) => setKitBar("segbar", { snap: e.target.checked })} /> Snap to whole cells</label>
+            <div className="helper">Snapped cells light one by one — stamina pips. Off, a single fill slides under the notches — boss-phase style.</div>
           </>)}
         </Section>
       )}

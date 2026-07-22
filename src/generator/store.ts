@@ -239,6 +239,9 @@ interface GenStore {
   /** Per-component horizontal text adjustment — same keying as kitTextOy. */
   kitTextOx: Partial<Record<string, number>>;
   setKitTextOx: (key: string, v: number | null) => void;
+  /** Bar-family config — dock (emblem socket) + segment settings. */
+  kitBar: Partial<Record<KitComponentId, { segments?: number; gap?: number; snap?: boolean; dock?: boolean; dockSide?: "left" | "right" }>>;
+  setKitBar: (id: KitComponentId, patch: Partial<{ segments: number; gap: number; snap: boolean; dock: boolean; dockSide: "left" | "right" }> | null) => void;
   /** Per-component text color override — one piece's glyphs go their own
    *  color while global Typography keeps driving everything else. */
   kitTextFill: Partial<Record<KitComponentId, string>>;
@@ -748,6 +751,15 @@ export const useGen = create<GenStore>((set, get) => ({
     if (v === null) delete kitTextOx[key]; else kitTextOx[key] = v;
     saveJson("ui-generator-kittextox", kitTextOx);
     set({ kitTextOx });
+  },
+  kitBar: loadJson<GenStore["kitBar"]>("ui-generator-kitbar", {}),
+  setKitBar: (id, patch) => {
+    markTouched();
+    const kitBar = { ...get().kitBar };
+    if (patch === null) delete kitBar[id];
+    else kitBar[id] = { ...kitBar[id], ...patch };
+    saveJson("ui-generator-kitbar", kitBar);
+    set({ kitBar });
   },
   bgImage: null,
   setBgImage: (url) => set({ bgImage: url }),

@@ -622,7 +622,7 @@ export type KitComponentId =
   | "primary" | "secondary" | "small" | "ghost" | "iconbtn"
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
-  | "slider" | "progress" | "input" | "dropdown" | "panel"
+  | "slider" | "progress" | "segbar" | "input" | "dropdown" | "panel"
   | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
   | "flipclock" | "stopwatch" | "timerdigits"
@@ -645,6 +645,7 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "toggle", name: "Toggle" },
   { id: "slider", name: "Slider" },
   { id: "progress", name: "Progress bar" },
+  { id: "segbar", name: "Segmented bar" },
   { id: "input", name: "Input field" },
   { id: "dropdown", name: "Dropdown" },
   { id: "panel", name: "Panel" },

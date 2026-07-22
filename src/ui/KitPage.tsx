@@ -120,12 +120,14 @@ interface PieceOpts {
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string; iconScale?: number; trim?: boolean; tight?: boolean;
   kind?: "circle" | "oval" | "strip"; tone?: "alt"; shape?: Shape; shine?: boolean;
+  dock?: { icon?: IconDef | null; side?: "left" | "right" } | null;
+  bar?: { segments?: number; gap?: number; snap?: boolean };
 }
 
 /** Shared plumbing for every live piece on this page. The page is always
  *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextOx, kitTextFill, kitIcons, kitLabels, kitRow, setFocus, setKitSize, setKitKind } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextOx, kitTextFill, kitIcons, kitLabels, kitRow, kitBar, setFocus, setKitSize, setKitKind } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
@@ -152,6 +154,18 @@ function usePiece(p: PieceOpts) {
       // label/sub still wins for its own line
       row: p.id === "datarow" ? kitRow : undefined,
       kind: p.kind, tone: p.tone,
+      // bar-family config: the user's per-component settings ride over the
+      // specimen's defaults; the dock glyph follows the icon-swap system
+      ...(p.id === "progress" || p.id === "segbar" ? (() => {
+        const kb = kitBar[p.id];
+        // a specimen that DEMOS the dock always keeps it — the panel toggle
+        // drives the plain variants, the hero and the Board
+        const dockOn = !!p.dock || (kb?.dock ?? false);
+        return {
+          dock: dockOn ? { icon: resolveKitIcon(kitIcons[p.id], p.dock?.icon), side: kb?.dockSide ?? p.dock?.side ?? "left" } : null,
+          bar: { ...p.bar, ...(kb ? { segments: kb.segments ?? p.bar?.segments, gap: kb.gap ?? p.bar?.gap, snap: kb.snap ?? p.bar?.snap } : {}) },
+        };
+      })() : {}),
     },
     onEdit: () => {
       setKitKind(p.kind ?? null); setFocus(p.id);
@@ -814,6 +828,9 @@ export function KitPage() {
         rk("segment", "Segment · First", {}, 0),
         rk("slider", "Slider · Low", {}, 0.15),
         rk("progress", "Progress · Full", {}, 1),
+        rk("progress", "Emblem bar · Docked", { dock: {} }, 0.55),
+        rk("segbar", "Segmented · 3 of 5", {}, 0.62),
+        rk("segbar", "Segmented · Smooth", { bar: { segments: 8, snap: false } }, 0.55),
         rk("input", "Input · Focus", {}, undefined, "hover"),
         rk("input", "Input · Disabled", {}, undefined, "disabled"),
         rk("dropdown", "Dropdown · Open", {}, undefined, "pressed"),
@@ -1265,10 +1282,17 @@ export function KitPage() {
       </Sec>
 
       {/* ── 06 · sliders & progress ── */}
-      <Sec n="04" title="Sliders & Progress" note="Shared range rules: the thumb stays inside the shell at both endpoints and the fill ends at the thumb's center. Progress replays to its configured value on click or Enter.">
+      <Sec n="04" title="Sliders & Progress" note="Shared range rules: the thumb stays inside the shell at both endpoints and the fill ends at the thumb's center. Progress replays to its configured value on click or Enter. The emblem bar docks a silhouette-aware socket on the track — swap its glyph in Component content; the segmented meter snaps to whole cells or slides one fill under the notches.">
         <div className="kp-tray">
           <Piece id="slider" caption="Slider" value={0.62} />
           <Piece id="progress" caption="Progress" value={0.62} ambient />
+        </div>
+        <div className="kp-tray">
+          <Piece id="progress" caption="Emblem bar · docked socket" value={0.55} dock={{}} ambient />
+        </div>
+        <div className="kp-tray">
+          <Piece id="segbar" caption="Segmented · snaps to cells" value={0.62} ambient />
+          <Piece id="segbar" caption="Segmented · 8 · smooth" value={0.55} bar={{ segments: 8, snap: false }} ambient />
         </div>
         <StateStrip variants={[
           { cap: "Min", piece: { id: "slider", value: 0, scale: 0.26 } },
