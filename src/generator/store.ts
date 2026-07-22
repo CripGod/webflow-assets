@@ -166,6 +166,9 @@ interface GenStore {
   panMode: boolean;
   gridStyle: GridStyle;
   sectionFilter: string | null;
+  /** Live text filter over the editor tray — every control searchable. */
+  panelQuery: string;
+  setPanelQuery: (q: string) => void;
   saveStatus: "saved" | "saving";
   open: Record<string, boolean>;
 
@@ -200,7 +203,7 @@ interface GenStore {
   moveBoard: (id: string, dir: -1 | 1) => void;
   clearBoard: (id: string) => void;
   /** Patch the ACTIVE board's background (image / show / opacity / blur). */
-  setBoardBg: (patch: Partial<Pick<BoardDef, "bgImage" | "bgShow" | "bgOpacity" | "bgBlur">>) => void;
+  setBoardBg: (patch: Partial<Pick<BoardDef, "bgImage" | "bgShow" | "bgOpacity" | "bgBlur" | "ovMode" | "ovStrength" | "ovNoise" | "ovBlend">>) => void;
   addToBoard: (libId: string) => void;
   /** Append a pre-placed set of kit pieces (starter templates). */
   addBoardItems: (items: { kitId: KitComponentId; x: number; y: number; scale?: number }[]) => void;
@@ -233,6 +236,9 @@ interface GenStore {
    *  the theme's value applies only to components never adjusted. */
   kitTextOy: Partial<Record<string, number>>;
   setKitTextOy: (key: string, v: number | null) => void;
+  /** Per-component horizontal text adjustment — same keying as kitTextOy. */
+  kitTextOx: Partial<Record<string, number>>;
+  setKitTextOx: (key: string, v: number | null) => void;
   /** Per-component text color override — one piece's glyphs go their own
    *  color while global Typography keeps driving everything else. */
   kitTextFill: Partial<Record<KitComponentId, string>>;
@@ -322,6 +328,12 @@ export interface BoardDef {
   bgShow?: boolean;
   bgOpacity?: number;
   bgBlur?: number;
+  /** Overlay between the backdrop and the pieces — a tint-and-grain layer
+   *  that makes components pop against busy art. */
+  ovMode?: "none" | "dark" | "light" | "vignette";
+  ovStrength?: number;  // 0..100 — tint opacity
+  ovNoise?: number;     // 0..100 — film-grain amount
+  ovBlend?: "normal" | "multiply" | "screen" | "overlay" | "soft-light";
 }
 /** Two independent text groups + slot toggles for the Data Row family. */
 export interface RowCfg {
@@ -440,6 +452,8 @@ export const useGen = create<GenStore>((set, get) => ({
   panMode: false,
   gridStyle: "dots" as GridStyle,
   sectionFilter: null,
+  panelQuery: "",
+  setPanelQuery: (q) => set({ panelQuery: q }),
   saveStatus: "saved",
   open: { state: true, shape: true, mapping: true, gloss: true },
   panelW: loadPanelW(),
@@ -456,7 +470,7 @@ export const useGen = create<GenStore>((set, get) => ({
   setCanvasMode: (m) => set({ canvasMode: m }),
   library: loadJson<LibItem[]>(LIB_KEY, []),
   addToLibrary: (name) => {
-    const { focus, kitSizes, kitShapes, kitDesigns, kitTextOy, kitTextFill } = get();
+    const { focus, kitSizes, kitShapes, kitDesigns, kitTextOy, kitTextOx, kitTextFill } = get();
     let cfg = (typeof structuredClone === "function" ? structuredClone(get().cfg) : JSON.parse(JSON.stringify(get().cfg))) as GenConfig;
     // a locked component saves with its locked look — the snapshot IS the piece
     if (focus && kitDesigns[focus]) cfg = applyKitDesign(cfg, kitDesigns[focus]);
@@ -466,6 +480,8 @@ export const useGen = create<GenStore>((set, get) => ({
     if (focus) {
       const oy = kitTextOy[`${focus}:${effKitSize(kitSizes[focus])}`];
       if (oy !== undefined) cfg.type.oy = oy;
+      const ox = kitTextOx[`${focus}:${effKitSize(kitSizes[focus])}`];
+      if (ox !== undefined) cfg.type.ox = ox;
     }
     const kit: LibKit | undefined = focus
       ? { id: focus, size: effKitSize(kitSizes[focus]), shape: kitShapes[focus] ?? KIT_SHAPE[focus] }
@@ -725,6 +741,14 @@ export const useGen = create<GenStore>((set, get) => ({
     saveJson("ui-generator-kittextoy", kitTextOy);
     set({ kitTextOy });
   },
+  kitTextOx: loadJson<Partial<Record<string, number>>>("ui-generator-kittextox", {}),
+  setKitTextOx: (key, v) => {
+    markTouched();
+    const kitTextOx = { ...get().kitTextOx };
+    if (v === null) delete kitTextOx[key]; else kitTextOx[key] = v;
+    saveJson("ui-generator-kittextox", kitTextOx);
+    set({ kitTextOx });
+  },
   bgImage: null,
   setBgImage: (url) => set({ bgImage: url }),
   helpOn: false,
@@ -900,7 +924,9 @@ export const useGen = create<GenStore>((set, get) => ({
     });
   },
   setSelectedState: (s) => set({ selectedState: s }),
-  setPhase: (p) => set({ phase: p }),
+  // the kit is a guidelines DOCUMENT — it always opens at reading scale,
+  // whatever zoom the editor or board was left at
+  setPhase: (p) => set(p === "kit" ? { phase: p, zoom: 1 } : { phase: p }),
   setKitSize: (id, s) => set((st) => ({ kitSizes: { ...st.kitSizes, [id]: s } })),
   setZoom: (z) => set({ zoom: Math.max(0.4, Math.min(4, Math.round(z * 10) / 10)) }),
   setPanMode: (v) => set({ panMode: v }),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Search as SearchIcon, X, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize } from "@/generator/model";
 import type { GenStateName, BlendMode, PatternType, KitComponentId } from "@/generator/model";
@@ -77,11 +77,10 @@ export function Rail() {
     // section groups live in the editor's inspector — leave the kit or board
     // view first so the rail keeps working everywhere
     if (phase !== "master") setPhase("master");
-    // clicking the active group again lifts the focus filter
-    if (sectionFilter === id) { setSectionFilter(null); return; }
+    // v59: the rail SHUTTLES — every section stays in the tray; the click
+    // marks the stop, opens its sections and scrolls the first into view
     setSectionFilter(id);
-    // open the group's sections for real, then bring the first into view
-    useGen.setState((st) => ({ open: { ...st.open, ...Object.fromEntries((GROUPS[id] ?? []).map((k) => [k, true])) } }));
+    useGen.setState((st) => ({ panelQuery: "", open: { ...st.open, ...Object.fromEntries((GROUPS[id] ?? []).map((k) => [k, true])) } }));
     window.setTimeout(() => {
       const first = GROUPS[id]?.[0];
       document.querySelector(`[data-sec="${first}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -118,13 +117,20 @@ export function Rail() {
 function Section({ id, title, summary, right, children }: {
   id: string; title: React.ReactNode; summary?: React.ReactNode; right?: React.ReactNode; children?: React.ReactNode;
 }) {
-  const { open, toggle, sectionFilter } = useGen();
-  const isOpen = !!open[id];
-  // focus mode: a rail choice means "show me this" — everything else steps
-  // back until the filter is lifted. Contextual sections always show.
-  if (sectionFilter && !(GROUPS[sectionFilter] ?? []).includes(id) && id !== "datarowsec" && id !== "kiticon") return null;
+  const { open, toggle, panelQuery } = useGen();
+  const q = (panelQuery ?? "").trim().toLowerCase();
+  // v59: the full stack is always in the tray — the rail SHUTTLES to a
+  // section instead of filtering the rest away. While searching, every
+  // section opens and only the ones whose text matches stay visible.
+  const isOpen = !!open[id] || !!q;
+  const ref = useRef<HTMLElement>(null);
+  const [hit, setHit] = useState(true);
+  useEffect(() => {
+    if (!q) { setHit(true); return; }
+    setHit((ref.current?.textContent ?? "").toLowerCase().includes(q));
+  }, [q, children]);
   return (
-    <section className="sec" data-sec={id}>
+    <section className="sec" data-sec={id} ref={ref} style={q && !hit ? { display: "none" } : undefined}>
       <div className="sec-head" onClick={() => toggle(id)} role="button" aria-expanded={isOpen} tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggle(id); }}>
         <h3>{title}</h3>
@@ -250,7 +256,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, refreshLibraryItem, replaceConfig, resetAll } = useGen();
+  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
   const actBd = boards.find((b) => b.id === activeBoard);
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const [iconQuery, setIconQuery] = useState("");
@@ -369,6 +375,19 @@ export function Panel() {
   return (
     <aside className={`panel${playLocked ? " playlock" : ""}`} ref={panelRef}>
       {playLocked && <div className="playnote">Play mode — controls are paused so you can feel the states. Switch back to Design (✎ in the canvas toolbar) to edit.</div>}
+      {/* v59: every control is searchable — matching sections open, the
+          rest step aside until the query clears */}
+      <div className="panelsearch">
+        <SearchIcon size={14} strokeWidth={2.1} aria-hidden="true" />
+        <input value={panelQuery} placeholder="Search the controls — glow, nudge, weight…" aria-label="Search controls"
+          onChange={(e) => setPanelQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Escape") setPanelQuery(""); }} />
+        {panelQuery && (
+          <button title="Clear search" aria-label="Clear search" onClick={() => setPanelQuery("")}>
+            <X size={13} strokeWidth={2.2} />
+          </button>
+        )}
+      </div>
       {focus && (() => {
         const fname = KIT_COMPONENTS.find((c) => c.id === focus)?.name ?? focus;
         const locked = !!kitDesigns[focus];
@@ -992,18 +1011,23 @@ export function Panel() {
           <>
             <Slider label="Vertical nudge" value={kitTextOy[`${focus}:${effKitSize(kitSizes[focus])}`] ?? T2.oy ?? 0} min={-20} max={20} unit="px"
               onChange={(v) => setKitTextOy(`${focus}:${effKitSize(kitSizes[focus])}`, v)} />
+            <Slider label="Horizontal nudge" value={kitTextOx[`${focus}:${effKitSize(kitSizes[focus])}`] ?? T2.ox ?? 0} min={-20} max={20} unit="px"
+              onChange={(v) => setKitTextOx(`${focus}:${effKitSize(kitSizes[focus])}`, v)} />
             <div className="helper">
-              Component-specific — this nudge belongs to <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> at its current size and never moves anything else.
-              {kitTextOy[`${focus}:${effKitSize(kitSizes[focus])}`] !== undefined && (
-                <button className="chipbtn" style={{ marginLeft: 8 }} title="Clear this component's nudge — follow the theme again"
-                  onClick={() => setKitTextOy(`${focus}:${effKitSize(kitSizes[focus])}`, null)}>
+              Component-specific — these nudges belong to <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> at its current size and never move anything else.
+              {(kitTextOy[`${focus}:${effKitSize(kitSizes[focus])}`] !== undefined || kitTextOx[`${focus}:${effKitSize(kitSizes[focus])}`] !== undefined) && (
+                <button className="chipbtn" style={{ marginLeft: 8 }} title="Clear this component's nudges — follow the theme again"
+                  onClick={() => { setKitTextOy(`${focus}:${effKitSize(kitSizes[focus])}`, null); setKitTextOx(`${focus}:${effKitSize(kitSizes[focus])}`, null); }}>
                   <RotateCcw size={12} strokeWidth={2} />
                 </button>
               )}
             </div>
           </>
         ) : (
-          <Slider label="Vertical nudge" value={T2.oy ?? 0} min={-20} max={20} unit="px" onChange={(v) => update((c) => { c.type.oy = v; })} />
+          <>
+            <Slider label="Vertical nudge" value={T2.oy ?? 0} min={-20} max={20} unit="px" onChange={(v) => update((c) => { c.type.oy = v; })} />
+            <Slider label="Horizontal nudge" value={T2.ox ?? 0} min={-20} max={20} unit="px" onChange={(v) => update((c) => { c.type.ox = v; })} />
+          </>
         )}
         {/* weight follows the face's real capabilities — variable axes get a
             correctly bounded slider, static faces a list of real weights */}

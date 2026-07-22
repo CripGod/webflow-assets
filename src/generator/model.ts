@@ -189,6 +189,7 @@ export interface TypeCfg {
   spacing: number;     // letter-spacing, em/100 (-5..20)
   case: TextCase;
   oy?: number;         // vertical nudge px — visually center against the shell
+  ox?: number;         // horizontal nudge px — same scale, sideways
   /** First matching phrase inside the label renders as a brighter, illuminated
    *  portion of the same material — same font, metrics, outline, everything. */
   highlight?: string;
