@@ -350,6 +350,10 @@ export function BoardView({ playing }: { playing: boolean }) {
                     onFocus={() => setActiveBoard(bd.id)}
                     onChange={(e) => renameBoard(bd.id, e.target.value)} />
                   <span className="bd-abmeta">{aspName} · {W} × {H}</span>
+                  <button className="bd-abtool" title={`Export ${bd.name} as a PNG at full ${W} × ${H} resolution — background, overlay and pieces`}
+                    onClick={() => void exportPng(bd)}>
+                    <Download size={12} strokeWidth={2.2} /> PNG
+                  </button>
                   <button className="bd-abtool" title="Clear every piece from this board"
                     onClick={() => { if (bd.items.length === 0 || window.confirm(`Clear all ${bd.items.length} pieces from ${bd.name}?`)) clearBoard(bd.id); }}>
                     Clear
