@@ -516,6 +516,9 @@ export function Panel() {
 
       {/* ── A2 · Silhouette — pure geometry, material stays ── */}
       <Section id="silhouette" title="Silhouette" summary={<span>{SHAPES.find((sh) => sh.id === D.shape)?.name.split(" — ")[0]}</span>}>
+        {focus && (
+          <div className="helper">Picking a silhouette restyles <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name ?? focus}</b> only — its shell, wells and fills all follow. Leave edit mode to change the whole kit.</div>
+        )}
         {/* v56: corner smoothness lives at the TOP of the section, always
             visible — it was buried under the import notes and vanished for
             pills, which read as "missing" */}
