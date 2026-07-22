@@ -107,6 +107,19 @@ function useShellRail(ref: React.RefObject<HTMLDivElement | null>, sel: string) 
         zone.style.setProperty("--node-cy", `${(cy - zone.getBoundingClientRect().top).toFixed(1)}px`);
       }
       if (centers.length) el.style.setProperty("--rail-y", `${(centers.reduce((a, b) => a + b, 0) / centers.length - host.top).toFixed(1)}px`);
+      /* progression truth: the glow fill ends at the CURRENT node — measure
+         its shell center-x and hand the rail the fill length in px */
+      const rail = el.querySelector<HTMLElement>(".kp-rail3");
+      const curS = el.querySelector<SVGSVGElement>(".kp-tnodezone.current svg[data-shell]");
+      if (rail && curS) {
+        const parts = (curS.getAttribute("data-shell") ?? "").split(" ").map(Number);
+        const r = curS.getBoundingClientRect();
+        const vb = curS.viewBox.baseVal;
+        if (parts.length === 4 && !parts.some(Number.isNaN) && r.width && vb.width) {
+          const cx = r.left + ((parts[0] + parts[2] / 2 - vb.x) / vb.width) * r.width;
+          el.style.setProperty("--rail-fill", `${Math.max(0, cx - rail.getBoundingClientRect().left).toFixed(1)}px`);
+        }
+      }
     };
     const raf = requestAnimationFrame(position);
     const ro = new ResizeObserver(position);

@@ -360,6 +360,15 @@ function offsetAttempt(ring: Pt[], delta: number, eps: number, mergeR: number, c
   return "M " + out.map((p) => `${p.x} ${p.y}`).join(" L ") + " Z";
 }
 
+/** Effective wall width for a shape. The banner's tail geometry only reads
+ *  clean between 9 and 33 (review-measured), so the renderer clamps what it
+ *  consumes — stale or shared configs can't break the tails. `off` drops
+ *  the wall entirely: the face fills the whole silhouette. */
+export function effectiveWall(width: number, shape: Shape, off?: boolean): number {
+  if (off) return 0;
+  return shape === "banner" ? Math.min(33, Math.max(9, width)) : width;
+}
+
 /** Inner shape at true offset `delta` — falls back to the classic scaled
  *  inset for arc-built paths (pill/round — convex, scaling was never wrong)
  *  and for offsets too deep to survive. */
@@ -838,7 +847,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
      exports all stay aligned while the glow gets room to breathe. */
   const pad = glowPadOf(cfg);
 
-  const bw = (secondary ? Math.max(4, D.bevel.width * 0.7) : D.bevel.width) * K;
+  const wall = effectiveWall(D.bevel.width, shape, D.bevel.off);
+  const bw = (wall === 0 ? 0 : secondary ? Math.max(4, wall * 0.7) : wall) * K;
   // Metadata-driven face inset (imported silhouettes only): maxBevelRatio
   // caps the inset a shape can survive, faceInsetScale trims it further.
   // For every production shape bwF === bw — behavior is unchanged.
@@ -1320,7 +1330,7 @@ export function glowPadOf(cfg: GenConfig): number {
 export function shellPaths(cfg: GenConfig, shape: Shape, x: number, y: number, w: number, h: number): { outer: string; rim: string; face: string; bw: number; bwF: number; rimW: number } {
   const D = designFor(cfg, "default");
   const K = h / 168;
-  const bw = D.bevel.width * K;
+  const bw = effectiveWall(D.bevel.width, shape, D.bevel.off) * K;
   const impMeta = importedShape(shape);
   const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
   const rimW = D.candy.rim.width * K;
@@ -1478,7 +1488,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     for (const st of Object.values(cfg.states)) { st.glow = Math.min(st.glow, 8); }
   }
   const k = SIZE_K[size];
-  const bw = cfg.bevel.width;
+  const bw = cfg.bevel.off ? 0 : cfg.bevel.width;
   // content text on kit pieces (counters, rows, segments) follows the global
   // type Size and vertical nudge exactly like built labels do
   const typeK = clamp(cfg.type.size / 52, 0.5, 2.2);
