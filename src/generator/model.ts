@@ -25,7 +25,11 @@ export type Shape =
   // v22 — measured from Vector UI Pack (dobo_ui by Duplo) renders
   | "doboMarquee" | "doboRibbon" | "doboBracket"
   // v33 — user-imported flat-vector silhouettes (registry below)
-  | `user:${string}`;
+  | `user:${string}`
+  // v64 — Silhouette Feasibility Lab imports (importedShapes.ts). Reached
+  // ONLY through the isolated lab page; never listed in the production
+  // picker until the lab results are approved.
+  | `lab:${string}`;
 /* ── user silhouettes ─────────────────────────────────────────────
    Imported flat vectors: one closed, filled outline normalized to its own
    bounding box; the renderer stretches it into each component's frame.
@@ -189,6 +193,7 @@ export interface TypeCfg {
   spacing: number;     // letter-spacing, em/100 (-5..20)
   case: TextCase;
   oy?: number;         // vertical nudge px — visually center against the shell
+  ox?: number;         // horizontal nudge px — same scale, sideways
   /** First matching phrase inside the label renders as a brighter, illuminated
    *  portion of the same material — same font, metrics, outline, everything. */
   highlight?: string;
@@ -202,8 +207,9 @@ export interface TypeCfg {
    *  to an inflate effect without touching the glyph geometry. */
   inflate?: { on: boolean; strength: number };
   /** Crisp vector glints riding the letterforms — a specular slab clipped to
-   *  the glyphs plus star sparkles, all placed by the master lighting angle. */
-  glints?: { on: boolean; opacity: number };
+   *  the glyphs plus star sparkles, all placed by the master lighting angle.
+   *  ox/oy nudge the whole treatment in % of the letter height. */
+  glints?: { on: boolean; opacity: number; ox?: number; oy?: number };
   fillMode: "auto" | "solid" | "gradient";
   fill: string;
   fill2: string;       // gradient bottom
@@ -354,6 +360,16 @@ export const GAME_FONTS: { name: string; css: string | null; factor: number; cap
   { name: "Audiowide", css: "Audiowide", factor: 0.68, caps: { weights: [400] } },
   { name: "Silkscreen", css: "Silkscreen:wght@400;700", factor: 0.72, caps: { weights: [400, 700] } },
   { name: "Pixelify Sans", css: "Pixelify+Sans:wght@400..700", factor: 0.58, caps: { wght: [400, 700, 600] } },
+  { name: "Shrikhand", css: "Shrikhand", factor: 0.62, caps: { weights: [400] } },
+  { name: "Concert One", css: "Concert+One", factor: 0.55, caps: { weights: [400] } },
+  { name: "Paytone One", css: "Paytone+One", factor: 0.6, caps: { weights: [400] } },
+  { name: "Alfa Slab One", css: "Alfa+Slab+One", factor: 0.62, caps: { weights: [400] } },
+  { name: "Bowlby One SC", css: "Bowlby+One+SC", factor: 0.66, caps: { weights: [400] } },
+  { name: "Modak", css: "Modak", factor: 0.6, caps: { weights: [400] } },
+  { name: "Chango", css: "Chango", factor: 0.62, caps: { weights: [400] } },
+  { name: "Boogaloo", css: "Boogaloo", factor: 0.5, caps: { weights: [400] } },
+  { name: "Staatliches", css: "Staatliches", factor: 0.5, caps: { weights: [400] } },
+  { name: "Grandstander", css: "Grandstander:ital,wght@0,100..900;1,100..900", factor: 0.58, caps: { wght: [100, 900, 700], italic: true } },
 ];
 /* User-added Google Fonts — registered at runtime, names persisted in the
    config. Any family from fonts.google.com works; we request a broad weight
@@ -444,21 +460,51 @@ export interface Preset {
 
 /** Each preset is a different candy *construction*, not just a palette. */
 export const PRESETS: Preset[] = [
+  { id: "retro-diner", name: "Retro Diner", shape: "kenneyRect", bevel: { width: 11, softness: 70 },
+    effects: { Bevel: "#D93A2B", Glow: "#FFD9A8", Highlight: "#FFF6E8", Shadow: "#66150C", "Inner Fill": "#F6E7C9" },
+    candy: { pattern: { type: "checker", scale: 58, angle: 45, opacity: 20, color: null }, gloss: { height: 50, curve: 30, opacity: 66, softness: 40 }, specular: { on: true, mode: "line", size: 50, intensity: 55 }, extrusion: { depth: 12, darkness: 72 } } },
   { id: "hard-candy", name: "Hard Candy", shape: "round", bevel: { width: 10, softness: 78 },
     effects: { Bevel: "#0E9CC9", Glow: "#8FF0FF", Highlight: "#FFFFFF", Shadow: "#0A4A62", "Inner Fill": "#2CC5F0" },
     candy: { gloss: { height: 46, curve: 26, opacity: 72 }, specular: { on: true, mode: "anime" }, extrusion: { depth: 10 } } },
+  { id: "royal-vault", name: "Royal Vault", shape: "shield", bevel: { width: 13, softness: 45 },
+    effects: { Bevel: "#6C3FC9", Glow: "#C9A5FF", Highlight: "#FFEDB8", Shadow: "#251057", "Inner Fill": "#8F5BEF" },
+    candy: { pattern: { type: "stars", scale: 62, angle: 0, opacity: 24, color: null }, gloss: { height: 44, curve: 22, opacity: 60, softness: 34 }, specular: { on: true, mode: "soft", size: 34, intensity: 58, softness: 60 }, innerGlow: { opacity: 66, size: 52 }, extrusion: { depth: 14, darkness: 80 } } },
+  { id: "citrus-pop", name: "Citrus Pop", shape: "mazepill", bevel: { width: 11, softness: 88 },
+    effects: { Bevel: "#E8890C", Glow: "#FFD34D", Highlight: "#FFF7DB", Shadow: "#7A3B00", "Inner Fill": "#FFA726" },
+    candy: { gloss: { height: 48, curve: 30, opacity: 74 }, specular: { on: true, mode: "anime", size: 28, intensity: 80 }, extrusion: { depth: 11 }, bloom: { opacity: 55, size: 66 } } },
+  { id: "comic-pop", name: "Comic Pop", shape: "notch", bevel: { width: 12, softness: 30 },
+    effects: { Bevel: "#1E1F26", Glow: "#FFE24A", Highlight: "#FFFFFF", Shadow: "#0B0B12", "Inner Fill": "#FFC61A" },
+    candy: { pattern: { type: "halftone", scale: 70, angle: 0, opacity: 38, color: null }, gloss: { height: 40, curve: 18, opacity: 58, softness: 20 }, specular: { on: true, mode: "hard", size: 26, intensity: 88 }, extrusion: { depth: 13, darkness: 88 } } },
+  { id: "deep-ocean", name: "Deep Ocean", shape: "explorer", bevel: { width: 13, softness: 62 },
+    effects: { Bevel: "#0A5B8F", Glow: "#4DE3FF", Highlight: "#EAFBFF", Shadow: "#04263F", "Inner Fill": "#0E7FC0" },
+    candy: { gloss: { height: 40, curve: 18, opacity: 55, softness: 30 }, specular: { on: true, mode: "dual", size: 24, intensity: 62 }, innerGlow: { opacity: 70, size: 58 }, extrusion: { depth: 13, darkness: 66 } } },
   { id: "grape-jelly", name: "Grape Jelly", shape: "pill", bevel: { width: 9, softness: 100 },
     effects: { Bevel: "#8B34D8", Glow: "#E29CFF", Highlight: "#FFFFFF", Shadow: "#4A1178", "Inner Fill": "#A855F7" },
     candy: { gloss: { height: 54, curve: 40, opacity: 62, softness: 46 }, specular: { mode: "dual", softness: 55 }, innerGlow: { opacity: 72, size: 66 }, bloom: { opacity: 60, size: 72 }, extrusion: { depth: 12 } } },
-  { id: "hero-chisel", name: "Hero Chisel", shape: "chamfer", bevel: { width: 14, softness: 24 },
-    effects: { Bevel: "#D97706", Glow: "#FDE68A", Highlight: "#FFF7E6", Shadow: "#7C2D12", "Inner Fill": "#F59E0B" },
-    candy: { gloss: { height: 38, curve: 10, opacity: 44, softness: 10 }, specular: { mode: "sweep", size: 18, intensity: 62 }, extrusion: { depth: 14, darkness: 62 }, innerEdge: { strength: 62, width: 3 }, texture: { amount: 10, scale: 50 } } },
-  { id: "neon-versus", name: "Neon Versus", shape: "fighthud", bevel: { width: 10, softness: 20 },
-    effects: { Bevel: "#B4126B", Glow: "#FF3EC8", Highlight: "#FFE9F7", Shadow: "#3D0430", "Inner Fill": "#1C0F2E" },
-    candy: { gloss: { height: 34, curve: 12, opacity: 40, softness: 20 }, specular: { on: true, mode: "line", size: 60, intensity: 60 }, extrusion: { depth: 12, darkness: 80 }, innerGlow: { opacity: 78, size: 48 }, bloom: { opacity: 55, size: 70 }, pattern: { type: "stripes", scale: 34, angle: 65, opacity: 26, color: null } } },
+  { id: "glacier-tech", name: "Glacier Tech", shape: "polybar", bevel: { width: 12, softness: 22 },
+    effects: { Bevel: "#4E7E9C", Glow: "#B8F1FF", Highlight: "#F0FBFF", Shadow: "#122C40", "Inner Fill": "#7FB8D9" },
+    candy: { pattern: { type: "none", scale: 100, angle: 45, opacity: 0, color: null }, texture: { amount: 26, scale: 44 }, gloss: { height: 36, curve: 10, opacity: 44, softness: 16 }, specular: { on: true, mode: "sweep", size: 18, intensity: 60 }, extrusion: { depth: 13, darkness: 76 }, innerEdge: { strength: 58, width: 3 } } },
+  { id: "sakura-arcade", name: "Sakura Arcade", shape: "blade", bevel: { width: 9, softness: 92 },
+    effects: { Bevel: "#E064A8", Glow: "#FFC7E8", Highlight: "#FFFFFF", Shadow: "#7C2050", "Inner Fill": "#F58BC5" },
+    candy: { gloss: { height: 52, curve: 36, opacity: 76, softness: 34 }, specular: { on: true, mode: "anime", size: 30, intensity: 88 }, bloom: { opacity: 62, size: 70 }, extrusion: { depth: 9 } } },
   { id: "toy-box", name: "Toy Box", shape: "chunky", bevel: { width: 12, softness: 96 },
     effects: { Bevel: "#D98200", Glow: "#FFE066", Highlight: "#FFFDF2", Shadow: "#7A3D00", "Inner Fill": "#FFB020" },
     candy: { gloss: { height: 52, curve: 38, opacity: 80, softness: 42 }, specular: { on: true, mode: "dual", size: 26, intensity: 70, softness: 40 }, extrusion: { depth: 16, darkness: 70 }, pattern: { type: "dots", scale: 46, angle: 0, opacity: 30, color: null }, bloom: { opacity: 50, size: 64 } } },
+  { id: "mint-cream", name: "Mint Cream", shape: "chunky", bevel: { width: 11, softness: 100 },
+    effects: { Bevel: "#45C79F", Glow: "#CFFFEB", Highlight: "#FFFFFF", Shadow: "#14563F", "Inner Fill": "#7FE6C4" },
+    candy: { pattern: { type: "dots", scale: 40, angle: 0, opacity: 22, color: null }, gloss: { height: 54, curve: 38, opacity: 78, softness: 48 }, specular: { on: true, mode: "dual", size: 26, intensity: 68, softness: 45 }, bloom: { opacity: 56, size: 66 }, extrusion: { depth: 10, darkness: 68 } } },
+  { id: "neon-versus", name: "Neon Versus", shape: "fighthud", bevel: { width: 10, softness: 20 },
+    effects: { Bevel: "#B4126B", Glow: "#FF3EC8", Highlight: "#FFE9F7", Shadow: "#3D0430", "Inner Fill": "#1C0F2E" },
+    candy: { gloss: { height: 34, curve: 12, opacity: 40, softness: 20 }, specular: { on: true, mode: "line", size: 60, intensity: 60 }, extrusion: { depth: 12, darkness: 80 }, innerGlow: { opacity: 78, size: 48 }, bloom: { opacity: 55, size: 70 }, pattern: { type: "stripes", scale: 34, angle: 65, opacity: 26, color: null } } },
+  { id: "hero-chisel", name: "Hero Chisel", shape: "chamfer", bevel: { width: 14, softness: 24 },
+    effects: { Bevel: "#D97706", Glow: "#FDE68A", Highlight: "#FFF7E6", Shadow: "#7C2D12", "Inner Fill": "#F59E0B" },
+    candy: { gloss: { height: 38, curve: 10, opacity: 44, softness: 10 }, specular: { mode: "sweep", size: 18, intensity: 62 }, extrusion: { depth: 14, darkness: 62 }, innerEdge: { strength: 62, width: 3 }, texture: { amount: 10, scale: 50 } } },
+  { id: "forest-sprite", name: "Forest Sprite", shape: "tavern", bevel: { width: 12, softness: 70 },
+    effects: { Bevel: "#3E8914", Glow: "#B4F461", Highlight: "#F2FFE0", Shadow: "#1C4405", "Inner Fill": "#61B520" },
+    candy: { gloss: { height: 44, curve: 26, opacity: 62 }, specular: { on: true, mode: "soft", size: 30, intensity: 55 }, extrusion: { depth: 12, darkness: 64 }, texture: { amount: 12, scale: 46 } } },
+  { id: "obsidian-ember", name: "Obsidian Ember", shape: "cutline", bevel: { width: 14, softness: 28 },
+    effects: { Bevel: "#D4491F", Glow: "#FF9A3D", Highlight: "#FFE9D4", Shadow: "#26100A", "Inner Fill": "#1E1A1E" },
+    candy: { gloss: { height: 34, curve: 10, opacity: 40 }, specular: { on: true, mode: "line", size: 55, intensity: 58 }, innerGlow: { opacity: 76, size: 44 }, extrusion: { depth: 14, darkness: 82 }, innerEdge: { strength: 66, width: 3 } } },
   { id: "bubble-pop", name: "Bubble Pop", shape: "round", bevel: { width: 8, softness: 100 },
     effects: { Bevel: "#E1408F", Glow: "#FFC1DE", Highlight: "#FFFFFF", Shadow: "#8C1D53", "Inner Fill": "#F868B1" },
     candy: { gloss: { height: 50, curve: 34, opacity: 78, softness: 30 }, specular: { mode: "anime", size: 30, intensity: 92 }, bloom: { opacity: 62, size: 68 }, extrusion: { depth: 9 } } },
@@ -492,7 +538,7 @@ export function defaultType(): TypeCfg {
 }
 
 export function defaultConfig(): GenConfig {
-  const p = PRESETS[0];
+  const p = presetById("hard-candy"); // the approved default, independent of picker order
   const candy = defaultCandy();
   applyPresetCandy(candy, p);
   return {
@@ -620,10 +666,12 @@ export type KitComponentId =
   | "primary" | "secondary" | "small" | "ghost" | "iconbtn"
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
-  | "slider" | "progress" | "input" | "dropdown" | "panel"
+  | "slider" | "progress" | "segbar" | "input" | "dropdown" | "panel"
   | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
-  | "flipclock" | "stopwatch" | "timerdigits";
+  | "flipclock" | "stopwatch" | "timerdigits"
+  | "speedo" | "speedo2" | "tacho" | "circuit" | "leaderboard" | "trophy"
+  | "laptimes" | "telemetry" | "startlights";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -641,6 +689,7 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "toggle", name: "Toggle" },
   { id: "slider", name: "Slider" },
   { id: "progress", name: "Progress bar" },
+  { id: "segbar", name: "Segmented bar" },
   { id: "input", name: "Input field" },
   { id: "dropdown", name: "Dropdown" },
   { id: "panel", name: "Panel" },
@@ -658,6 +707,15 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "ammo", name: "Ammo counter" },
   { id: "lives", name: "Lives" },
   { id: "bignum", name: "Big number" },
+  { id: "speedo", name: "Speedometer" },
+  { id: "speedo2", name: "Speedo · HUD" },
+  { id: "tacho", name: "Rev meter" },
+  { id: "circuit", name: "Race circuit" },
+  { id: "leaderboard", name: "Position list" },
+  // ("trophy" renders but is deregistered — off-brand for this kit)
+  { id: "laptimes", name: "Lap comparison" },
+  { id: "telemetry", name: "Telemetry" },
+  { id: "startlights", name: "Start lights" },
 ];
 
 /* A locked component keeps a full design snapshot of its own — the master
@@ -681,6 +739,15 @@ export function applyKitDesign(cfg: GenConfig, kd?: KitDesign | null): GenConfig
  *  everywhere". A piece with an override renders every glyph it draws in its
  *  own solid color while the global Typography keeps driving the rest of the
  *  kit. State forks inherit the override too, so hover/pressed stay on-color. */
+/** Resolve a component's effective icon from the per-component override
+ *  and the instance's own glyph. "none" removes it (text recenters); a
+ *  deliberate instance `null` (an empty slot) always stays empty. */
+export function resolveKitIcon(ov: IconDef | "none" | undefined, inst: IconDef | null | undefined): IconDef | null | undefined {
+  if (inst === null) return null;
+  if (ov === "none") return null;
+  return ov ?? inst;
+}
+
 export function applyKitTextFill(cfg: GenConfig, fill?: string | null): GenConfig {
   if (!fill) return cfg;
   const next: GenConfig = { ...cfg, type: { ...cfg.type, fillMode: "solid", fill } };
@@ -703,6 +770,9 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   resource: "pill",
   datarow: "kenneyRect",
   slot: "kenneyRect",
+  leaderboard: "kenneyRect", // rows are rectangular content — oval shells clip them
+  laptimes: "kenneyRect",    // plots are rectangular too
+  telemetry: "kenneyRect",
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the
@@ -735,4 +805,15 @@ export const STOCK_ICONS: Record<string, IconDef> = {
   gem: { lib: "lucide", name: "Gem", viewBox: "0 0 24 24", inner: '<path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/>', mode: "stroke" },
   clock: { lib: "lucide", name: "Clock", viewBox: "0 0 24 24", inner: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', mode: "stroke" },
   heart: { lib: "lucide", name: "Heart", viewBox: "0 0 24 24", inner: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>', mode: "stroke" },
+  // inventory & racing glyphs — same canonical-Lucide embedding rules
+  sword: { lib: "lucide", name: "Sword", viewBox: "0 0 24 24", inner: '<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/>', mode: "stroke" },
+  shield: { lib: "lucide", name: "Shield", viewBox: "0 0 24 24", inner: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>', mode: "stroke" },
+  helmet: { lib: "lucide", name: "HardHat", viewBox: "0 0 24 24", inner: '<path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1Z"/><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><path d="M14 6a6 6 0 0 1 6 6v3"/>', mode: "stroke" },
+  shirt: { lib: "lucide", name: "Shirt", viewBox: "0 0 24 24", inner: '<path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>', mode: "stroke" },
+  hand: { lib: "lucide", name: "Hand", viewBox: "0 0 24 24", inner: '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>', mode: "stroke" },
+  boots: { lib: "lucide", name: "Footprints", viewBox: "0 0 24 24", inner: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>', mode: "stroke" },
+  zap: { lib: "lucide", name: "Zap", viewBox: "0 0 24 24", inner: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>', mode: "stroke" },
+  flask: { lib: "lucide", name: "FlaskConical", viewBox: "0 0 24 24", inner: '<path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/>', mode: "stroke" },
+  scroll: { lib: "lucide", name: "Scroll", viewBox: "0 0 24 24", inner: '<path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>', mode: "stroke" },
+  key: { lib: "lucide", name: "Key", viewBox: "0 0 24 24", inner: '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>', mode: "stroke" },
 };

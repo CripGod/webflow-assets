@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
+import { ChevronDown, Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, applyKitTextFill, fontByName, hexMix, isDarkBg, effKitSize } from "@/generator/model";
+import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, applyKitTextFill, fontByName, hexMix, isDarkBg, effKitSize, resolveKitIcon } from "@/generator/model";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
 import { previewSvg } from "@/generator/icons";
-import { downloadSettings, downloadSvg, downloadZip, downloadSpriteSheet } from "@/generator/exportUtils";
+import { downloadSettings, downloadSvg, downloadZip, downloadSpriteSheet, buildSpriteSheetBytes, fontDataUri } from "@/generator/exportUtils";
+import { downloadEngineExport } from "@/generator/engineExport";
 import { LiveArt } from "./LiveArt";
 import { HeroGL } from "./HeroGL";
 
@@ -63,9 +63,13 @@ function Art({ svg, scale, className, hug = true }: { svg: string; scale: number
     const el = ref.current?.querySelector("svg") as SVGGraphicsElement | null;
     if (!el) return;
     try {
-      const box = el.getBBox();
+      // measure the GLYPHS, not the paint: a text node's bbox ignores its
+      // filter shadows, so the crop centers the face — offset shadows and
+      // extrusions no longer drag the title off the stage axis
+      const t = el.querySelector("text");
+      const box = (t as SVGGraphicsElement | null)?.getBBox() ?? el.getBBox();
       const vb = (el as unknown as SVGSVGElement).viewBox.baseVal;
-      const padX = 18;
+      const padX = 24;
       const x0 = Math.max(vb.x, box.x - padX);
       const x1 = Math.min(vb.x + vb.width, box.x + box.width + padX);
       if (x1 - x0 < 40 || x1 - x0 >= vb.width - 1) return;
@@ -77,17 +81,53 @@ function Art({ svg, scale, className, hug = true }: { svg: string; scale: number
   return <div ref={ref} className={`kp-art${className ? " " + className : ""}`} style={{ width: w }} dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
+/* v56: measured truth for track rails — a connector line must run through
+   the VISIBLE shell centers, which trim margins shift per piece and scale.
+   Every shell render stamps data-shell (viewBox coords); this hook maps it
+   through the client rect and hands the container its real center line
+   (--rail-y) plus each node its own (--node-cy). */
+function useShellRail(ref: React.RefObject<HTMLDivElement | null>, sel: string) {
+  const { cfg, kitDesigns, kitShapes, kitSizes } = useGen();
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const position = () => {
+      const host = el.getBoundingClientRect();
+      if (!host.height) return;
+      const centers: number[] = [];
+      for (const zone of el.querySelectorAll<HTMLElement>(sel)) {
+        const s = zone.querySelector<SVGSVGElement>("svg[data-shell]");
+        const parts = (s?.getAttribute("data-shell") ?? "").split(" ").map(Number);
+        if (!s || parts.length !== 4 || parts.some(Number.isNaN)) continue;
+        const r = s.getBoundingClientRect();
+        const vb = s.viewBox.baseVal;
+        if (!r.height || !vb.height) continue;
+        const cy = r.top + ((parts[1] + parts[3] / 2 - vb.y) / vb.height) * r.height;
+        centers.push(cy);
+        zone.style.setProperty("--node-cy", `${(cy - zone.getBoundingClientRect().top).toFixed(1)}px`);
+      }
+      if (centers.length) el.style.setProperty("--rail-y", `${(centers.reduce((a, b) => a + b, 0) / centers.length - host.top).toFixed(1)}px`);
+    };
+    const raf = requestAnimationFrame(position);
+    const ro = new ResizeObserver(position);
+    ro.observe(el);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, [ref, sel, cfg, kitDesigns, kitShapes, kitSizes]);
+}
+
 interface PieceOpts {
   id: KitComponentId; size?: KitSize; label?: string; segments?: string[];
   icon?: IconDef | null; value?: number; baseState?: GenStateName; scale?: number;
-  sub?: string; max?: string; addBtn?: boolean; overlay?: string; iconScale?: number; trim?: boolean;
-  kind?: "circle" | "oval" | "strip"; tone?: "alt"; shape?: Shape;
+  sub?: string; max?: string; addBtn?: boolean; overlay?: string; iconScale?: number; trim?: boolean; tight?: boolean;
+  kind?: "circle" | "oval" | "strip"; tone?: "alt"; shape?: Shape; shine?: boolean;
+  dock?: { icon?: IconDef | null; side?: "left" | "right" } | null;
+  bar?: { segments?: number; gap?: number; snap?: boolean };
 }
 
 /** Shared plumbing for every live piece on this page. The page is always
  *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextFill, kitRow, setFocus, setKitSize, setKitKind } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextOx, kitTextFill, kitIcons, kitLabels, kitRow, kitBar, setFocus, setKitSize, setKitKind } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
@@ -101,18 +141,80 @@ function usePiece(p: PieceOpts) {
     sizable: p.size === undefined,
     name: KIT_COMPONENTS.find((c) => c.id === p.id)?.name ?? p.id,
     kit: {
-      id: p.id, size, shape: p.shape ?? kitShapes[p.id], label: p.label, segments: p.segments,
-      icon: p.icon, value: p.value, baseState: p.baseState,
+      id: p.id, size, shape: p.shape ?? kitShapes[p.id],
+      // user content overrides beat the specimen's demo text and glyph;
+      // an explicit "no icon" instance stays empty
+      label: kitLabels[p.id] ?? p.label, segments: p.segments,
+      icon: resolveKitIcon(kitIcons[p.id], p.icon), value: p.value, baseState: p.baseState,
       sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay, iconScale: p.iconScale,
       // explicit per-component vertical text adjustment (0 is a valid value)
       textOy: kitTextOy[`${p.id}:${size}`],
+      textOx: kitTextOx[`${p.id}:${size}`],
       // data rows follow the row model everywhere; a variant's explicit
       // label/sub still wins for its own line
       row: p.id === "datarow" ? kitRow : undefined,
       kind: p.kind, tone: p.tone,
+      // bar-family config: the user's per-component settings ride over the
+      // specimen's defaults; the dock glyph follows the icon-swap system
+      ...(p.id === "progress" || p.id === "segbar" ? (() => {
+        const kb = kitBar[p.id];
+        // a specimen that DEMOS the dock always keeps it — the panel toggle
+        // drives the plain variants, the hero and the Board
+        const dockOn = !!p.dock || (kb?.dock ?? false);
+        return {
+          dock: dockOn ? { icon: resolveKitIcon(kitIcons[p.id], p.dock?.icon), side: kb?.dockSide ?? p.dock?.side ?? "left" } : null,
+          bar: { ...p.bar, ...(kb ? { segments: kb.segments ?? p.bar?.segments, gap: kb.gap ?? p.bar?.gap, snap: kb.snap ?? p.bar?.snap } : {}) },
+        };
+      })() : {}),
     },
-    onEdit: () => { setKitKind(p.kind ?? null); setFocus(p.id); },
+    onEdit: () => {
+      setKitKind(p.kind ?? null); setFocus(p.id);
+      // arriving from a piece's Edit button, surface its content controls —
+      // text and icon swaps live there and collapsed sections hide them
+      useGen.setState((st) => ({ open: { ...st.open, kiticon: true } }));
+    },
   };
+}
+
+/** Split-button export: the primary click repeats the LAST format used
+ *  (engine zip by default); the chevron lists every format with a one-line
+ *  description. One click for the common case, nothing buried. */
+function ExportMenu({ actions }: {
+  actions: { id: string; name: string; desc: string; busy?: boolean; run: () => void }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [last, setLast] = useState(() => { try { return localStorage.getItem("ui-generator-lastexport") ?? "engine"; } catch { return "engine"; } });
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  const primary = actions.find((a) => a.id === last) ?? actions[0];
+  const fire = (a: (typeof actions)[number]) => {
+    try { localStorage.setItem("ui-generator-lastexport", a.id); } catch { /* private mode */ }
+    setLast(a.id); setOpen(false); a.run();
+  };
+  return (
+    <div className="kp-export" ref={ref}>
+      <button className="kp-dlall kp-exportmain" disabled={primary.busy} onClick={() => fire(primary)} title={primary.desc}>
+        <Download size={14} strokeWidth={2.2} /> {primary.busy ? "Working…" : `Export — ${primary.name}`}
+      </button>
+      <button className="kp-dlall kp-exportarrow" aria-haspopup="menu" aria-expanded={open} title="All export formats"
+        onClick={() => setOpen((v) => !v)}>
+        <ChevronDown size={15} strokeWidth={2.2} />
+      </button>
+      {open && (
+        <div className="kp-exportmenu" role="menu">
+          {actions.map((a) => (
+            <button key={a.id} role="menuitem" disabled={a.busy} onClick={() => fire(a)}>
+              <b>{a.name}</b><span>{a.desc}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** One specced piece: live art + a caption rail with edit, sizes and export. */
@@ -140,11 +242,11 @@ function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
         <button className="kp-dl" title={`Export ${p.caption} SVG`} aria-label={`Export ${p.caption} SVG`}
           onClick={(e) => {
             e.stopPropagation();
-            const { cfg: c, kitShapes: ks, kitDesigns: kd, kitTextOy: ko, kitTextFill: kf } = useGen.getState();
+            const { cfg: c, kitShapes: ks, kitDesigns: kd, kitTextOy: ko, kitTextOx: kx, kitTextFill: kf } = useGen.getState();
             const variant = p.caption.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
             downloadSvg(
               renderKit(applyKitTextFill(applyKitDesign(c, kd[p.id]), kf[p.id]), p.id, size, p.baseState ?? "default", p.value, ks[p.id],
-                { label: p.label, segments: p.segments, icon: p.icon, expand: true, textOy: ko[`${p.id}:${size}`] }),
+                { label: p.label, segments: p.segments, icon: p.icon, expand: true, textOy: ko[`${p.id}:${size}`], textOx: kx[`${p.id}:${size}`] }),
               `kit-${variant}-${size}.svg`
             );
           }}>
@@ -160,7 +262,7 @@ function PPiece(p: PieceOpts & { ambient?: boolean }) {
   const { cfg, name, kit } = usePiece({ ...p, size: p.size ?? "m" });
   return (
     <LiveArt cfg={cfg} playing scale={p.scale ?? PATTERN_SCALE} className="gp-piece"
-      kit={kit} title={name} ambient={p.ambient} trim={p.trim} />
+      kit={kit} title={name} ambient={p.ambient} trim={p.trim} tight={p.tight} shine={p.shine} />
   );
 }
 
@@ -170,54 +272,248 @@ function SPiece(p: PieceOpts & { ambient?: boolean }) {
   return <PPiece {...p} trim={p.trim ?? true} />;
 }
 
+/** v55: simple wireframe line drawings for complex screens — the character
+ *  stand and item render an inventory needs to read as a real scene. Pure
+ *  theme-tinted outlines, never real game art; strokes restyle with the kit. */
+function WireArt({ kind, stroke, className }: { kind: "hero" | "gem"; stroke: string; className?: string }) {
+  const cls = `sc-wire${className ? " " + className : ""}`;
+  if (kind === "gem") {
+    return (
+      <svg className={cls} viewBox="0 0 84 74" role="img" aria-label="item wireframe" data-wire="gem">
+        <g fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.9">
+          <path d="M14 26 L28 10 H56 L70 26 L42 64 Z" />
+          <path d="M14 26 H70 M28 10 L34 26 L42 64 L50 26 L56 10 M34 26 H50" opacity="0.62" />
+          <path d="M75 12 v10 M70 17 h10" opacity="0.55" />
+        </g>
+      </svg>
+    );
+  }
+  return (
+    <svg className={cls} viewBox="0 0 120 214" role="img" aria-label="character wireframe" data-wire="hero">
+      <g fill="none" stroke={stroke} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.9">
+        <circle cx="60" cy="24" r="14" />
+        <path d="M60 40 V50" />
+        <path d="M34 58 Q60 46 86 58" />
+        <path d="M34 58 L30 84 L36 112 Q60 122 84 112 L90 84 L86 58" />
+        <path d="M36 78 Q60 88 84 78" strokeDasharray="4 5" opacity="0.55" />
+        <path d="M40 108 Q60 116 80 108" strokeDasharray="4 5" opacity="0.55" />
+        <path d="M34 60 L18 92 L20 124 M86 60 L102 92 L100 124" />
+        <circle cx="20" cy="131" r="5" />
+        <circle cx="100" cy="131" r="5" />
+        <path d="M46 120 L42 168 L40 196 M74 120 L78 168 L80 196" />
+        <path d="M40 196 L28 202 M80 196 L92 202" />
+        <ellipse cx="60" cy="206" rx="36" ry="6" strokeDasharray="5 6" opacity="0.5" />
+      </g>
+    </svg>
+  );
+}
+
+/* ── v56: Inventory screen — strict three-column page grid ─────────
+   Rebuilt to the layout spec: header toolbar, character panel with six
+   connected equipment slots, a DOMINANT central inventory grid, item
+   details, quick-slots footer. All primary panels are CSS grid — no
+   absolute positioning; tiles are ONE reusable component with rarity
+   variants; data lives in arrays. The kit's own pieces keep supplying
+   chips, tabs, bars and buttons, so the aesthetic is unchanged. */
+type InvRarity = "common" | "rare" | "epic" | "legendary";
+interface InvItem { name: string; icon: IconDef; qty?: number; rarity: InvRarity; type: string; equipped?: boolean; locked?: boolean; desc?: string }
+const INV_ITEMS: (InvItem | null)[] = [
+  { name: "Eclipse Gem", icon: STOCK_ICONS.gem, qty: 28, rarity: "epic", type: "Gem", desc: "A radiant gem pulsing with dark energy. Harnesses the power of the eclipse." },
+  { name: "Falcon Blade", icon: STOCK_ICONS.sword, rarity: "legendary", type: "Weapon", equipped: true, desc: "Forged for the vanguard — swift as its namesake." },
+  { name: "Aegis Plate", icon: STOCK_ICONS.shield, rarity: "rare", type: "Armor", desc: "Layered plate that shrugs off glancing blows." },
+  { name: "Stride Boots", icon: STOCK_ICONS.boots, rarity: "rare", type: "Armor", desc: "Every step lands a little further than it should." },
+  { name: "Signet Ring", icon: STOCK_ICONS.key, rarity: "epic", type: "Accessory", desc: "Opens doors — some of them literal." },
+  { name: "Warm Pendant", icon: STOCK_ICONS.heart, qty: 14, rarity: "rare", type: "Accessory", desc: "Slow, steady mending while worn." },
+  { name: "Hex Sigil", icon: STOCK_ICONS.star, qty: 12, rarity: "epic", type: "Rune", desc: "A sigil humming with borrowed starlight." },
+  { name: "Field Satchel", icon: STOCK_ICONS.bag, qty: 2, rarity: "common", type: "Container", desc: "Plain, roomy, dependable." },
+  { name: "Victory Cup", icon: STOCK_ICONS.trophy, rarity: "legendary", type: "Trophy", desc: "Proof it happened." },
+  { name: "Old Scroll", icon: STOCK_ICONS.scroll, qty: 6, rarity: "common", type: "Scroll", desc: "The ink has faded; the promise hasn't." },
+  { name: "Field Tonic", icon: STOCK_ICONS.flask, qty: 18, rarity: "common", type: "Consumable", desc: "Bitter. Works." },
+  { name: "Ember Shard", icon: STOCK_ICONS.gem, qty: 34, rarity: "rare", type: "Material", desc: "Still warm from the forge." },
+  { name: "Frost Shard", icon: STOCK_ICONS.gem, qty: 9, rarity: "rare", type: "Material", desc: "Never melts. Never warms." },
+  { name: "Woven Tunic", icon: STOCK_ICONS.shirt, rarity: "common", type: "Armor", desc: "Homespun, but it fits." },
+  { name: "Grip Wraps", icon: STOCK_ICONS.hand, rarity: "common", type: "Armor", desc: "For hands that work." },
+  { name: "Storm Rune", icon: STOCK_ICONS.zap, qty: 5, rarity: "epic", type: "Rune", locked: true, desc: "Crackles when rain is coming." },
+  null, null, null, null,
+];
+const INV_EQUIP_L = [
+  { label: "HELMET", icon: STOCK_ICONS.helmet },
+  { label: "WEAPON", icon: STOCK_ICONS.sword },
+  { label: "ACCESSORY", icon: STOCK_ICONS.key },
+];
+const INV_EQUIP_R = [
+  { label: "CHEST", icon: STOCK_ICONS.shirt },
+  { label: "GLOVES", icon: STOCK_ICONS.hand },
+  { label: "BOOTS", icon: STOCK_ICONS.boots },
+];
+const INV_CORE: [string, string][] = [["ATTACK", "1,250"], ["DEFENSE", "980"], ["CRIT RATE", "24.5%"], ["HP", "2,840"]];
+const INV_STATS: [string, number, string][] = [["ATTACK", 0.85, "+120"], ["CRIT", 0.55, "+85"], ["SPEED", 0.4, "+65"], ["LIFESTEAL", 0.3, "+5%"]];
+
+/** Flat glyph in the current ink — the tile icon language. */
+function InvIcon({ def, size = 24 }: { def: IconDef; size?: number }) {
+  const stroke = def.mode === "stroke";
+  return (
+    <svg width={size} height={size} viewBox={def.viewBox} aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: `<g fill="${stroke ? "none" : "currentColor"}" stroke="${stroke ? "currentColor" : "none"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${def.inner}</g>` }} />
+  );
+}
+
+/** ONE tile component for every slot — rarity, quantity, selection and
+ *  status flags are variants, never bespoke markup. */
+function InvSlot({ item, selected, onSelect, small }: { item: InvItem | null; selected?: boolean; onSelect?: () => void; small?: boolean }) {
+  if (!item) return <div className={`inv2-slot empty${small ? " sm" : ""}`} aria-hidden="true" />;
+  return (
+    <button className={`inv2-slot r-${item.rarity}${selected ? " sel" : ""}${small ? " sm" : ""}`} title={item.name} onClick={onSelect}>
+      <InvIcon def={item.icon} size={small ? 20 : 26} />
+      {item.qty !== undefined && item.qty > 1 && <i className="inv2-qty">{item.qty}</i>}
+      {item.equipped && <i className="inv2-flag"><InvIcon def={STOCK_ICONS.check} size={9} /></i>}
+      {item.locked && <i className="inv2-flag lock"><InvIcon def={STOCK_ICONS.lock} size={8} /></i>}
+    </button>
+  );
+}
+
+function InventoryScreen() {
+  const cfg = useGen((s) => s.cfg);
+  const dark = isDarkBg(cfg.canvas);
+  const acc = cfg.effects.Glow ?? "#8FF0FF";
+  const wire = dark ? acc : hexMix(cfg.effects.Bevel ?? "#0E9CC9", "#0A0C14", 0.3);
+  const [sel, setSel] = useState(0);
+  const item = INV_ITEMS[sel] ?? (INV_ITEMS[0] as InvItem);
+  return (
+    <div className="inv2" style={{ "--inv-acc": acc } as React.CSSProperties}>
+      <div className="inv2-toolbar">
+        <SPiece id="chip" label="INVENTORY" icon={STOCK_ICONS.bag} scale={0.34} />
+        <SPiece id="resource" label="1,250" icon={STOCK_ICONS.gem} scale={0.28} />
+        <SPiece id="resource" label="24,580" icon={STOCK_ICONS.star} scale={0.28} />
+        <span className="sc-spring" />
+        <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.24} />
+        <SPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.24} />
+      </div>
+      <div className="inv2-main">
+        <section className="inv2-panel inv2-char">
+          <span className="inv2-plabel">Character</span>
+          <div className="inv2-charhead"><b>SHADOW KNIGHT</b><span>LV 42</span></div>
+          <div className="inv2-equip">
+            <div className="inv2-eqcol left">
+              {INV_EQUIP_L.map((e) => (
+                <div className="inv2-eq" key={e.label}>
+                  <span>{e.label}</span>
+                  <div className="inv2-slot eq"><InvIcon def={e.icon} size={20} /><i className="inv2-conn" aria-hidden="true" /></div>
+                </div>
+              ))}
+            </div>
+            <div className="inv2-figure"><WireArt kind="hero" stroke={wire} className="inv2-hero" /></div>
+            <div className="inv2-eqcol right">
+              {INV_EQUIP_R.map((e) => (
+                <div className="inv2-eq" key={e.label}>
+                  <span>{e.label}</span>
+                  <div className="inv2-slot eq"><InvIcon def={e.icon} size={20} /><i className="inv2-conn" aria-hidden="true" /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="inv2-stats">
+            <span className="inv2-plabel">Core stats</span>
+            {INV_CORE.map(([l, v]) => <div className="inv2-statline" key={l}><span>{l}</span><b>{v}</b></div>)}
+          </div>
+          <div className="inv2-charbtn"><SPiece id="small" label="STATS" scale={0.34} /></div>
+        </section>
+        <section className="inv2-panel inv2-inv">
+          <span className="inv2-plabel">Inventory</span>
+          <div className="inv2-tabs">
+            <SPiece id="tab" label="GEAR" baseState="pressed" scale={0.28} />
+            <SPiece id="tab" label="ITEMS" scale={0.28} />
+            <SPiece id="tab" label="RUNES" scale={0.28} />
+            <SPiece id="tab" label="MATERIALS" scale={0.28} />
+          </div>
+          <div className="inv2-controls">
+            <div className="inv2-ctl">ALL <InvIcon def={STOCK_ICONS.chevron} size={12} /></div>
+            <div className="inv2-ctl inv2-ctlbtn"><InvIcon def={STOCK_ICONS.gear} size={13} /></div>
+            <div className="inv2-ctl inv2-search"><InvIcon def={STOCK_ICONS.search} size={12} /> Search items…</div>
+            <div className="inv2-ctl">SORT: NEWEST <InvIcon def={STOCK_ICONS.chevron} size={12} /></div>
+          </div>
+          <div className="inv2-grid">
+            {INV_ITEMS.map((it, i) => <InvSlot key={i} item={it} selected={i === sel} onSelect={() => setSel(i)} />)}
+          </div>
+          <div className="inv2-cap">
+            <span className="inv2-plabel">Capacity</span>
+            <SPiece id="progress" value={0.68} scale={0.3} />
+            <b>82 / 120</b>
+          </div>
+        </section>
+        <section className="inv2-panel inv2-detail">
+          <span className="inv2-plabel">Item details</span>
+          <div className="inv2-item">
+            <div className="inv2-itemart">
+              {item.name === "Eclipse Gem"
+                ? <WireArt kind="gem" stroke={wire} className="inv2-gem" />
+                : <InvIcon def={item.icon} size={56} />}
+            </div>
+            <div className="inv2-itemtext">
+              <b>{item.name.toUpperCase()}</b>
+              <span className={`inv2-rarity r-${item.rarity}`}>{item.rarity.toUpperCase()} · {item.type.toUpperCase()}</span>
+              <p>{item.desc}</p>
+            </div>
+          </div>
+          <div className="inv2-istats">
+            {INV_STATS.map(([l, v, d]) => (
+              <div className="inv2-istat" key={l}><span>{l}</span><SPiece id="progress" value={v} scale={0.22} /><b>{d}</b></div>
+            ))}
+          </div>
+          <div className="inv2-meta">
+            <span>VALUE</span><b><InvIcon def={STOCK_ICONS.gem} size={11} /> 650</b>
+            <span>TYPE</span><b>{item.type}</b>
+          </div>
+          <div className="inv2-actions">
+            <SPiece id="primary" label="EQUIP" size="s" scale={0.52} />
+            <SPiece id="secondary" label="DISMANTLE" size="s" scale={0.44} />
+          </div>
+          <div className="inv2-actions2">
+            <SPiece id="ghost" label="Compare" size="s" scale={0.34} />
+            <SPiece id="ghost" label="Lock" size="s" scale={0.34} />
+          </div>
+        </section>
+      </div>
+      <div className="inv2-foot">
+        <SPiece id="chip" label="QUICK SLOTS" icon={null} tone="alt" scale={0.3} />
+        <InvSlot small item={{ name: "Warm Pendant", icon: STOCK_ICONS.heart, qty: 12, rarity: "rare", type: "Accessory" }} />
+        <InvSlot small item={{ name: "Eclipse Gem", icon: STOCK_ICONS.gem, qty: 28, rarity: "epic", type: "Gem" }} />
+        <InvSlot small item={{ name: "Hex Sigil", icon: STOCK_ICONS.star, rarity: "epic", type: "Rune" }} />
+        <InvSlot small item={{ name: "Storm Rune", icon: STOCK_ICONS.zap, qty: 5, rarity: "epic", type: "Rune" }} />
+        <div className="inv2-help">
+          <InvIcon def={STOCK_ICONS.info} size={15} />
+          <p>Drag items to equip.<br />Right-click for more options.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** One screen-pattern specimen: identification above the viewport, the dark
  *  stage as the actual screen, quiet system metadata below. The viewport's
  *  aspect ratio is fixed and every nested piece reserves its largest state,
  *  so no interaction inside can move the card, the grid or the page. */
-function Pat({ n, name, cat, comps, asms, lead, children }: {
+function Pat({ n, name, cat, comps, asms, lead, wide, bare, children }: {
   n: string; name: string; cat: string; comps: number; asms: number;
-  lead: KitComponentId; children: React.ReactNode;
+  lead: KitComponentId; wide?: boolean; bare?: boolean; children: React.ReactNode;
 }) {
-  const { setFocus } = useGen();
-  const [big, setBig] = useState(false);
-  useEffect(() => {
-    if (!big) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setBig(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [big]);
+  /* v57: the open/edit entry points are parked — patterns are reference
+     compositions for now, so the header stays quiet. `lead` is kept in the
+     signature for when editing returns. */
+  void lead;
   return (
-    <article className="pat">
+    <article className={`pat${wide ? " pat-wide" : ""}`}>
       <header className="pat-head">
         <span className="pat-num">{n}</span>
         <h4 className="pat-name">{name}</h4>
         <span className="pat-cat">{cat}</span>
-        <button className="pat-open" onClick={() => setBig(true)}
-          title={`Inspect ${name} at presentation size`}>
-          Open pattern →
-        </button>
       </header>
-      <div className="pat-view"><div className="sc">{children}</div></div>
+      <div className={`pat-view${bare ? " pat-bare" : ""}`}><div className="sc">{children}</div></div>
       <footer className="pat-foot">
         <span>{comps} registered components</span>
         <span>{asms} {asms === 1 ? "assembly" : "assemblies"}</span>
         <span>Fully editable</span>
       </footer>
-      {big && createPortal(
-        <div className="kp-patmodal" role="dialog" aria-modal="true" aria-label={`${name} — enlarged`} onClick={() => setBig(false)}>
-          <div className="kp-patmodal-card" onClick={(e) => e.stopPropagation()}>
-            <header className="pat-head">
-              <span className="pat-num">{n}</span>
-              <h4 className="pat-name">{name}</h4>
-              <span className="pat-cat">{cat} · phone-true sizes, shown big for desktop review</span>
-              <button className="pat-open" onClick={() => { setBig(false); setFocus(lead); }}>Edit in editor →</button>
-              <button className="pat-open" onClick={() => setBig(false)}>Close ✕</button>
-            </header>
-            <div className="pat-view kp-patbig"><div className="sc">{children}</div></div>
-          </div>
-        </div>,
-        document.body
-      )}
     </article>
   );
 }
@@ -373,7 +669,7 @@ function MotionDemo({ name, cls, piece, purpose, dur, ease }: {
       onPointerUp={() => setTick((t) => t + 1)}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTick((t) => t + 1); } }}>
       <span key={tick} className={`kp-mostage ${cls}`}>
-        <PPiece {...piece} scale={piece.scale ?? 0.52} />
+        <PPiece {...piece} scale={piece.scale ?? 0.52} shine />
       </span>
       <span className="kp-partname">{name}</span>
       <span className="kp-mopurpose">{purpose}</span>
@@ -394,11 +690,12 @@ function openEditor(sec: string) {
  *  scales itself into `fit` px so a very wide banner never dominates the
  *  page; the ruler label reports its true shell width. */
 function SliceDemo({ cfg, label, size = "m", fit = 520, ruler }: { cfg: GenConfig; label: string; size?: KitSize; fit?: number; ruler?: boolean }) {
-  const { kitShapes, kitTextOy } = useGen();
+  const { kitShapes, kitTextOy, kitTextOx } = useGen();
   const shape = kitShapes.header ?? "banner";
   const met = silhouetteMeta(shape);
   const oy = kitTextOy[`header:${size}`];
-  const svg = useMemo(() => renderKit(cfg, "header", size, "default", undefined, kitShapes.header, { label, textOy: oy }), [cfg, label, size, kitShapes.header, oy]);
+  const hx = kitTextOx[`header:${size}`];
+  const svg = useMemo(() => renderKit(cfg, "header", size, "default", undefined, kitShapes.header, { label, textOy: oy, textOx: hx }), [cfg, label, size, kitShapes.header, oy, hx]);
   const geo = useMemo(() => {
     const m = svg.match(/viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/);
     if (!m || !met) return null;
@@ -484,6 +781,15 @@ export function KitPage() {
   // screen-pattern group filter — restrained text nav, not capsules
   const [patTab, setPatTab] = useState<"all" | "core" | "outcome" | "state">("all");
 
+  // measured rails: reward track + weekly streak lines pass through the
+  // visible shell centers, whatever each node's scale and trim margins are
+  const trackRailRef = useRef<HTMLDivElement>(null);
+  const weekRailRef = useRef<HTMLDivElement>(null);
+  const mapRailRef = useRef<HTMLDivElement>(null);
+  useShellRail(trackRailRef, ".kp-tnodezone");
+  useShellRail(weekRailRef, ".kp-wkday");
+  useShellRail(mapRailRef, ".kp-node");
+
   // hero disclosure + sticky-nav orientation
   const [aboutOpen, setAboutOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -497,21 +803,97 @@ export function KitPage() {
   });
   const [activeChap, setActiveChap] = useState("foundations");
 
-  /* one-button export: every asset onto a labeled PNG sprite sheet */
+  /* the packed sheet is a VISUAL CATALOG; engines get atomic assets */
   const [sheetBusy, setSheetBusy] = useState(false);
-  const downloadAllAssets = async () => {
-    if (sheetBusy) return;
-    setSheetBusy(true);
+  const [engineBusy, setEngineBusy] = useState(false);
+  const downloadEngineKit = async () => {
+    if (engineBusy) return;
+    setEngineBusy(true);
     try {
       const st = useGen.getState();
-      const pieceCfg = (cid: KitComponentId) => applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]);
-      const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}, v?: number, gstate: GenStateName = "default") => ({
-        name,
-        svg: renderKit(pieceCfg(cid), cid, effKitSize(st.kitSizes[cid]), gstate, v, st.kitShapes[cid], {
-          expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`],
-          row: cid === "datarow" ? st.kitRow : undefined, ...extra,
-        }),
+      const name = st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`;
+      const fdef2 = fontByName(st.cfg.type.font);
+      await downloadEngineExport(
+        { cfg: st.cfg, kitDesigns: st.kitDesigns, kitTextFill: st.kitTextFill, kitShapes: st.kitShapes, kitSizes: st.kitSizes, kitName: name },
+        () => buildSpriteSheetBytes(sheetEntries(st), `${name} — visual catalog`, st.cfg.type.font, fdef2?.css ?? null),
+      );
+    } finally {
+      setEngineBusy(false);
+    }
+  };
+  /* every catalog entry — components, variants, states — as individual
+     layered SVGs. The same list the sprite sheet renders, so what you see
+     in the catalog is exactly what lands in the zip. */
+  const [svgBusy, setSvgBusy] = useState(false);
+  const downloadSvgPack = async () => {
+    if (svgBusy) return;
+    setSvgBusy(true);
+    try {
+      const st = useGen.getState();
+      const slug = (s2: string) => s2.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      /* fonts travel with the pack: every face the kit uses is embedded as a
+         data-URI @font-face inside each text-bearing SVG (so browsers and
+         image pipelines render the real type), and the README carries the
+         Google Fonts links for design tools that want the family installed. */
+      const fams = [...new Set([st.cfg.type.font, ...Object.values(st.kitDesigns).map((d) => d?.type?.font).filter((f): f is string => !!f)])];
+      const famDefs = fams.map((fam) => ({ fam, css: fontByName(fam).css }));
+      const faces = (await Promise.all(famDefs.map(async ({ fam, css }) => {
+        const uri = css ? await fontDataUri(fam, css) : null;
+        return uri ? `@font-face{font-family:'${fam}';src:url(${uri}) format('woff2');}` : "";
+      }))).join("");
+      const styleTag = faces ? `<defs><style>${faces}</style></defs>` : "";
+      const files: { path: string; data: string }[] = sheetEntries(st).map((e) => ({
+        path: `svg/${slug(e.name)}.svg`,
+        data: styleTag && e.svg.includes("<text") ? e.svg.replace(/(<svg[^>]*>)/, `$1${styleTag}`) : e.svg,
+      }));
+      files.push({
+        path: "README.md",
+        data: [
+          "# SVG pack — every kit asset", "",
+          "One layered SVG per catalog entry: every component, variant and state,",
+          "with your content overrides (text, icons, dock, segments) baked in.",
+          "Named groups — cast-shadow, extrusion, shell, face, content, gloss,",
+          "specular — import as a readable layer tree.", "",
+          "## Fonts",
+          "Each text-bearing SVG embeds its font as a data-URI @font-face (one",
+          "weight), so browsers render the real type out of the box. Design",
+          "tools (Figma / Illustrator) substitute installed fonts instead —",
+          "install the families below for full fidelity:", "",
+          ...famDefs.map(({ fam, css }) => css
+            ? `- ${fam} — https://fonts.google.com/specimen/${fam.replace(/ /g, "+")} · stylesheet: https://fonts.googleapis.com/css2?family=${css}&display=swap`
+            : `- ${fam} — bundled system face`), "",
+          "## Figma", "Drag any SVG onto the canvas. Ungroup once to reach the layers.", "",
+          "## Illustrator", "Open directly; the 'SVG Tiny' warning only concerns re-saving.",
+        ].join("\n"),
       });
+      downloadZip(`${slug(st.kitName ?? "ui-kit")}-svg-pack.zip`, files);
+    } finally {
+      setSvgBusy(false);
+    }
+  };
+const exportActions = [
+    { id: "engine", name: "Engine kit (ZIP)", desc: "Atomic content-free PNGs, nine-slice manifest, Unity importer, Unreal recipes.", busy: engineBusy, run: () => void downloadEngineKit() },
+    { id: "svg", name: "SVG pack", desc: "Every component, variant and state as a layered SVG — fonts embedded, Figma / Illustrator ready.", busy: svgBusy, run: () => void downloadSvgPack() },
+    { id: "sprite", name: "Sprite sheet (PNG)", desc: "One labeled catalog image of every asset — for humans, not for slicing.", busy: sheetBusy, run: () => void downloadAllAssets() },
+  ];
+  const sheetEntries = (st: ReturnType<typeof useGen.getState>) => {
+    {
+      const pieceCfg = (cid: KitComponentId) => applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]);
+      const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}, v?: number, gstate: GenStateName = "default") => {
+        const o = {
+          expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], textOx: st.kitTextOx[`${cid}:${effKitSize(st.kitSizes[cid])}`],
+          row: cid === "datarow" ? st.kitRow : undefined, ...extra,
+        };
+        // user content overrides ride every catalog entry
+        o.icon = resolveKitIcon(st.kitIcons[cid], o.icon);
+        if (o.label === undefined) o.label = st.kitLabels[cid];
+        if (cid === "progress" || cid === "segbar") {
+          const kb = st.kitBar[cid];
+          if (o.bar === undefined) o.bar = kb;
+          if (o.dock === undefined && kb?.dock) o.dock = { icon: resolveKitIcon(st.kitIcons[cid], undefined), side: kb.dockSide ?? "left" };
+        }
+        return { name, svg: renderKit(pieceCfg(cid), cid, effKitSize(st.kitSizes[cid]), gstate, v, st.kitShapes[cid], o) };
+      };
       const entries = [
         ...KIT_COMPONENTS.map((c2) => rk(c2.id, c2.name)),
         rk("panel", "Container · Round", { kind: "circle" }),
@@ -547,6 +929,10 @@ export function KitPage() {
         rk("segment", "Segment · First", {}, 0),
         rk("slider", "Slider · Low", {}, 0.15),
         rk("progress", "Progress · Full", {}, 1),
+        rk("progress", "Emblem bar · Docked", { dock: {} }, 0.55),
+        rk("segbar", "Segmented · 3 of 5", {}, 0.62),
+        rk("segbar", "Segmented · Smooth", { bar: { segments: 8, snap: false } }, 0.55),
+        rk("tacho", "Rev meter · 7.4", {}, 0.82),
         rk("input", "Input · Focus", {}, undefined, "hover"),
         rk("input", "Input · Disabled", {}, undefined, "disabled"),
         rk("dropdown", "Dropdown · Open", {}, undefined, "pressed"),
@@ -556,8 +942,16 @@ export function KitPage() {
         rk("reticle", "Reticle · Locked", {}, undefined, "hover"),
         rk("ring", "Ring · Complete", {}, 1),
       ];
+      return entries;
+    }
+  };
+  const downloadAllAssets = async () => {
+    if (sheetBusy) return;
+    setSheetBusy(true);
+    try {
+      const st = useGen.getState();
       const fdef = fontByName(st.cfg.type.font);
-      await downloadSpriteSheet(entries, `${st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`} — sprite sheet`, st.cfg.type.font, fdef?.css ?? null);
+      await downloadSpriteSheet(sheetEntries(st), `${st.kitName ?? `The ${preset?.name ?? "Custom"} Kit`} — visual catalog`, st.cfg.type.font, fdef?.css ?? null);
     } finally {
       setSheetBusy(false);
     }
@@ -742,27 +1136,29 @@ export function KitPage() {
             style={{ background: cfg.effects.Bevel ?? "#0E9CC9", color: isDarkBg(cfg.effects.Bevel ?? "#0E9CC9") ? "#ffffff" : "#0d0f16" }}>
             <PenTool size={16} strokeWidth={2.3} /> Edit this Kit
           </button>
-          <button className="kp-dlall" onClick={downloadAllAssets} disabled={sheetBusy} title="Every asset on one labeled PNG sprite sheet">
-            <Download size={15} strokeWidth={2.2} /> {sheetBusy ? "Building the sheet…" : "Download all assets — PNG sprite sheet"}
-          </button>
+          <ExportMenu actions={exportActions} />
           <div className="kp-roleline" aria-hidden="true">
             {roles.map((r) => <span className="kp-roledot" key={r}><i style={{ background: cfg.effects[r] }} />{r}</span>)}
           </div>
           <button className="kp-about" aria-expanded={aboutOpen} onClick={() => setAboutOpen((v) => !v)}>About this kit {aboutOpen ? "–" : "+"}</button>
           {aboutOpen && (
-            <p className="kp-note kp-aboutbody">
-              {sil} silhouette · {T.font}. One material recipe at five levels: foundations, finished
-              components, Build Parts with containers and assemblies, screen patterns and resources.
-              Every specimen is a live render from the same engine that draws the editor canvas;
-              each opens in the editor via the ✎ next to its name. Nothing on this page is a mockup.
-            </p>
+            <div className="kp-reveal"><div>
+              <p className="kp-note kp-aboutbody">
+                {sil} silhouette · {T.font}. One material recipe at five levels: foundations, finished
+                components, Build Parts with containers and assemblies, screen patterns and resources.
+                Every specimen is a live render from the same engine that draws the editor canvas;
+                each opens in the editor via the ✎ next to its name. Nothing on this page is a mockup.
+              </p>
+            </div></div>
           )}
           {a11yOpen && (
-            <div className={`kp-a11y ${audit.level.toLowerCase()}`} role="status">
-              <b>{audit.level === "Strong" ? "Strong — reads clearly." : audit.level === "Fair" ? "Fair — solid, with a couple of watch-outs." : "Risky — worth a tweak before shipping."}</b>
-              <ul>{audit.notes.map((n) => <li key={n}>{n}</li>)}</ul>
-              <div className="kp-a11yhow">Computed locally from WCAG contrast ratios and type metrics — no AI involved, nothing leaves the page.</div>
-            </div>
+            <div className="kp-reveal"><div>
+              <div className={`kp-a11y ${audit.level.toLowerCase()}`} role="status">
+                <b>{audit.level === "Strong" ? "Strong — reads clearly." : audit.level === "Fair" ? "Fair — solid, with a couple of watch-outs." : "Risky — worth a tweak before shipping."}</b>
+                <ul>{audit.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+                <div className="kp-a11yhow">Computed locally from WCAG contrast ratios and type metrics — no AI involved, nothing leaves the page.</div>
+              </div>
+            </div></div>
           )}
         </div>
         <HeroGL />
@@ -983,10 +1379,17 @@ export function KitPage() {
       </Sec>
 
       {/* ── 06 · sliders & progress ── */}
-      <Sec n="04" title="Sliders & Progress" note="Shared range rules: the thumb stays inside the shell at both endpoints and the fill ends at the thumb's center. Progress replays to its configured value on click or Enter.">
+      <Sec n="04" title="Sliders & Progress" note="Shared range rules: the thumb stays inside the shell at both endpoints and the fill ends at the thumb's center. Progress replays to its configured value on click or Enter. The emblem bar docks a silhouette-aware socket on the track — swap its glyph in Component content; the segmented meter snaps to whole cells or slides one fill under the notches.">
         <div className="kp-tray">
           <Piece id="slider" caption="Slider" value={0.62} />
           <Piece id="progress" caption="Progress" value={0.62} ambient />
+        </div>
+        <div className="kp-tray">
+          <Piece id="progress" caption="Emblem bar · docked socket" value={0.55} dock={{}} ambient />
+        </div>
+        <div className="kp-tray">
+          <Piece id="segbar" caption="Segmented · snaps to cells" value={0.62} ambient />
+          <Piece id="segbar" caption="Segmented · 8 · smooth" value={0.55} bar={{ segments: 8, snap: false }} ambient />
         </div>
         <StateStrip variants={[
           { cap: "Min", piece: { id: "slider", value: 0, scale: 0.26 } },
@@ -1135,15 +1538,29 @@ export function KitPage() {
           <Piece id="timerdigits" caption="Timer digits · pure type, no container" value={0.75} scale={0.5} ambient />
         </div>
         <div className="kp-meta"><span>Time derives from the value — hosts tick the value, the readout follows</span><span>Click any timer to replay its drain</span><span>Below 25% remaining, digits, hand and tiles switch to the alarm tint</span></div>
+        <div className="kp-subhead">Racing HUD — click a gauge to rev it</div>
+        <div className="kp-tray kp-axis kp-race">
+          <Piece id="speedo" caption="Speedometer · classic dial" value={0.62} scale={0.52} ambient />
+          <Piece id="speedo2" caption="Speedometer · HUD segments" value={0.62} scale={0.52} ambient />
+          <Piece id="tacho" caption="Rev meter · green to red" value={0.62} scale={0.52} ambient />
+          <Piece id="circuit" caption="Kazuri Ring · live positions" scale={0.56} />
+        </div>
+        <div className="kp-tray kp-axis kp-race">
+          <Piece id="leaderboard" caption="Position list · Top 5" scale={0.52} />
+          <Piece id="laptimes" caption="Lap comparison · you vs rival" scale={0.52} />
+          <Piece id="telemetry" caption="Telemetry · throttle, brake, speed" scale={0.52} />
+        </div>
+        <div className="kp-tray kp-axis kp-race">
+          <Piece id="startlights" caption="Start lights · click to arm" value={0.99} scale={0.52} ambient />
+        </div>
+        <div className="kp-meta"><span>Speed derives from the value — 0 to 280 across the sweep</span><span>Past 78% the dial enters the red zone and the readout takes the alarm tint</span><span>Kazuri Ring is drawn as a dimensional ribbon — elevation reads from the extruded walls</span><span>Graphs carry live engine data in real games — the traces here are specimens</span><span>Start lights arm pod by pod; zero is lights-out</span></div>
       </Sec>
 
       <Chapter n="03" id="parts" label="Build Parts" blurb="The construction vocabulary: parts, containers, assemblies and motion — with downloads." />
 
       {/* ── 14 · build parts ── */}
       <Sec n="01" title="Build Parts" note="Everything in the kit is built from these. Each part opens the layer that produces it in the editor. Downloads are layered SVGs with named groups and nine-slice metadata.">
-        <button className="kp-dlall" onClick={downloadAllAssets} disabled={sheetBusy} title="Every asset on one labeled PNG sprite sheet">
-          <Download size={15} strokeWidth={2.2} /> {sheetBusy ? "Building the sheet…" : "Download all assets — PNG sprite sheet"}
-        </button>
+        <ExportMenu actions={exportActions} />
         <div className="kp-dlrow">
           {([["all", "Download full pack"], ["components", "Components"], ["layers", "Material layers"], ["controls", "Control pieces"], ["type", "Typography recipe"], ["assemblies", "Assemblies"]] as const).map(([which, capn]) => (
             <button key={which} onClick={() => {
@@ -1180,8 +1597,10 @@ export function KitPage() {
                   ].join("\n"),
                 });
               }
-              if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) =>
-                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
+              if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) => {
+                const kb = cid === "progress" || cid === "segbar" ? st.kitBar[cid] : undefined;
+                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, icon: resolveKitIcon(st.kitIcons[cid], undefined), label: st.kitLabels[cid], textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], textOx: st.kitTextOx[`${cid}:${effKitSize(st.kitSizes[cid])}`], bar: kb, dock: kb?.dock ? { icon: resolveKitIcon(st.kitIcons[cid], undefined), side: kb.dockSide ?? "left" } : undefined, row: cid === "datarow" ? st.kitRow : undefined }) });
+              });
               if (which === "all") {
                 files.push({
                   path: "9slice.json",
@@ -1353,7 +1772,7 @@ export function KitPage() {
               <span className="kp-handle" />
               <div className="gp-row">
                 <span className="gp-label">Squad details</span>
-                <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.29} />
+                <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.5} />
               </div>
             </div>
           </div>
@@ -1361,7 +1780,7 @@ export function KitPage() {
             <div className="gp-title">Bottom sheet · expanded</div>
             <div className="kp-sheet">
               <span className="kp-handle" />
-              <div className="gp-row"><span className="gp-label">Squad details</span><PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.26} /></div>
+              <div className="gp-row"><span className="gp-label">Squad details</span><PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.46} /></div>
               <PPiece id="datarow" value={0.4} scale={0.48} />
               <PPiece id="datarow" label="Iron Golem" sub="Level 8 · Tank" value={0.7} scale={0.48} />
               <div className="kp-sheetfoot"><PPiece id="small" label="DEPLOY" scale={0.45} /></div>
@@ -1373,7 +1792,7 @@ export function KitPage() {
       {/* ── 12 · reward & objectives ── */}
       <Sec n="04" title="Reward Track & Objectives" note="Progression assemblies built from registered components. The track visualizes milestone rewards; objectives drive player progression and grant resources.">
         <div className="kp-subhead">Reward track</div>
-        <div className="kp-track3">
+        <div className="kp-track3" ref={trackRailRef}>
           <span className="kp-rail3" aria-hidden="true"><i /><em /></span>
           {([
             ["Claimed", "5,000 XP", "done", <SPiece key="a" id="slot" icon={STOCK_ICONS.check} overlay="check" scale={0.84} />, false],
@@ -1420,7 +1839,7 @@ export function KitPage() {
             <div className="kp-weekly">
               <span className="sc-caption dim">WEEKLY STREAK</span>
               <div className="kp-wkbig"><b>4</b><span>/ 7 days</span></div>
-              <div className="kp-wkdays">
+              <div className="kp-wkdays" ref={weekRailRef}>
                 {(["M", "T", "W", "T", "F", "S", "S"] as const).map((d, i) => (
                   <div className="kp-wkday" key={d + i}>
                     <SPiece id="orb" value={i < 4 ? 1 : 0} scale={0.5} />
@@ -1479,7 +1898,7 @@ export function KitPage() {
           </div>
           <div className="gp-card">
             <div className="gp-title">Waypoints · connectors</div>
-            <div className="kp-map">
+            <div className="kp-map" ref={mapRailRef}>
               <span className="kp-line done" />
               <span className="kp-line" />
               <div className="kp-nodes">
@@ -1603,16 +2022,18 @@ export function KitPage() {
             </div>
             <div className="pat-grid">
               <Pat n="01" name="Main Menu" cat="Core Screen" comps={7} asms={3} lead="primary">
-                <Art svg={menuArt} scale={0.46} />
-                <SPiece id="primary" label="PLAY" scale={0.46} />
-                <div className="sc-stack">
-                  <SPiece id="small" label="OPTIONS" scale={0.36} />
-                  <SPiece id="small" label="STORE" scale={0.36} />
-                </div>
-                <div className="sc-row sc-util sc-push">
+                {/* corner chrome first — the center column below shares ONE axis */}
+                <div className="sc-row sc-util sc-menubar">
                   <SPiece id="chip" label="980" icon={STOCK_ICONS.gem} scale={0.32} />
-                  <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.28} />
+                  <span className="sc-spring" />
                   <SPiece id="badge" label="3" scale={0.26} />
+                  <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.28} />
+                </div>
+                <Art svg={menuArt} scale={0.5} />
+                <SPiece id="primary" label="PLAY" scale={0.64} />
+                <div className="sc-stack">
+                  <SPiece id="small" label="OPTIONS" scale={0.5} />
+                  <SPiece id="small" label="STORE" scale={0.5} />
                 </div>
               </Pat>
               <Pat n="02" name="Sign In" cat="Core Screen" comps={5} asms={2} lead="input">
@@ -1666,73 +2087,15 @@ export function KitPage() {
                 <SPiece id="primary" label="BUY NOW" size="s" scale={0.38} />
                 <SPiece id="ghost" label="Cancel" size="s" scale={0.3} />
               </Pat>
-              <Pat n="07" name="Inventory" cat="Core Screen" comps={11} asms={5} lead="slot">
-                <div className="sc-inv">
-                  <div className="sc-invtop">
-                    <SPiece id="chip" label="INVENTORY" icon={null} tone="alt" scale={0.3} />
-                    <SPiece id="resource" label="1,250" icon={STOCK_ICONS.gem} scale={0.26} />
-                    <SPiece id="resource" label="24,580" icon={STOCK_ICONS.star} scale={0.26} />
-                    <span className="sc-spring" />
-                    <SPiece id="iconbtn" icon={STOCK_ICONS.gear} scale={0.22} />
-                    <SPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.22} />
-                  </div>
-                  <div className="sc-invbody">
-                    <div className="sc-invcol">
-                      <SPiece id="slot" size="m" icon={STOCK_ICONS.user} overlay="level:42" scale={0.4} />
-                      <span className="sc-invname">SHADOW KNIGHT</span>
-                      <div className="sc-invgrid2">
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.star} overlay="equipped" scale={0.3} />
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.heart} scale={0.3} />
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.bag} scale={0.3} />
-                        <SPiece id="slot" size="m" icon={null} scale={0.3} />
-                      </div>
-                      <SPiece id="small" label="STATS" scale={0.26} />
-                    </div>
-                    <div className="sc-invmain">
-                      <div className="sc-invtabs">
-                        <SPiece id="tab" label="GEAR" baseState="pressed" scale={0.26} />
-                        <SPiece id="tab" label="ITEMS" scale={0.26} />
-                        <SPiece id="tab" label="RUNES" scale={0.26} />
-                      </div>
-                      <div className="sc-invgrid">
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.star} overlay="count:2" scale={0.28} />
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="count:14" scale={0.28} />
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.heart} scale={0.28} />
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.bag} overlay="new" scale={0.28} />
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.trophy} scale={0.28} />
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="count:9" scale={0.28} />
-                        <SPiece id="slot" size="m" icon={null} scale={0.28} />
-                        <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="locked" scale={0.28} />
-                      </div>
-                      <div className="sc-invcap">
-                        <SPiece id="progress" value={0.68} scale={0.3} />
-                        <span className="sc-invsub">82 / 120</span>
-                      </div>
-                    </div>
-                    <div className="sc-invside">
-                      <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="equipped" baseState="hover" scale={0.42} />
-                      <span className="sc-invname">ECLIPSE GEM</span>
-                      <span className="sc-invsub">EPIC · WEAPON</span>
-                      <div className="sc-invstat"><span>ATTACK</span><SPiece id="progress" value={0.85} scale={0.24} /></div>
-                      <div className="sc-invstat"><span>CRIT</span><SPiece id="progress" value={0.55} scale={0.24} /></div>
-                      <div className="sc-invstat"><span>SPEED</span><SPiece id="progress" value={0.4} scale={0.24} /></div>
-                      <SPiece id="primary" label="EQUIP" size="s" scale={0.28} />
-                      <SPiece id="ghost" label="Dismantle" size="s" scale={0.26} />
-                    </div>
-                  </div>
-                  <div className="sc-invdock">
-                    <SPiece id="chip" label="QUICK SLOTS" icon={null} tone="alt" scale={0.24} />
-                    <SPiece id="slot" size="m" icon={STOCK_ICONS.heart} overlay="count:12" scale={0.26} />
-                    <SPiece id="slot" size="m" icon={STOCK_ICONS.gem} overlay="count:28" scale={0.26} />
-                    <SPiece id="slot" size="m" icon={STOCK_ICONS.star} scale={0.26} />
-                    <SPiece id="badge" label="+" scale={0.24} />
-                  </div>
-                </div>
+              <Pat n="07" name="Inventory" cat="Core Screen" comps={14} asms={6} lead="slot" wide>
+                <InventoryScreen />
               </Pat>
             </div>
           </div>
         )}
 
+        {/* (the full-screen Racing HUD pattern is parked — RacingHud.tsx
+            stays in the tree for when the kit is ready for it) */}
         {(patTab === "all" || patTab === "outcome") && (
           <div className="pat-group">
             <div className="pat-ghead">
@@ -1883,8 +2246,8 @@ export function KitPage() {
                 ] as const).map((row, ri) => (
                   <div className="lay-row lay-board" key={ri}>
                     {row.map((ic, ci) => (
-                      <SPiece key={ci} id="slot" size="s" icon={STOCK_ICONS[ic]} iconScale={1.35}
-                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.56} />
+                      <SPiece key={ci} id="slot" size="s" icon={STOCK_ICONS[ic]} iconScale={1.35} tight
+                        overlay={ri === 1 && ci === 2 ? "new" : undefined} scale={0.62} />
                     ))}
                   </div>
                 ))}
@@ -1902,7 +2265,7 @@ export function KitPage() {
         <SpecList rows={[
           ["Figma", "Drop any exported SVG on the canvas; ungroup once for the layer tree (shadow, extrusion, shell, face, content, gloss)"],
           ["Illustrator", "Opens directly. The SVG-Tiny clipping notice concerns re-saving only; imports are complete"],
-          ["Engines", "Sprite-sheet kit with per-state rects and 9-slice borders — Unity Sprite Editor and Unreal UMG shapes"],
+          ["Engines", "Atomic engine export: content-free nine-slice PNGs + kit-manifest.json (dims, margins, pivots, tintability), a Unity importer + example prefabs, Unreal UMG recipes — labels stay live engine text; the sprite sheet is a visual catalog only"],
           ["Nine-slice", "Caps are capScale × shell height and never stretch; content gives the text-safe insets (9slice.json)"],
           ["Settings", "The whole design as portable JSON — re-import it or share it as a team default"],
         ]} />
