@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun, Gamepad2 } from "lucide-react";
+import { CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun, Gamepad2, Sparkles } from "lucide-react";
 import { useGen, hydrate, getDefault } from "@/generator/store";
 import { renderBevel } from "@/generator/bevel";
 import { downloadSvg, downloadPng, downloadHtml, downloadSettings, downloadGameKit, copyText } from "@/generator/exportUtils";
@@ -31,7 +31,7 @@ function HelpHint() {
 }
 
 export function TopBar() {
-  const { cfg, saveStatus, selectedState, theme, setTheme, replaceConfig } = useGen();
+  const { cfg, saveStatus, selectedState, theme, setTheme, replaceConfig, shine, setShine } = useGen();
   const [menuOpen, setMenuOpen] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
   const [, setCopied] = useState(false);
@@ -84,6 +84,12 @@ export function TopBar() {
         <span className="ok"><CheckCircle2 size={19} strokeWidth={1.9} color={saveStatus === "saved" ? "#16a34a" : "#9aa1ac"} /></span>
         {saveStatus === "saved" ? "All changes saved" : "Saving…"}
       </div>
+
+      <button className={`acct${shine ? " on" : ""}`} onClick={() => setShine(!shine)}
+        aria-label={shine ? "Turn the shine sweep off" : "Turn the shine sweep on"} aria-pressed={shine}
+        title={shine ? "Shine sweep — on everywhere" : "Shine sweep — off"} data-shinebtn="1">
+        <Sparkles size={17} strokeWidth={1.9} />
+      </button>
 
       <button className="acct" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}

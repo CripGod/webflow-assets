@@ -220,8 +220,9 @@ function ExportMenu({ actions }: {
 /** One specced piece: live art + a caption rail with edit, sizes and export. */
 function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
   const { cfg, locked, size, setKitSize, sizable, name, kit, onEdit } = usePiece(p);
+  const shineOn = useGen((s) => s.shine);
   return (
-    <figure className="kp-piece">
+    <figure className={`kp-piece${shineOn ? " kp-shine" : ""}`}>
       <LiveArt cfg={cfg} playing scale={p.scale ?? PIECE_SCALE} className="kp-live"
         kit={kit} title={p.caption} ambient={p.ambient} />
       <figcaption className="kp-cap">
@@ -740,8 +741,26 @@ const ICON_SET: { key: string; name: string }[] = [
   { key: "refresh", name: "Refresh" }, { key: "home", name: "Home" }, { key: "search", name: "Search" },
 ];
 
+
+/** v67 · connector pattern: the theme's face pattern as a tiny data-URI tile
+ *  so DIMENSIONAL CONNECTORS (reward-track rail, waypoint tubes) carry the
+ *  same wrap as the components they join. */
+function patternTileUrl(cfg: GenConfig): string {
+  const PT = cfg.candy.pattern;
+  if (!PT || PT.type === "none" || PT.opacity < 2) return "none";
+  const c = encodeURIComponent(PT.color ?? "#FFFFFF");
+  const o = Math.min(0.5, PT.opacity / 180).toFixed(2);
+  const s = Math.max(6, Math.round(6 + PT.scale * 0.06));
+  let inner = "";
+  if (PT.type === "stripes") inner = `<rect width='${s / 2}' height='${s}' fill='${c}' opacity='${o}'/>`;
+  else if (PT.type === "dots" || PT.type === "halftone") inner = `<circle cx='${s / 2}' cy='${s / 2}' r='${s * 0.22}' fill='${c}' opacity='${o}'/>`;
+  else if (PT.type === "checker") inner = `<rect width='${s / 2}' height='${s / 2}' fill='${c}' opacity='${o}'/><rect x='${s / 2}' y='${s / 2}' width='${s / 2}' height='${s / 2}' fill='${c}' opacity='${o}'/>`;
+  else inner = `<circle cx='${s / 2}' cy='${s / 2}' r='${s * 0.18}' fill='${c}' opacity='${o}'/>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${s}' height='${s}'>`)}${inner.replace(/'/g, "%27").replace(/</g, "%3C").replace(/>/g, "%3E").replace(/#/g, "%23")}${encodeURIComponent("</svg>")}")`;
+}
+
 export function KitPage() {
-  const { cfg, kitDesigns, kitTextFill, setPhase, kitName, setKitName, saveUserPreset, update } = useGen();
+  const { cfg, kitDesigns, kitTextFill, setPhase, kitName, setKitName, saveUserPreset, update, viewer } = useGen();
   const dark = isDarkBg(cfg.canvas);
   const preset = PRESETS.find((p) => p.id === cfg.presetId);
   const sil = SHAPES.find((s) => s.id === cfg.shape)?.name.split(" — ")[0] ?? "Custom";
@@ -824,6 +843,25 @@ export function KitPage() {
   /* every catalog entry — components, variants, states — as individual
      layered SVGs. The same list the sprite sheet renders, so what you see
      in the catalog is exactly what lands in the zip. */
+
+  const [shared, setShared] = useState(false);
+  /* v67 · Share: the whole kit state rides the URL (deflate + base64url).
+     Anyone can view; downloads stay with the owner — real permissions later. */
+  const shareKit = async () => {
+    const st = useGen.getState();
+    const payload = {
+      v: 1, cfg: st.cfg, kitName: st.kitName, kitShapes: st.kitShapes, kitDesigns: st.kitDesigns,
+      kitTextFill: st.kitTextFill, kitLabels: st.kitLabels, kitIcons: st.kitIcons, kitSizes: st.kitSizes,
+      kitBar: st.kitBar, kitTextOy: st.kitTextOy, kitTextOx: st.kitTextOx,
+    };
+    const stream = new Blob([JSON.stringify(payload)]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+    const buf = new Uint8Array(await new Response(stream).arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    const b64 = btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const url = `${location.origin}${location.pathname}#share=${b64}`;
+    try { await navigator.clipboard.writeText(url); setShared(true); setTimeout(() => setShared(false), 2200); } catch { window.prompt("Share this kit:", url); }
+  };
   const [svgBusy, setSvgBusy] = useState(false);
   const downloadSvgPack = async () => {
     if (svgBusy) return;
@@ -932,6 +970,8 @@ const exportActions = [
         rk("progress", "Emblem bar · Docked", { dock: {} }, 0.55),
         rk("segbar", "Segmented · 3 of 5", {}, 0.62),
         rk("segbar", "Segmented · Smooth", { bar: { segments: 8, snap: false } }, 0.55),
+        rk("vsbar", "VS health bar", {}, 0.72),
+        rk("hotbar", "Hotbar · slot 3", {}, 0.25),
         rk("tacho", "Rev meter · 7.4", {}, 0.82),
         rk("input", "Input · Focus", {}, undefined, "hover"),
         rk("input", "Input · Disabled", {}, undefined, "disabled"),
@@ -1082,7 +1122,7 @@ const exportActions = [
   }, [cfg]);
 
   return (
-    <div className={`kitpage${dark ? " dark" : ""}`}>
+    <div className={`kitpage${dark ? " dark" : ""}`} style={{ "--kp-pattile": patternTileUrl(cfg) } as React.CSSProperties}>
       {/* ── sticky chapter navigation — persistent orientation ── */}
       <nav className="kp-tabsbar" aria-label="Kit chapters">
         {CHAPTERS.map(([id, num, name]) => (
@@ -1136,7 +1176,10 @@ const exportActions = [
             style={{ background: cfg.effects.Bevel ?? "#0E9CC9", color: isDarkBg(cfg.effects.Bevel ?? "#0E9CC9") ? "#ffffff" : "#0d0f16" }}>
             <PenTool size={16} strokeWidth={2.3} /> Edit this Kit
           </button>
-          <ExportMenu actions={exportActions} />
+          {viewer ? <div className="kp-viewnote">Shared kit — view only. Ask the owner for the downloads.</div> : <ExportMenu actions={exportActions} />}
+          <button className="kp-share" onClick={() => void shareKit()} title="Copy a link that opens this kit for anyone — view only">
+            {shared ? "Link copied ✓" : "Share kit"}
+          </button>
           <div className="kp-roleline" aria-hidden="true">
             {roles.map((r) => <span className="kp-roledot" key={r}><i style={{ background: cfg.effects[r] }} />{r}</span>)}
           </div>
@@ -1391,6 +1434,12 @@ const exportActions = [
           <Piece id="segbar" caption="Segmented · snaps to cells" value={0.62} ambient />
           <Piece id="segbar" caption="Segmented · 8 · smooth" value={0.55} bar={{ segments: 8, snap: false }} ambient />
         </div>
+        <div className="kp-subhead">Genre essentials</div>
+        <p className="kp-note">Every genre speaks this kit: the fighting VS bar drains toward its candy medallion, the sandbox hotbar carries the material into slot form. Action &amp; shooters lean on the reticle, ammo and mini-map; RPGs on progress, data rows, slots and the reward track; strategy on resources and panels; racing has its own chapter; timers and meters cover survival, sims and sports.</p>
+        <div className="kp-row">
+          <Piece id="vsbar" caption="VS health bar · fighting" value={0.72} ambient scale={0.5} />
+          <Piece id="hotbar" caption="Hotbar · sandbox" value={0.25} ambient scale={0.5} />
+        </div>
         <StateStrip variants={[
           { cap: "Min", piece: { id: "slider", value: 0, scale: 0.26 } },
           { cap: "25%", piece: { id: "slider", value: 0.25, scale: 0.26 } },
@@ -1560,7 +1609,10 @@ const exportActions = [
 
       {/* ── 14 · build parts ── */}
       <Sec n="01" title="Build Parts" note="Everything in the kit is built from these. Each part opens the layer that produces it in the editor. Downloads are layered SVGs with named groups and nine-slice metadata.">
-        <ExportMenu actions={exportActions} />
+        {viewer ? <div className="kp-viewnote">Shared kit — view only. Ask the owner for the downloads.</div> : <ExportMenu actions={exportActions} />}
+        <button className="kp-share" onClick={() => void shareKit()} title="Copy a link that opens this kit for anyone — view only">
+          {shared ? "Link copied ✓" : "Share kit"}
+        </button>
         <div className="kp-dlrow">
           {([["all", "Download full pack"], ["components", "Components"], ["layers", "Material layers"], ["controls", "Control pieces"], ["type", "Typography recipe"], ["assemblies", "Assemblies"]] as const).map(([which, capn]) => (
             <button key={which} onClick={() => {

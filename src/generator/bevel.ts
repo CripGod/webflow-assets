@@ -2,7 +2,7 @@ import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSiz
 import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE , isDarkBg, userShapes } from "./model";
 import { iconGroup } from "./icons";
 import { silhouetteMeta } from "./silhouettes";
-import { importedShape } from "./importedShapes";
+import { importedShape, flattenPath, pointInPoly, type Pt } from "./importedShapes";
 import rough from "roughjs";
 
 /* Rough.js draws the hand-drawn *line character* over the approved outline —
@@ -157,6 +157,183 @@ export function transformPathCapAware(d: string, vb: [number, number, number, nu
     }
   }
   return out.join(" ");
+}
+
+/* ── true inward offset (Illustrator "Offset Path") ────────────────────────
+   Scaling a silhouette into a smaller box is NOT a geometric offset: bumps
+   and notches drift, walls pinch, faces escape (measured in the lab). This
+   derives the inner shape the way Illustrator does — every boundary point
+   moves inward along its normal by exactly `delta`, pinched regions are
+   culled, and the result is simplified back to a light path.
+
+   Arc-command paths (pill/round rects) are declined by the caller and keep
+   the classic scaled inset — their convex geometry never suffered from it. */
+const OFFSET_CACHE = new Map<string, string>();
+function distToBoundary(p: Pt, poly: Pt[]): number {
+  let min = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2)) : 0;
+    const d = Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    if (d < min) min = d;
+  }
+  return min;
+}
+function simplifyDP(pts: Pt[], eps: number): Pt[] {
+  if (pts.length < 4) return pts;
+  const keep = new Array(pts.length).fill(false);
+  keep[0] = keep[pts.length - 1] = true;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let maxD = 0, maxI = -1;
+    for (let i = a + 1; i < b; i++) {
+      const dx = pts[b].x - pts[a].x, dy = pts[b].y - pts[a].y;
+      const L = Math.hypot(dx, dy) || 1;
+      const d = Math.abs((pts[i].x - pts[a].x) * dy - (pts[i].y - pts[a].y) * dx) / L;
+      if (d > maxD) { maxD = d; maxI = i; }
+    }
+    if (maxD > eps && maxI > 0) { keep[maxI] = true; stack.push([a, maxI], [maxI, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+export function offsetPathInward(d: string, delta: number): string {
+  if (delta <= 0.05) return d;
+  const key = `${delta.toFixed(2)}|${d}`;
+  const hit = OFFSET_CACHE.get(key);
+  if (hit !== undefined) return hit;
+  const raw = flattenPath(d, 14)[0] ?? [];
+  // dedupe — shared corner endpoints from L/Q handoffs make zero-length edges
+  const dd: Pt[] = [];
+  for (const p of raw) {
+    const last = dd[dd.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 0.25) dd.push(p);
+  }
+  if (dd.length > 2 && Math.hypot(dd[0].x - dd[dd.length - 1].x, dd[0].y - dd[dd.length - 1].y) < 0.25) dd.pop();
+  if (dd.length < 6) { OFFSET_CACHE.set(key, ""); return ""; }
+  /* rotate the ring so it starts mid-way along the LONGEST edge — the DP
+     simplifier pins its endpoints, and a start point sitting inside a
+     rounded corner would leave un-collapsible seam vertices there */
+  let rl = 0, ri = 0;
+  for (let i = 0; i < dd.length; i++) {
+    const L = Math.hypot(dd[(i + 1) % dd.length].x - dd[i].x, dd[(i + 1) % dd.length].y - dd[i].y);
+    if (L > rl) { rl = L; ri = i; }
+  }
+  const rot = dd.slice(ri + 1).concat(dd.slice(0, ri + 1));
+  const mid0 = { x: (rot[rot.length - 1].x + rot[0].x) / 2, y: (rot[rot.length - 1].y + rot[0].y) / 2 };
+  const ring = [mid0, ...rot];
+  /* pre-simplify the SOURCE: micro-roundings (r « delta) collapse to sharp
+     vertices so their two straight neighbors become adjacent — that's what
+     lets the miter join synthesize the receding tip an offset demands.
+     Real curves deviate more than the tolerance and keep their samples. */
+  const dp = simplifyDP(ring, Math.min(1.4, delta * 0.18));
+  // merge residual near-corner duplets into single sharp vertices
+  const mergeR = Math.max(1.5, delta * 0.22);
+  const poly: Pt[] = [];
+  for (const p of dp) {
+    const last = poly[poly.length - 1];
+    if (last && Math.hypot(p.x - last.x, p.y - last.y) < mergeR) {
+      last.x = (last.x + p.x) / 2; last.y = (last.y + p.y) / 2;
+    } else poly.push(p);
+  }
+  if (poly.length > 2 && Math.hypot(poly[0].x - poly[poly.length - 1].x, poly[0].y - poly[poly.length - 1].y) < mergeR) poly.pop();
+  // drop collinear leftovers (incl. the pinned ring-start) — they read as
+  // tiny seam kinks on stroked results
+  for (let i = poly.length - 1; i >= 0 && poly.length > 4; i--) {
+    const a = poly[(i + poly.length - 1) % poly.length], b = poly[i], c = poly[(i + 1) % poly.length];
+    const L = Math.hypot(c.x - a.x, c.y - a.y) || 1;
+    const dev = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / L;
+    if (dev < 0.2) poly.splice(i, 1);
+  }
+  const n = poly.length;
+  if (n < 5) { OFFSET_CACHE.set(key, ""); return ""; }
+  // per-EDGE inward normals; side picked empirically on the longest edge
+  let li = 0, ll = 0;
+  for (let i = 0; i < n; i++) {
+    const L = Math.hypot(poly[(i + 1) % n].x - poly[i].x, poly[(i + 1) % n].y - poly[i].y);
+    if (L > ll) { ll = L; li = i; }
+  }
+  const A0 = poly[li], B0 = poly[(li + 1) % n];
+  const el = Math.hypot(B0.x - A0.x, B0.y - A0.y) || 1;
+  let pnx = (B0.y - A0.y) / el, pny = -(B0.x - A0.x) / el;
+  if (!pointInPoly({ x: (A0.x + B0.x) / 2 + pnx * Math.min(2, delta), y: (A0.y + B0.y) / 2 + pny * Math.min(2, delta) }, poly)) { pnx = -pnx; pny = -pny; }
+  const side = pnx * (B0.y - A0.y) - pny * (B0.x - A0.x) > 0 ? 1 : -1;
+  const dirs: Pt[] = [], nrm: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n];
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    dirs.push({ x: (b.x - a.x) / L, y: (b.y - a.y) / L });
+    nrm.push({ x: side * (b.y - a.y) / L, y: side * -(b.x - a.x) / L });
+  }
+  /* Illustrator-style miter joins: intersect each pair of adjacent offset
+     edge LINES. This is what synthesizes the NEW vertices an offset needs —
+     e.g. the receding tail tips of a swallowtail — which per-vertex normal
+     displacement can never produce. */
+  const cand: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const eP = (i + n - 1) % n;
+    const p = poly[i];
+    const ax = p.x + nrm[eP].x * delta, ay = p.y + nrm[eP].y * delta;
+    const bx = p.x + nrm[i].x * delta, by = p.y + nrm[i].y * delta;
+    const den = dirs[eP].x * dirs[i].y - dirs[eP].y * dirs[i].x;
+    let q: Pt;
+    if (Math.abs(den) < 1e-4) {
+      q = { x: (ax + bx) / 2, y: (ay + by) / 2 };
+    } else {
+      const t = ((bx - ax) * dirs[i].y - (by - ay) * dirs[i].x) / den;
+      q = { x: ax + dirs[eP].x * t, y: ay + dirs[eP].y * t };
+      if (Math.hypot(q.x - p.x, q.y - p.y) > delta * 8) q = { x: (ax + bx) / 2, y: (ay + by) / 2 };
+    }
+    cand.push(q);
+  }
+  // cull pinched regions: a true offset point sits ≥ delta from the boundary
+  let kept = cand.filter((p) => pointInPoly(p, poly) && distToBoundary(p, poly) >= delta * 0.8);
+  if (kept.length < 5) { OFFSET_CACHE.set(key, ""); return ""; }
+  /* excise loop-backs: concave miters can cross nearby edges around tight
+     notches; cut each crossing at its intersection and drop the short loop
+     (the standard offset clean-up) */
+  for (let pass = 0; pass < 10; pass++) {
+    const m = kept.length;
+    let cut = false;
+    outer: for (let i = 0; i < m; i++) {
+      for (let j = i + 2; j < m; j++) {
+        if (i === 0 && j === m - 1) continue;
+        const a = kept[i], b = kept[(i + 1) % m], c2 = kept[j], d2 = kept[(j + 1) % m];
+        const den = (b.x - a.x) * (d2.y - c2.y) - (b.y - a.y) * (d2.x - c2.x);
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((c2.x - a.x) * (d2.y - c2.y) - (c2.y - a.y) * (d2.x - c2.x)) / den;
+        const u = ((c2.x - a.x) * (b.y - a.y) - (c2.y - a.y) * (b.x - a.x)) / den;
+        if (t <= 0.001 || t >= 0.999 || u <= 0.001 || u >= 0.999) continue;
+        const X = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        const innerLen = j - i;
+        kept = innerLen <= m - innerLen
+          ? kept.slice(0, i + 1).concat([X], kept.slice(j + 1))
+          : [X, ...kept.slice(i + 1, j + 1)];
+        cut = true;
+        break outer;
+      }
+    }
+    if (!cut) break;
+  }
+  if (kept.length < 5) { OFFSET_CACHE.set(key, ""); return ""; }
+  const out = simplifyDP(kept, 0.35);
+  const dOut = "M " + out.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ") + " Z";
+  if (OFFSET_CACHE.size > 400) OFFSET_CACHE.clear();
+  OFFSET_CACHE.set(key, dOut);
+  return dOut;
+}
+
+/** Inner shape at true offset `delta` — falls back to the classic scaled
+ *  inset for arc-built paths (pill/round — convex, scaling was never wrong)
+ *  and for offsets too deep to survive. */
+export function insetShape(shape: Shape, outer: string, x: number, y: number, w: number, h: number, delta: number, softness: number): string {
+  if (!/[Aa]/.test(outer)) {
+    const off = offsetPathInward(outer, delta);
+    if (off) return off;
+  }
+  return shapePath(shape, x + delta, y + delta, w - delta * 2, h - delta * 2, softness);
 }
 
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
@@ -633,8 +810,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
   const rimW = C.rim.width * K;
   const outer = shapePath(shape, x, y, w, h, D.bevel.softness);
-  const faceP = shapePath(shape, x + bwF, y + bwF, w - bwF * 2, h - bwF * 2, Math.max(0, D.bevel.softness - 8));
-  const rimP = shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, D.bevel.softness);
+  // v67: TRUE inward offsets (Illustrator "Offset Path") — inner shapes
+  // follow the silhouette's actual contour instead of a rescaled clone
+  const faceP = insetShape(shape, outer, x, y, w, h, bwF, Math.max(0, D.bevel.softness - 8));
+  const rimP = insetShape(shape, outer, x, y, w, h, rimW / 2 + 0.8, D.bevel.softness);
 
   /* ── key light — global source of truth ──────────────────────── */
   const A = ((D.lighting.angle % 360) + 360) % 360;
@@ -783,7 +962,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     } else if (SP.mode === "sweep") {
       // reflective event hugging the shell's edge curve on the lit side
       const swW = Math.max(2, spSize * 0.32);
-      const sweepP = shapePath(shape, x + bwF * 0.55, y + bwF * 0.55, w - bwF * 1.1, h - bwF * 1.1, Math.max(0, D.bevel.softness - 4));
+      const sweepP = insetShape(shape, outer, x, y, w, h, bwF * 0.55, Math.max(0, D.bevel.softness - 4));
       specular = `<path d="${sweepP}" fill="none" stroke="url(#${id}sw)" stroke-width="${swW.toFixed(1)}" opacity="${spOp.toFixed(2)}"/>`;
     } else {
       const main = `<ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spRx.toFixed(1)}" ry="${spRy.toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>`;
@@ -1110,10 +1289,11 @@ export function shellPaths(cfg: GenConfig, shape: Shape, x: number, y: number, w
   const impMeta = importedShape(shape);
   const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
   const rimW = D.candy.rim.width * K;
+  const outer = shapePath(shape, x, y, w, h, D.bevel.softness);
   return {
-    outer: shapePath(shape, x, y, w, h, D.bevel.softness),
-    face: shapePath(shape, x + bwF, y + bwF, w - bwF * 2, h - bwF * 2, Math.max(0, D.bevel.softness - 8)),
-    rim: shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, D.bevel.softness),
+    outer,
+    face: insetShape(shape, outer, x, y, w, h, bwF, Math.max(0, D.bevel.softness - 8)),
+    rim: insetShape(shape, outer, x, y, w, h, rimW / 2 + 0.8, D.bevel.softness),
     bw, bwF, rimW,
   };
 }
@@ -1338,6 +1518,18 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   // style is global; the silhouette can differ per component (user override
   // wins, then the curated default, then the master's shape)
   const sov: Shape | undefined = shapeOv ?? KIT_SHAPE[id];
+
+  /* v67: icons inherit the SAME treatment as type, in every self-drawn
+     site — gradient/solid fill, outline pass, disabled dimming. */
+  const themedIcon = (defI: IconDef, xI: number, yI: number, sI: number, tone: string, swI = 2.2): string => {
+    const T4 = cfg.type;
+    if (state === "disabled") return iconGroup(defI, xI, yI, sI, "#A7AAB4", { strokeWidth: swI * iconWK });
+    const gidI = "ti" + UID++;
+    const grad = T4.fillMode === "gradient" ? `<defs><linearGradient id="${gidI}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${T4.fill}"/><stop offset="1" stop-color="${T4.fill2}"/></linearGradient></defs>` : "";
+    const fillI = T4.fillMode === "gradient" ? `url(#${gidI})` : T4.fillMode === "solid" ? T4.fill : tone;
+    const outl = T4.outline.on ? iconGroup(defI, xI, yI, sI, T4.outline.color, { strokeWidth: swI * iconWK + T4.outline.width * 0.8 }) : "";
+    return grad + outl + iconGroup(defI, xI, yI, sI, fillI, { strokeWidth: swI * iconWK });
+  };
 
   /* ── dock system ────────────────────────────────────────────────
      Renders the emblem SOCKET as a full mini shell (the complete candy
@@ -1618,27 +1810,12 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const tw5 = lbl5.length * fs5 * fontByName(T5.font).factor * (1 + T5.spacing / 100) * 1.18 + (T5.italic ? fs5 * 0.35 : 0);
       const inset5 = met5 ? Math.max(met5.content.left, met5.capScale) * h5 + Math.max(12, fs5 * 0.3) : 90 * k;
       const w5 = Math.min(2600 * k, Math.max(430 * k, tw5 + inset5 * 2));
-      /* v65 ribbon construction: the swallowtail stays a pure themed shell,
-         but the label rides a RECESSED CENTER PLATE between the tails — the
-         classic game-ribbon read, and the same grammar as the timer wells.
-         This replaces "type floating on the folded face", which fell apart
-         on wide banners under high-contrast themes (thin band strips + the
-         gloss fold cutting through the letters). */
-      const shell5 = build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: "", iconDef: null, shapeOverride: sov, fixedW: w5 });
-      const bnShape = sov ?? cfg.shape;
-      const c5 = (bnShape === "banner" ? Math.min(w5 * 0.13, h5 * 0.62) : Math.max(met5 ? met5.capScale * h5 : h5 * 0.4, bw + 10 * k)) + 12 * k;
-      const wellW5 = w5 - c5 * 2;
-      const wellH5 = h5 * 0.54;
-      const wellY5 = 34 + (h5 - wellH5) / 2;
-      const wellD5 = roundRect(52 + c5, wellY5, wellW5, wellH5, wellH5 * 0.22);
-      const gid5 = "hd" + UID++;
-      const dim5 = state === "disabled" ? 0.45 : 1;
-      return inject(shell5,
-        `<defs><clipPath id="${gid5}w"><path d="${wellD5}"/></clipPath></defs>
-         <path d="${wellD5}" fill="${wellFill}" opacity="0.9"/>
-         <g clip-path="url(#${gid5}w)"><rect x="${(52 + c5).toFixed(1)}" y="${wellY5.toFixed(1)}" width="${wellW5.toFixed(1)}" height="${(wellH5 * 0.5).toFixed(1)}" fill="#04060C" opacity="0.28"/>
-         <rect x="${(52 + c5).toFixed(1)}" y="${(wellY5 + wellH5 - 2).toFixed(1)}" width="${wellW5.toFixed(1)}" height="2" fill="#FFFFFF" opacity="0.10"/></g>` +
-        contentText((opts.label ?? cfg.content.label) || "BANNER", 52 + w5 / 2 + (opts.textOx ?? cfg.type.ox ?? 0) * k, 34 + h5 / 2 + 1 + (opts.textOy ?? cfg.type.oy ?? 0) * k, fs5, { anchor: "middle", opacity: dim5 }));
+      /* v67: reverted to the classic construction — the label rides the face
+         directly (the type was never the problem). The wonky inner shapes are
+         fixed at the source now: build() derives face and rim through TRUE
+         inward offsets, so the swallowtail's inner contour parallels the
+         outer instead of drifting like a rescaled clone. */
+      return build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx, fixedW: w5 });
     }
     case "panel": {
       // container shell — same recipe, bigger canvas. tokenH keeps walls,
@@ -1651,6 +1828,57 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         : { s: [430, 290], m: [580, 380], l: [780, 470] };
       const [pw, ph2] = dims[size];
       return build(cfg, state, { x: 42, y: 33, h: ph2, fs: 0, iconSize: 0, tokenH: 150 }, { iconDef: null, label: "", fixedW: pw, shapeOverride: opts.kind ? "pill" : sov });
+    }
+    case "vsbar": {
+      /* Fighting · VS health bar — two mirrored wells drain toward center,
+         candy VS medallion on the axis. value drives the LEFT fighter. */
+      const w = 860 * k, h = 96 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 110 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const inset = bw + 3, gapPad = 6 * k;
+      const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
+      const bh = h - inset * 2 - gapPad * 2;
+      const trackW = w - inset * 2 - gapPad * 2;
+      const cxV = 39 + w / 2;
+      const halfW = trackW / 2 - 56 * k;
+      const vL = clamp(value ?? 0.72, 0, 1), vR = 0.58;
+      const gid = "vs" + UID++;
+      const wellP = wellOf(w, h, inset);
+      const rC = hexMix("#FF4D5A", glow, 0.25);
+      const parts = `<path d="${wellP}" fill="${wellFill}" opacity="0.92"/>
+        <defs><clipPath id="${gid}w"><path d="${wellP}"/></clipPath>
+        <linearGradient id="${gid}l" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>
+        <linearGradient id="${gid}r" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="${darken(rC, 0.25)}"/><stop offset="1" stop-color="${rC}"/></linearGradient></defs>
+        <g clip-path="url(#${gid}w)" data-vs="1">
+          ${vL > 0.01 ? `<rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(gapPad + inset + halfW * vL).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" fill="url(#${gid}l)" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
+          <rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(gapPad + inset + halfW * vL).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
+          ${vR > 0.01 ? `<rect x="${(bx + trackW - halfW * vR).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(halfW * vR + gapPad + inset).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" fill="url(#${gid}r)" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
+          <rect x="${(bx + trackW - halfW * vR).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(halfW * vR + gapPad + inset).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
+        </g>` +
+        candyKnob(cxV, 30 + h / 2, h * 0.46, knobC) +
+        `<text x="${cxV.toFixed(1)}" y="${(30 + h / 2 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(30 * k * typeK).toFixed(1)}" font-weight="800" font-style="italic" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">VS</text>`;
+      return stampTrack(inject(track, parts), bx, trackW);
+    }
+    case "hotbar": {
+      /* Sandbox · hotbar — a slot strip in the kit material; the selected
+         cell carries the glow ring. value scrubs the selection. */
+      const n = 9, cell = 88 * k, gap = 8 * k;
+      const w = n * cell + (n - 1) * gap + 36 * k, h = cell + 26 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 118 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const selN = clamp(Math.round((value ?? 0.22) * (n - 1)), 0, n - 1);
+      const x0h = 39 + (w - (n * cell + (n - 1) * gap)) / 2;
+      const yh = 30 + (h - cell) / 2;
+      const icons = [STOCK_ICONS.sword ?? STOCK_ICONS.star, STOCK_ICONS.shield ?? STOCK_ICONS.star, STOCK_ICONS.heart, STOCK_ICONS.gem ?? STOCK_ICONS.star, STOCK_ICONS.star];
+      let cells = "";
+      for (let i = 0; i < n; i++) {
+        const cx0 = x0h + i * (cell + gap);
+        const on = i === selN;
+        cells += `<path d="${roundRect(cx0, yh, cell, cell, 12 * k)}" fill="${wellFill}" opacity="${on ? 0.98 : 0.85}"${on ? ` stroke="${glow}" stroke-width="${(3 * k).toFixed(1)}" style="filter: drop-shadow(0 0 ${6 * k}px ${glow})"` : ` stroke="${hexRgba(darken(bevel, 0.4), 0.6)}" stroke-width="1.2"`} data-cell="${i}"/>`;
+        const ic = icons[i];
+        if (i < icons.length && ic) cells += themedIcon(ic, cx0 + cell * 0.22, yh + cell * 0.22, cell * 0.56, hexMix(glow, "#FFFFFF", 0.3), 2);
+        if (i === 0 || i === 3) cells += `<text x="${(cx0 + cell - 8 * k).toFixed(1)}" y="${(yh + cell - 10 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(17 * k).toFixed(1)}" font-weight="800" fill="rgba(255,255,255,0.85)" text-anchor="end">64</text>`;
+        cells += `<text x="${(cx0 + 7 * k).toFixed(1)}" y="${(yh + 17 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(13 * k).toFixed(1)}" font-weight="700" fill="rgba(255,255,255,0.4)">${i + 1}</text>`;
+      }
+      return inject(track.replace("<svg ", '<svg data-hotbar="1" '), cells);
     }
     case "resource": {
       /* HUD counter — icon medallion, numeric value, optional /max, optional
@@ -1673,7 +1901,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const parts =
         (noIcon ? "" :
           candyKnob(39 + 6 * k + medR, cy, medR, bevel) +
-          iconGroup(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), { strokeWidth: 2.4 * iconWK })) +
+          themedIcon(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), 2.4)) +
         (noIcon
           ? contentText(`${val}${maxTxt}`, 39 + (w - (opts.addBtn ? 46 * k : 0)) / 2, cy + 1 + typeOyK * k, fsV * typeK, { anchor: "middle", keepCase: true, opacity: dim })
           : contentText(val, 39 + 20 * k + medR * 2, cy + 1 + typeOyK * k, fsV * typeK, { keepCase: true, opacity: dim }) +
@@ -1723,7 +1951,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          <linearGradient id="${gid2}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>` +
         (showAvatar
           ? `<path d="${roundRect(sx, sy2, slotS, slotS, 10 * k)}" fill="${wellFill}" opacity="0.92"/>` +
-            (opts.icon === null ? "" : iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 * iconWK }))
+            (opts.icon === null ? "" : themedIcon(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, 2))
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
         contentText(title, tx, 30 + inset + 16 * k + ((R2.titleDy ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k, fsT, { keepCase: true, track: R2.titleTrack ?? 0, opacity: dim }) +
@@ -1827,8 +2055,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         // may ghost behind it). iconScale > 1 makes the icon the star of
         // the tile — match-3 boards, gem grids.
         const isc = clamp(opts.iconScale ?? 1, 0.5, 1.45);
-        if (cfg.type.outline.on) parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, darken(bevel, 0.5), { strokeWidth: 2 + cfg.type.outline.width * 0.7 }));
-        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2 * iconWK }));
+        parts.push(themedIcon(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, hexMix(glow, "#FFFFFF", 0.3), 2));
       }
       if (dimmed) parts.push(`<path d="${wellPath}" fill="rgba(6,8,16,0.62)"/>`);
       if (ov === "locked") parts.push(iconGroup(STOCK_ICONS.lock, cx2 - 13, cy2 - 13, 26, "rgba(255,255,255,0.85)", { strokeWidth: 2.2 * iconWK }));

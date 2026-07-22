@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Search as SearchIcon, X, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize, DESIGN_KEYS, presetById } from "@/generator/model";
 import type { GenStateName, BlendMode, PatternType, KitComponentId } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -256,9 +256,45 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
+  const { cfg: cfgMaster, update: updateParent, setPreset: setPresetParent, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
   const actBd = boards.find((b) => b.id === activeBoard);
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
+  const { parentId, setParent } = useGen();
+  const [parentErr, setParentErr] = useState<string | null>(null);
+  /* parent eligibility: the component must expose the complete recipe —
+     a full silhouette shell, an inset face, a typography label and all four
+     states — otherwise other components have nothing to inherit from. */
+  const PARENT_ELIGIBLE: (typeof focus)[] = ["primary", "secondary", "small", "ghost", "tab", "chip", "badge", "header"];
+  /* v67 · "if I can't see it, I can't edit it": with a component focused,
+     every DESIGN edit (colors, effects, candy, type, shape, bevel, lighting,
+     shadow, transparency) lands on THAT component's fork — the parent design
+     only changes when nothing is focused. Non-design fields (content, icon
+     rig, state adjusts, canvas) stay global by nature; they still render on
+     the focused hero, so the rule holds. */
+  const update = (fn: (c: GenConfig) => void) => {
+    if (!focus) { updateParent(fn); return; }
+    const before = applyKitDesign(cfgMaster, kitDesigns[focus]);
+    const merged = JSON.parse(JSON.stringify(before)) as GenConfig;
+    fn(merged);
+    if (JSON.stringify(pickDesign(before)) !== JSON.stringify(pickDesign(merged))) setKitDesign(focus, pickDesign(merged));
+    // replay only the non-design portion onto the parent, design keys pinned
+    const mClone = JSON.parse(JSON.stringify(cfgMaster)) as GenConfig;
+    fn(mClone);
+    const scrub = (c: GenConfig) => { const p = JSON.parse(JSON.stringify(c)) as Record<string, unknown>; for (const k2 of DESIGN_KEYS) delete p[k2]; return JSON.stringify(p); };
+    if (scrub(mClone) !== scrub(cfgMaster)) updateParent((c) => { const keep = pickDesign(c); fn(c); Object.assign(c, keep); });
+  };
+  const setPreset = (id: string) => {
+    if (!focus) { setPresetParent(id); return; }
+    // a preset click while editing restyles ONLY the focused component
+    const p = presetById(id);
+    const merged = JSON.parse(JSON.stringify(applyKitDesign(cfgMaster, kitDesigns[focus]))) as GenConfig;
+    merged.effects = { ...p.effects };
+    merged.bevel = { ...p.bevel };
+    merged.shape = p.shape;
+    applyPresetCandy(merged.candy, p);
+    setKitDesign(focus, pickDesign(merged));
+    setKitShape(focus, p.shape);
+  };
   const [iconQuery, setIconQuery] = useState("");
   const [libTick, setLibTick] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
@@ -397,10 +433,19 @@ export function Panel() {
            lock" step, what you see is what's saved). */
         return (
           <div className="focusnote">
-            Editing <b>{fname}</b>{locked
-              ? <> — <b>this piece only</b>. The rest of the kit doesn't move.</>
-              : <> — style edits restyle the <b>whole kit</b>. Lock below to style just this piece.</>}
-            <button onClick={() => setFocus(null)}>Back to button</button>
+            Editing <b>{fname}</b> — every design edit stays on <b>this piece only</b> (if you can't see it, you can't edit it). Save it as a style to reuse the look elsewhere.
+            <button onClick={() => setFocus(null)}>Back to parent design</button>
+            <div className="lockrow">
+              <button title="Make this component the parent design — the base every unfocused edit styles"
+                onClick={() => {
+                  if (PARENT_ELIGIBLE.includes(focus)) { setParent(focus); setParentErr(null); }
+                  else setParentErr(`${fname} can't be the parent design — a parent must carry the complete recipe (silhouette shell, face, typography label and all four states) so the rest of the kit can inherit from it.`);
+                }}>
+                <Star size={12} strokeWidth={2.2} /> Make parent design
+              </button>
+              {parentId === focus && <span className="lockstate">This is the parent design.</span>}
+            </div>
+            {parentErr && <div className="helper parenterr" role="alert">{parentErr}</div>}
             {locked ? (
               <div className="lockrow">
                 <span className="lockstate"><Lock size={12} strokeWidth={2.2} /> Edits save into this piece automatically.</span>
@@ -412,9 +457,9 @@ export function Panel() {
                   }}>
                   <Lock size={12} strokeWidth={2.2} /> Push this look to the whole kit
                 </button>
-                <button title="Drop the lock — this piece follows the master design again"
+                <button title="Drop the overrides — this piece follows the parent design again"
                   onClick={() => setKitDesign(focus, null)}>
-                  <LockOpen size={12} strokeWidth={2.2} /> Unlock — follow the master
+                  <LockOpen size={12} strokeWidth={2.2} /> Reset — follow the parent
                 </button>
               </div>
             ) : (

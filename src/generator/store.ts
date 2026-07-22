@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, darken, hexMix, registerCustomFont, pickDesign, KIT_SHAPE, applyKitDesign, applyKitTextFill, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, PRESETS, darken, hexMix, registerCustomFont, pickDesign, KIT_SHAPE, applyKitDesign, applyKitTextFill, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
@@ -227,6 +227,17 @@ interface GenStore {
   redoBoard: () => void;
   focus: KitComponentId | null;
   setFocus: (f: KitComponentId | null) => void;
+  /** v67: the parent design — the component every unfocused edit styles.
+   *  Defaults to the plain button; reassignable to any parent-eligible
+   *  component (one that carries the complete recipe). */
+  parentId: KitComponentId | "button";
+  setParent: (id: KitComponentId | "button") => void;
+  /** Shared-link viewer mode — hides downloads; never persisted. */
+  viewer: boolean;
+  hydrateShared: (p: Record<string, unknown>) => void;
+  /** Global shine sweep over every kit piece. */
+  shine: boolean;
+  setShine: (v: boolean) => void;
   kitShapes: Partial<Record<KitComponentId, Shape>>;
   setKitShape: (id: KitComponentId, shape: Shape) => void;
   kitDesigns: Partial<Record<KitComponentId, KitDesign>>;
@@ -608,6 +619,28 @@ export const useGen = create<GenStore>((set, get) => ({
   // choosing a piece to edit lifts any rail focus filter — the user asked
   // for THIS component, so every relevant section must be reachable
   setFocus: (f) => set({ focus: f, phase: "master", sectionFilter: null }),
+  parentId: loadJson<KitComponentId | "button">("ui-generator-parent", "button"),
+  setParent: (id) => { saveJson("ui-generator-parent", id); set({ parentId: id }); },
+  viewer: false,
+  hydrateShared: (p) => {
+    const st = get();
+    set({
+      cfg: (p.cfg as GenConfig) ?? st.cfg,
+      kitName: (p.kitName as string) ?? st.kitName,
+      kitShapes: (p.kitShapes as GenStore["kitShapes"]) ?? {},
+      kitDesigns: (p.kitDesigns as GenStore["kitDesigns"]) ?? {},
+      kitTextFill: (p.kitTextFill as GenStore["kitTextFill"]) ?? {},
+      kitLabels: (p.kitLabels as GenStore["kitLabels"]) ?? {},
+      kitIcons: (p.kitIcons as GenStore["kitIcons"]) ?? {},
+      kitSizes: (p.kitSizes as GenStore["kitSizes"]) ?? {},
+      kitBar: (p.kitBar as GenStore["kitBar"]) ?? {},
+      kitTextOy: (p.kitTextOy as GenStore["kitTextOy"]) ?? {},
+      kitTextOx: (p.kitTextOx as GenStore["kitTextOx"]) ?? {},
+      viewer: true, phase: "kit",
+    });
+  },
+  shine: loadJson<boolean>("ui-generator-shine", false),
+  setShine: (v) => { saveJson("ui-generator-shine", v); set({ shine: v }); },
   styleLib: loadJson<StyleItem[]>("ui-generator-styles", []),
   saveStyle: (name) => {
     markTouched();
@@ -920,12 +953,22 @@ export const useGen = create<GenStore>((set, get) => ({
     const roll = (n: number) => Math.floor(Math.random() * n);
     get().update((c) => {
       c.effects = next.effects; // lighting stays put — rolled light angles tilted the speculars askew
+      // v67: a third of rolls jump the CONSTRUCTION too — silhouette, bevel
+      // and candy build from a random preset — so randomize explores the
+      // whole wardrobe instead of recoloring one outfit
+      if (Math.random() < 0.34) {
+        const pr = PRESETS[roll(PRESETS.length)];
+        c.shape = pr.shape;
+        c.bevel = { ...pr.bevel };
+        applyPresetCandy(c.candy, pr);
+      }
       // typography is the user's voice — a roll never touches the font
-      // pattern rolls tone-on-tone so it stays harmonious
-      const pats: GenConfig["candy"]["pattern"]["type"][] = ["none", "stripes", "dots", "checker", "halftone", "stars"];
-      c.candy.pattern.type = pats[roll(pats.length)];
+      // pattern rolls tone-on-tone so it stays harmonious; "none" is rare
+      // and every family pulls real, VISIBLE weight
+      const pats: GenConfig["candy"]["pattern"]["type"][] = ["stripes", "dots", "checker", "halftone", "stars"];
+      c.candy.pattern.type = Math.random() < 0.12 ? "none" : pats[roll(pats.length)];
       c.candy.pattern.color = null;
-      c.candy.pattern.opacity = 18 + roll(40);
+      c.candy.pattern.opacity = 26 + roll(42);
       c.candy.pattern.scale = 20 + roll(70);
       // gloss gradient re-tints from the new palette
       const bevel = c.effects.Bevel ?? "#0E9CC9";

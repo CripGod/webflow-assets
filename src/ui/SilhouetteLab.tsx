@@ -10,8 +10,10 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { GenConfig, GenStateName, Shape, SpecularMode } from "../generator/model";
 import { defaultConfig, STOCK_ICONS, SPECULAR_MODES, PRESETS, presetById, applyPresetCandy, fontByName } from "../generator/model";
-import { renderShell, shellPaths, shapePath } from "../generator/bevel";
+import { renderShell, shellPaths, shapePath, offsetPathInward } from "../generator/bevel";
 import { IMPORTED_SHAPES, validateImported, auditInset, type ImportedSilhouette } from "../generator/importedShapes";
+import { renderSkinRecipe, type ButtonSkinRecipe } from "../generator/skins";
+import { SKIN_RECIPES } from "../generator/skinRecipes";
 import { ensureFont } from "../generator/fonts";
 
 /* Engine-native material presets, mapped from the brief's palettes. The
@@ -73,9 +75,9 @@ const SKINS: Record<string, LabSkin> = {
 type RatingStatus = "PASS" | "PASS WITH PARAMETER LIMITS" | "NEEDS GENERIC ENGINE IMPROVEMENT" | "NOT SUITABLE FOR CURRENT ENGINE";
 const RATINGS: Record<string, { status: RatingStatus; reason: string }> = {
   twinGrip: { status: "PASS", reason: "Measured clean through the entire bevel range (≈26u); crevice excursion peaks at 0.6u — under the rim stroke. One honest compromise: the engine derives extrusion tone from the Bevel role, so the gold rim and the brief's navy extrusion can't both be literal." },
-  slimeSurge: { status: "PASS WITH PARAMETER LIMITS", reason: "Reads beautifully at the default ≈7u inset, but bounding-box insetting is not a true offset on deep lobe crevices: past ≈2u the face kisses the outer there (1.6u at default). The generic outer-path clip keeps paint inside the shell; treat bevel beyond ~14u as out of spec." },
+  slimeSurge: { status: "PASS", reason: "v67: with true inward offsets the lobe crevices keep a parallel wall at every tested inset — the earlier scaled-inset kisses are gone." },
   cogLock: { status: "PASS", reason: "Friendliest of the eight: face inset measured clean through the whole range (≈26u), narrowest feature 24u. The hybrid finish (low gloss + grain) reads mechanical with zero custom seams or bolts." },
-  monsterBite: { status: "NEEDS GENERIC ENGINE IMPROVEMENT", reason: "The paired bite notches are deep concavities: the scaled face escapes the outer by ≈4u at the default inset (worst of the eight). The generic outer-path clip contains the paint so the button still reads, but the notch shoulders lose their bevel wall — full fidelity needs a true inward path offset instead of bounding-box scaling." },
+  monsterBite: { status: "PASS", reason: "v67: the engine now derives inner shapes through a TRUE inward offset (the generic improvement this shape was waiting for) — the face parallels the bite notches instead of escaping into them; walls hold at the default inset." },
   bossCrown: { status: "PASS WITH PARAMETER LIMITS", reason: "Wave 2, provisional. Crown-peak crevices measured clean only to ≈5u of face inset, so maxBevelRatio 0.05 clamps the face regardless of the slider; within that limit the peaks keep their identity from perimeter geometry alone." },
   prizeBow: { status: "PASS", reason: "Wave 2, provisional. Bow lobes inset cleanly through the full measured range (excursion ≤0.5u); the outline alone carries the bow read — no ribbon objects anywhere." },
   turboWing: { status: "PASS WITH PARAMETER LIMITS", reason: "Wave 2, provisional. Fins measured clean to ≈9u of face inset; maxBevelRatio 0.09 caps deeper settings. The straight-line geometry keeps the label band generous." },
@@ -139,6 +141,68 @@ function fitFs(cfg: GenConfig, label: string, w: number, h: number, withIcon: bo
   return { fs: fsR / scaleK, bandLimited: fit < house };
 }
 
+/* ── Layered Skin proof card — recipe-driven assembly vs the single shell.
+   Everything rendered here comes from renderSkinRecipe + pure recipe data;
+   the side-by-side single-shell render is the same v64 pipeline. */
+function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; uniform: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const w = 200 * PX, h = 100 * PX;
+  const hero = useMemo(() => renderSkinRecipe(r, "default", w, h, { caps: !uniform, wireframe: wire }), [r, w, h, uniform, wire]);
+  const shellTwin = useMemo(() => {
+    const s = IMPORTED_SHAPES[r.id];
+    const cfg = skinnedConfig(s, {}, true, false);
+    const f = fitFs(cfg, s.label, w * 0.66, h * 0.66, false);
+    return renderShell(cfg, "default", w * 0.66, h * 0.66, { label: s.label, iconDef: null, fs: f.fs });
+  }, [r, w, h]);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(hero); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch { /* clipboard unavailable */ }
+  };
+  return (
+    <article className="slab-card slab-skincard" data-skin-card={r.id}>
+      <header className="slab-cardhead">
+        <div>
+          <h3>{r.name}</h3>
+          <p className="slab-dims">{r.parts.length} authored parts · {r.parts.filter((p) => p.mirrorX).length} mirrored · hull = footprint, shadow, extrusion, max clip</p>
+        </div>
+        <span className="slab-rating slab-rating--pass-lim">LAYERED SKIN</span>
+      </header>
+      <div className="slab-hero">
+        <div className="slab-heroart" dangerouslySetInnerHTML={{ __html: hero }} />
+      </div>
+      <div className="slab-states" data-role="skin-states">
+        {STATES.map((st) => (
+          <figure key={st}>
+            <div dangerouslySetInnerHTML={{ __html: renderSkinRecipe(r, st, w * 0.55, h * 0.55, { caps: !uniform }) }} />
+            <figcaption>{st}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div className="slab-aspects" data-role="skin-aspects">
+        {ASPECTS.map((a) => (
+          <figure key={a.w} data-aspect={a.w}>
+            <div dangerouslySetInnerHTML={{ __html: renderSkinRecipe(r, "default", a.w * 0.82, 82, { caps: !uniform }) }} />
+            <figcaption>{a.note}{uniform ? "" : " · caps"}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div className="slab-row">
+        <figure className="slab-shellvs" data-role="shell-vs">
+          <div dangerouslySetInnerHTML={{ __html: shellTwin }} />
+          <figcaption>same hull, single-shell mode (v64)</figcaption>
+        </figure>
+        <div className="slab-parts" data-role="parts">
+          {[...r.parts].sort((a, b) => a.zIndex - b.zIndex).map((p) => (
+            <span key={p.id} className="slab-partchip">z{p.zIndex} · {p.id}{p.mirrorX ? " ×2" : ""} · {p.material}</span>
+          ))}
+        </div>
+      </div>
+      <div className="slab-actions">
+        <button onClick={() => void copy()}>{copied ? "Copied ✓" : "Copy SVG"}</button>
+      </div>
+    </article>
+  );
+}
+
 function Card({ s, ov, globals }: {
   s: ImportedSilhouette;
   ov: Overrides;
@@ -174,9 +238,11 @@ function Card({ s, ov, globals }: {
     const bwF = (s.maxBevelRatio !== undefined ? Math.min(bw, h * s.maxBevelRatio) : bw) * (s.faceInsetScale ?? 1);
     const bwSrc = (bwF / h) * 100;
     const shape = cfg.shape;
+    const outerSrc = shapePath(shape, 0, 0, 200, 100, soft);
     return {
       bwSrc,
-      ...auditInset((inset) => shapePath(shape, inset, inset, 200 - inset * 2, 100 - inset * 2, inset === 0 ? soft : Math.max(0, soft - 8)), bwSrc),
+      // v67: audit the REAL derivation — true inward offset, scaled fallback
+      ...auditInset((inset) => inset === 0 ? outerSrc : (offsetPathInward(outerSrc, inset) || shapePath(shape, inset, inset, 200 - inset * 2, 100 - inset * 2, Math.max(0, soft - 8))), bwSrc),
     };
   }, [cfg, h, s]);
 
@@ -292,6 +358,8 @@ export function SilhouetteLab() {
   const [caps, setCaps] = useState(false);
   const [icon, setIcon] = useState(false);
   const [wave2, setWave2] = useState(false);
+  const [skinWire, setSkinWire] = useState(false);
+  const [skinUniform, setSkinUniform] = useState(false);
   const [w, setW] = useState(200);
   const [h, setH] = useState(100);
   useEffect(() => { ensureFont("Russo One"); document.title = "Silhouette Feasibility Lab — FORGE"; }, []);
@@ -369,6 +437,18 @@ export function SilhouetteLab() {
           <li>Imported shapes here bypass the production <code>user:</code> 1.42× distortion cap, because observing stretch is the point of this test.</li>
         </ul>
       </details>
+
+      <section className="slab-skinsec" aria-label="Layered Skin proof">
+        <div className="slab-skinhead">
+          <h2>Layered Skin — first proof</h2>
+          <p>The reference art is an <em>assembly</em>, not one inset shell. Here the strict one-path hull keeps its jobs (footprint, shadow, extrusion, max clip) while a data-driven recipe stacks independently authored parts — rear pieces, chassis, an independent face, mirrored caps — through one reusable <code>renderMaterialPath()</code>. No shape-specific components exist; each design is a recipe entry. Cap-preserving stretch runs every part through the same x-map, so mirrored caps stay rigid.</p>
+          <label className="slab-check"><input type="checkbox" checked={skinWire} onChange={(e) => setSkinWire(e.target.checked)} data-ctl="skinwire" /> Show part wireframes</label>
+          <label className="slab-check"><input type="checkbox" checked={skinUniform} onChange={(e) => setSkinUniform(e.target.checked)} data-ctl="skinuniform" /> Uniform stretch (compare)</label>
+        </div>
+        <div className="slab-grid">
+          {SKIN_RECIPES.map((r) => <SkinCard key={r.id} r={r} wire={skinWire} uniform={skinUniform} />)}
+        </div>
+      </section>
 
       <main className="slab-grid">
         {shapes.map((s) => (

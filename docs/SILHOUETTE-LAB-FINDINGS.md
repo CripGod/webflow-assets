@@ -87,3 +87,41 @@ overlay/build lockstep, 4 states, 4 aspects, caps-vs-uniform geometry, honest
 warnings (Monster Bite flagged, not hidden), maxBevelRatio clamp, sweep
 specular, copy-equals-canvas (clipboard vs DOM), production picker untouched.
 All 13 prior suites (296 checks) still green.
+
+---
+
+# Addendum (v66): Layered Skin — the assembly architecture
+
+The single-shell test proved the limitation; the follow-up direction was to
+stop forcing every design through inward repeats of one silhouette and add a
+second, curated rendering mode. Implemented in the lab as **Layered Skin**:
+
+- `renderMaterialPath()` (`src/generator/skins.ts`) — the reusable material
+  treatment: gradient body, inner bevel strokes, finish-specific gloss band
+  and specular, all clipped to the part. Metal / gloss / matte finishes.
+- `renderSkinRecipe()` — pure `(recipe, state, size) → SVG`:
+  hull shadow → hull extrusion → parts by zIndex → label. The one-path
+  importer hull keeps its jobs: footprint, hit area, shadow mask, extrusion
+  body, maximum clipping boundary.
+- `ButtonSkinRecipe` (`src/generator/skinRecipes.ts`) — pure data: authored
+  part paths in the same 0 0 200 100 space, material roles
+  (face / frame / metal / plastic / accent), zIndex, per-part depth and
+  bevel, `mirrorX` (author left, mirror right), per-part gloss depth,
+  safeArea, stretch caps. No shape-specific components anywhere.
+- Cap-preserving stretch runs EVERY part through the same piecewise x-map —
+  verified byte-identical left-grip geometry at 2:1 vs 4:1.
+
+**Proof pair** (per the recommendation, opposites first):
+
+- *Twin Grip*: hull + independent center face + one grip path mirrored +
+  one gold clamp path mirrored — 4 material roles. Reads as the reference's
+  drum-grips-with-clamps assembly; the face is 36% of hull width (measured),
+  not an inset clone.
+- *Prize Bow*: rear ribbon (mirrored) → gold frame → face plate → knot
+  jewel — the front/behind ordering test. The bow read comes from parts
+  behind a smooth plate, exactly what one outline could never do.
+
+Two product modes now coexist in the lab: **Simple Shell** (v64 — automatic,
+any imported path) and **Layered Skin** (curated recipes, reference-grade).
+The remaining six designs need only new recipe entries. Production remains
+untouched; everything lives behind `?lab=silhouettes`.
