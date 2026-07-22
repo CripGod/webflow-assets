@@ -125,7 +125,7 @@ interface PieceOpts {
 /** Shared plumbing for every live piece on this page. The page is always
  *  alive — clicking a piece plays it; editing goes through the ✎ button. */
 function usePiece(p: PieceOpts) {
-  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextFill, kitIcons, kitLabels, kitRow, setFocus, setKitSize, setKitKind } = useGen();
+  const { cfg, kitShapes, kitSizes, kitDesigns, kitTextOy, kitTextOx, kitTextFill, kitIcons, kitLabels, kitRow, setFocus, setKitSize, setKitKind } = useGen();
   // an explicit size (the Primary ramp) is fixed; everything else follows the
   // per-component size the user picks with the caption's S/M/L chips
   // the documentation shows medium and large only — a stored Small reads as Medium
@@ -147,6 +147,7 @@ function usePiece(p: PieceOpts) {
       sub: p.sub, max: p.max, addBtn: p.addBtn, overlay: p.overlay, iconScale: p.iconScale,
       // explicit per-component vertical text adjustment (0 is a valid value)
       textOy: kitTextOy[`${p.id}:${size}`],
+      textOx: kitTextOx[`${p.id}:${size}`],
       // data rows follow the row model everywhere; a variant's explicit
       // label/sub still wins for its own line
       row: p.id === "datarow" ? kitRow : undefined,
@@ -186,11 +187,11 @@ function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
         <button className="kp-dl" title={`Export ${p.caption} SVG`} aria-label={`Export ${p.caption} SVG`}
           onClick={(e) => {
             e.stopPropagation();
-            const { cfg: c, kitShapes: ks, kitDesigns: kd, kitTextOy: ko, kitTextFill: kf } = useGen.getState();
+            const { cfg: c, kitShapes: ks, kitDesigns: kd, kitTextOy: ko, kitTextOx: kx, kitTextFill: kf } = useGen.getState();
             const variant = p.caption.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
             downloadSvg(
               renderKit(applyKitTextFill(applyKitDesign(c, kd[p.id]), kf[p.id]), p.id, size, p.baseState ?? "default", p.value, ks[p.id],
-                { label: p.label, segments: p.segments, icon: p.icon, expand: true, textOy: ko[`${p.id}:${size}`] }),
+                { label: p.label, segments: p.segments, icon: p.icon, expand: true, textOy: ko[`${p.id}:${size}`], textOx: kx[`${p.id}:${size}`] }),
               `kit-${variant}-${size}.svg`
             );
           }}>
@@ -634,11 +635,12 @@ function openEditor(sec: string) {
  *  scales itself into `fit` px so a very wide banner never dominates the
  *  page; the ruler label reports its true shell width. */
 function SliceDemo({ cfg, label, size = "m", fit = 520, ruler }: { cfg: GenConfig; label: string; size?: KitSize; fit?: number; ruler?: boolean }) {
-  const { kitShapes, kitTextOy } = useGen();
+  const { kitShapes, kitTextOy, kitTextOx } = useGen();
   const shape = kitShapes.header ?? "banner";
   const met = silhouetteMeta(shape);
   const oy = kitTextOy[`header:${size}`];
-  const svg = useMemo(() => renderKit(cfg, "header", size, "default", undefined, kitShapes.header, { label, textOy: oy }), [cfg, label, size, kitShapes.header, oy]);
+  const hx = kitTextOx[`header:${size}`];
+  const svg = useMemo(() => renderKit(cfg, "header", size, "default", undefined, kitShapes.header, { label, textOy: oy, textOx: hx }), [cfg, label, size, kitShapes.header, oy, hx]);
   const geo = useMemo(() => {
     const m = svg.match(/viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/);
     if (!m || !met) return null;
@@ -769,7 +771,7 @@ export function KitPage() {
       const pieceCfg = (cid: KitComponentId) => applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]);
       const rk = (cid: KitComponentId, name: string, extra: Parameters<typeof renderKit>[6] = {}, v?: number, gstate: GenStateName = "default") => {
         const o = {
-          expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`],
+          expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], textOx: st.kitTextOx[`${cid}:${effKitSize(st.kitSizes[cid])}`],
           row: cid === "datarow" ? st.kitRow : undefined, ...extra,
         };
         // user content overrides ride every catalog entry
@@ -1479,7 +1481,7 @@ export function KitPage() {
                 });
               }
               if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) =>
-                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
+                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], textOx: st.kitTextOx[`${cid}:${effKitSize(st.kitSizes[cid])}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
               if (which === "all") {
                 files.push({
                   path: "9slice.json",

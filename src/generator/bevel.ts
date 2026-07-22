@@ -182,8 +182,10 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
     return polyRounded(v, 2 + softness * 0.2);
   }
   if (shape === "chunky") {
-    // toy capsule: big shoulders + soft inset breaks top and bottom center
-    const r = Math.min(h * 0.42, w * 0.3);
+    // toy capsule: big shoulders + soft inset breaks top and bottom center.
+    // Smoothness drives the shoulder radius (calibrated so the shipped
+    // Toy Box softness ≈ the original 0.42h look; low = chunky slab)
+    const r = Math.min(h * (0.1 + 0.33 * clamp(softness, 0, 100) / 100), w * 0.3);
     const nw = Math.min(w * 0.3, w - 2 * r - 10), nd = h * 0.05;
     const mid = x + w / 2;
     const dipTop = nw > 8 ? `H ${(mid - nw / 2).toFixed(1)} Q ${mid.toFixed(1)} ${(y + nd * 2).toFixed(1)} ${(mid + nw / 2).toFixed(1)} ${y} ` : "";
@@ -201,8 +203,9 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       + `H ${R(x + capW)} Z`;
   }
   if (shape === "mazepill") {
-    // arcade capsule — elliptical ends flatter than a true pill
-    const rx = Math.min(h * 0.62, w * 0.24), ry = h / 2;
+    // arcade capsule — elliptical ends flatter than a true pill;
+    // smoothness flattens or plumps the end ellipses (0.62h at full)
+    const rx = Math.min(h * (0.18 + 0.44 * clamp(softness, 0, 100) / 100), w * 0.24), ry = h / 2;
     return `M ${x + rx} ${y} H ${x + w - rx} A ${rx} ${ry} 0 0 1 ${x + w} ${y + ry} A ${rx} ${ry} 0 0 1 ${x + w - rx} ${y + h} H ${x + rx} A ${rx} ${ry} 0 0 1 ${x} ${y + ry} A ${rx} ${ry} 0 0 1 ${x + rx} ${y} Z`;
   }
   if (shape === "blade") {
@@ -218,7 +221,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
   }
   if (shape === "tavern") {
     // carved plaque: gently bowed top/bottom, softly concave side walls
-    const bow = h * 0.06, side = Math.max(1.5, w * 0.012), r = Math.min(w, h) * 0.14;
+    const bow = h * 0.06, side = Math.max(1.5, w * 0.012), r = Math.min(w, h) * 0.14 * (0.4 + 0.6 * clamp(softness, 0, 100) / 100);
     return `M ${(x + r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} `
       + `Q ${(x + w / 2).toFixed(1)} ${(y - bow * 0.5).toFixed(1)} ${(x + w - r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} `
       + `Q ${(x + w).toFixed(1)} ${(y + bow * 0.8).toFixed(1)} ${(x + w - side).toFixed(1)} ${(y + h * 0.26).toFixed(1)} `
@@ -332,7 +335,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
   if (shape === "handdrawn") {
     // inked plaque: seeded wobble runs + deliberately uneven corner cuts
     const wob = Math.max(1, h * 0.015);
-    const r = Math.min(14, h * 0.14);
+    const r = Math.min(14, h * 0.14) * (0.4 + 0.6 * clamp(softness, 0, 100) / 100);
     const c = [r * 1.2, r * 0.8, r * 1.05, r * 0.9]; // authored, not random
     return `M ${(x + c[0]).toFixed(1)} ${y} `
       + inkRun(x + c[0], y, x + w - c[1], y, wob, 11)
@@ -434,6 +437,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   label?: string; iconDef?: IconDef | null; secondary?: boolean; shapeOverride?: Shape; fixedW?: number;
   /** Explicit per-component vertical text adjustment — overrides the theme's. */
   textOy?: number;
+  /** Explicit per-component horizontal text adjustment — overrides the theme's. */
+  textOx?: number;
   /** Anchor text at its left edge (type specimens) — estimate error then
    *  lands on the ragged right instead of staggering every line. */
   anchorLeft?: boolean;
@@ -828,8 +833,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const italicShift = T2.italic ? italicPad * 0.35 : 0; // rebalance the lean
   const textX = (placeLeft ? startX + (iconDef ? iconSize + gap : 0) + textW / 2 : startX + textW / 2) - italicShift;
   const tAnchor = opts.anchorLeft ? "start" : "middle";
-  const tTextX = opts.anchorLeft ? x + padL - italicShift : textX;
-  const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K;
+  // horizontal text nudge — folded into the anchor so the outline, stripes,
+  // glints and highlight slab all travel with the glyphs as one unit
+  const textOx = opts.textOx ?? T2.ox ?? 0;
+  const tTextX = (opts.anchorLeft ? x + padL - italicShift : textX) + textOx * K;
+  const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K + (iconOnly ? textOx * K : 0);
   // icon-only pieces (awarded badges, icon buttons): the vertical nudge is
   // the icon's nudge — there is no text for it to move
   const iconY = cy - iconSize / 2 + cfg.icon.oy * K + (iconOnly ? (opts.textOy ?? T2.oy ?? 0) * K : 0);
@@ -1125,7 +1133,7 @@ export interface KitOpts {
   tone?: "alt";
   /** Joystick deflection, each axis −1..1. */
   stick?: [number, number];
-  label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number;
+  label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number; textOx?: number;
   /** Slot icon emphasis — >1 makes the icon the star of the tile. */
   iconScale?: number;
   /** Atomic-part render for the engine export: "face" | "needle" |
@@ -1160,6 +1168,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   // icon stroke weight rides the type controls — 1.0 at the default 24
   const iconWK = clamp((cfg.icon.strokeWidth ?? 24) / 24, 0.35, 1.8);
   const typeOyK = (opts.textOy ?? cfg.type.oy ?? 0);
+  const typeOxK = (opts.textOx ?? cfg.type.ox ?? 0);
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
   // the dragger ball can carry its own color; null follows the Bevel role
   const knobC = cfg.knob?.color ?? bevel;
@@ -1194,8 +1203,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     const outline4 = T4.outline.on && state !== "disabled"
       ? ` stroke="${T4.outline.color}" stroke-width="${(T4.outline.width * (fs2 / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
       : "";
+    // the horizontal nudge rides inside the helper so every self-drawn text
+    // (counters, rows, segments) shifts with the same control as built labels
     return (defs4 ? `<defs>${defs4}</defs>` : "") +
-      `<text x="${x2.toFixed(1)}" y="${y2.toFixed(1)}" font-family="'${T4.font}', Inter, sans-serif" font-size="${fs2.toFixed(1)}" font-weight="${Math.max(700, T4.weight)}"${T4.italic ? ' font-style="italic"' : ""} letter-spacing="${(((o2.track ?? 0) + T4.spacing) / 100).toFixed(3)}em" fill="${fill4}"${(T4.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T4.fillOpacity / 100).toFixed(2)}"` : ""}${outline4}${prims4.length ? ` filter="url(#${gid4}f)"` : ""}${o2.anchor ? ` text-anchor="${o2.anchor}"` : ""} dominant-baseline="central" opacity="${(o2.opacity ?? 1).toFixed(2)}">${esc(cased4)}</text>`;
+      `<text x="${(x2 + typeOxK * k).toFixed(1)}" y="${y2.toFixed(1)}" font-family="'${T4.font}', Inter, sans-serif" font-size="${fs2.toFixed(1)}" font-weight="${Math.max(700, T4.weight)}"${T4.italic ? ' font-style="italic"' : ""} letter-spacing="${(((o2.track ?? 0) + T4.spacing) / 100).toFixed(3)}em" fill="${fill4}"${(T4.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T4.fillOpacity / 100).toFixed(2)}"` : ""}${outline4}${prims4.length ? ` filter="url(#${gid4}f)"` : ""}${o2.anchor ? ` text-anchor="${o2.anchor}"` : ""} dominant-baseline="central" opacity="${(o2.opacity ?? 1).toFixed(2)}">${esc(cased4)}</text>`;
   };
   const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
   const font = cfg.type.font;
@@ -1226,24 +1237,24 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
 
   switch (id) {
     case "primary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { label: opts.label, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { label: opts.label, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "secondary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: opts.label ?? "Secondary", shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: opts.label ?? "Secondary", shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "small":
-      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: opts.label ?? "GO", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: opts.label ?? "GO", iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "ghost":
-      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: opts.label ?? "Ghost", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: opts.label ?? "Ghost", iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "iconbtn":
-      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: opts.icon ?? cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: opts.icon ?? cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "chip":
-      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: opts.label ?? "NEW", iconDef: opts.icon === undefined ? STOCK_ICONS.star : opts.icon, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: opts.label ?? "NEW", iconDef: opts.icon === undefined ? STOCK_ICONS.star : opts.icon, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "badge":
       // presented (count) → awarded (star) → disabled
       return state === "pressed"
-        ? build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 0, iconSize: 52 * k }, { label: "", iconDef: opts.icon ?? STOCK_ICONS.star, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy })
-        : build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: opts.label ?? "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy });
+        ? build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 0, iconSize: 52 * k }, { label: "", iconDef: opts.icon ?? STOCK_ICONS.star, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx })
+        : build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: opts.label ?? "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "tab":
-      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: opts.label ?? "TAB", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: opts.label ?? "TAB", iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "segment": {
       const w = 560 * k, h = 106 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
@@ -1378,7 +1389,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const tw5 = lbl5.length * fs5 * fontByName(T5.font).factor * (1 + T5.spacing / 100) * 1.18 + (T5.italic ? fs5 * 0.35 : 0);
       const inset5 = met5 ? Math.max(met5.content.left, met5.capScale) * h5 + Math.max(12, fs5 * 0.3) : 90 * k;
       const w5 = Math.min(2600 * k, Math.max(430 * k, tw5 + inset5 * 2));
-      return build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy, fixedW: w5 });
+      return build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx, fixedW: w5 });
     }
     case "panel": {
       // container shell — same recipe, bigger canvas. tokenH keeps walls,
@@ -2119,7 +2130,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
 </svg>`;
     }
     case "dropdown": {
-      const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy });
+      const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
       if (state !== "pressed") return btn;
       // pressed = open: the menu drops beneath, drawn from the same palette.
       // The viewBox origin is -glowPad, so the content width is the total
