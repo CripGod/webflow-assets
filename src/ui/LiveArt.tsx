@@ -18,6 +18,8 @@ export interface LiveKit {
   /** Per-component vertical text adjustment (explicit; 0 is valid). */
   textOy?: number;
   textOx?: number;
+  dock?: { icon?: IconDef | null; side?: "left" | "right" } | null;
+  bar?: { segments?: number; gap?: number; snap?: boolean };
   /** Mobile-game piece slots: secondary label, /max value, add button,
    *  stackable status overlay. */
   sub?: string;
@@ -92,7 +94,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   const inert = disabled || kit?.tone === "alt";
   const value = id === "toggle" || id === "checkbox" || id === "radio" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
-    : id === "progress" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" || id === "speedo" || id === "speedo2" || id === "startlights" ? (playing && !disabled ? pval : kit?.value)
+    : id === "progress" || id === "segbar" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" || id === "speedo" || id === "speedo2" || id === "startlights" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
     : kit?.value;
 
@@ -111,12 +113,12 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   // hosts pass fresh kit literals every render — key on the fields, not the
   // object, so the (string-building) renderer only runs when something changed
   const kitKey = kit
-    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.textOx ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.iconScale ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}|${kit.kind ?? ""}|${kit.tone ?? ""}`
+    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.textOx ?? ""}|${kit.dock ? (kit.dock.side ?? "left") + ":" + (kit.dock.icon ? kit.dock.icon.name : kit.dock.icon === null ? "none" : "clock") : ""}|${kit.bar ? JSON.stringify(kit.bar) : ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.iconScale ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}|${kit.kind ?? ""}|${kit.tone ?? ""}`
     : "";
   const svg = useMemo(
     () => {
       const raw = kit
-        ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: id === "input" ? (typed ?? kit.label) : kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, textOx: kit.textOx, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, iconScale: kit.iconScale, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
+        ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: id === "input" ? (typed ?? kit.label) : kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, textOx: kit.textOx, dock: kit.dock, bar: kit.bar, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, iconScale: kit.iconScale, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
         : renderBevel(cfg, state);
       return shine ? addShine(raw) : raw;
     },
@@ -220,7 +222,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   // ambient progress: bars, rings, timers and gauges quietly replay on their own beat
   const beat = useRef(4600 + Math.random() * 2400);
   useEffect(() => {
-    if (!ambient || (id !== "progress" && id !== "ring" && !isTimer && !isGauge) || !playing) return;
+    if (!ambient || (id !== "progress" && id !== "segbar" && id !== "ring" && !isTimer && !isGauge) || !playing) return;
     const t = window.setInterval(isTimer ? playTimer : playProgress, beat.current);
     return () => window.clearInterval(t);
   }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -234,7 +236,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
     if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
     else if (id === "toggle" || id === "checkbox" || id === "radio" || id === "orb") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
-    else if (id === "progress" || id === "ring" || isGauge) playProgress();
+    else if (id === "progress" || id === "segbar" || id === "ring" || isGauge) playProgress();
     else if (isTimer) playTimer();
     else if (id === "segment") {
       const c = trackCoord(e);
@@ -318,7 +320,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
       onKeyDown: (e: React.KeyboardEvent) => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOn((v) => !v); }
       },
-    } : id === "progress" || id === "ring" || isTimer ? {
+    } : id === "progress" || id === "segbar" || id === "ring" || isTimer ? {
       role: "button" as const,
       tabIndex: 0,
       "aria-label": isTimer ? "Restart the timer" : "Play progress demo",
