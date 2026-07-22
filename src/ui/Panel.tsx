@@ -980,8 +980,20 @@ export function Panel() {
 
       {/* ── H · Typography (content lives here too) ───────── */}
       <Section id="typography" title="Typography" summary={<span>{cfg.content.label || T2.font}</span>}>
-        <input className="tinput" value={cfg.content.label} maxLength={32} aria-label="Label text"
-          onChange={(e) => update((c) => { c.content.label = e.target.value; })} />
+        {/* v60: with a text-bearing component in focus this field edits THAT
+            component's label (the same override as Component content) — the
+            master's specimen text only shows when nothing is focused */}
+        {focus && labelEditable ? (
+          <>
+            <input className="tinput" value={kitLabels[focus] ?? ""} maxLength={32} aria-label="Label text"
+              placeholder={`${KIT_COMPONENTS.find((c) => c.id === focus)?.name} text — empty for the default`}
+              onChange={(e) => setKitLabel(focus, e.target.value)} />
+            <div className="helper">This text belongs to <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and exports follow. Clear it to fall back to the default.</div>
+          </>
+        ) : (
+          <input className="tinput" value={cfg.content.label} maxLength={32} aria-label="Label text"
+            onChange={(e) => update((c) => { c.content.label = e.target.value; })} />
+        )}
         <input className="tinput" value={T2.highlight ?? ""} maxLength={32} placeholder="Highlight phrase — e.g. VICTORY" aria-label="Highlight phrase"
           onChange={(e) => update((c) => { c.type.highlight = e.target.value; })} />
         <div className="helper">The first matching word or phrase inside the label renders as a brighter, illuminated portion of the same material. Leave empty for none.</div>
