@@ -692,6 +692,15 @@ export function applyKitDesign(cfg: GenConfig, kd?: KitDesign | null): GenConfig
  *  everywhere". A piece with an override renders every glyph it draws in its
  *  own solid color while the global Typography keeps driving the rest of the
  *  kit. State forks inherit the override too, so hover/pressed stay on-color. */
+/** Resolve a component's effective icon from the per-component override
+ *  and the instance's own glyph. "none" removes it (text recenters); a
+ *  deliberate instance `null` (an empty slot) always stays empty. */
+export function resolveKitIcon(ov: IconDef | "none" | undefined, inst: IconDef | null | undefined): IconDef | null | undefined {
+  if (inst === null) return null;
+  if (ov === "none") return null;
+  return ov ?? inst;
+}
+
 export function applyKitTextFill(cfg: GenConfig, fill?: string | null): GenConfig {
   if (!fill) return cfg;
   const next: GenConfig = { ...cfg, type: { ...cfg.type, fillMode: "solid", fill } };

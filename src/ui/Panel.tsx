@@ -89,6 +89,17 @@ export function Rail() {
   };
   return (
     <nav className="rail" aria-label="Sections">
+      {/* v58: the two DESTINATIONS lead the rail — the Kit and the Boards
+          are where the work lives; section filters follow below */}
+      <button title="The Kit — pick a component to work on" aria-label="The Kit"
+        className={`rail-dest${phase === "kit" ? " on" : ""}`} onClick={() => setPhase(phase === "kit" ? "master" : "kit")}>
+        <Hammer size={21} strokeWidth={1.7} />
+      </button>
+      <button title="The Board — stage components over a background" aria-label="The Board"
+        className={`rail-dest${phase === "board" ? " on" : ""}`} onClick={() => setPhase(phase === "board" ? "master" : "board")}>
+        <LayoutGrid size={21} strokeWidth={1.7} />
+      </button>
+      <span className="rail-div" aria-hidden="true" />
       {items.map(({ id, Icon, label }) => (
         <button key={id} className={sectionFilter === id ? "on" : ""} title={label} aria-label={label}
           aria-pressed={sectionFilter === id}
@@ -97,14 +108,6 @@ export function Rail() {
         </button>
       ))}
       <span className="gap" />
-      <button title="The Kit — pick a component to work on" aria-label="The Kit"
-        className={phase === "kit" ? "on" : ""} onClick={() => setPhase(phase === "kit" ? "master" : "kit")}>
-        <Hammer size={21} strokeWidth={1.7} />
-      </button>
-      <button title="The Board — stage components over a background" aria-label="The Board"
-        className={phase === "board" ? "on" : ""} onClick={() => setPhase(phase === "board" ? "master" : "board")}>
-        <LayoutGrid size={21} strokeWidth={1.7} />
-      </button>
       <button title="Settings" aria-label="Settings"><Settings size={22} strokeWidth={1.7} /></button>
       <button title="Help — live hints in the top bar while you roll over controls" aria-label="Help"
         className={helpOn ? "on" : ""} onClick={() => setHelpOn(!helpOn)}><HelpCircle size={22} strokeWidth={1.7} /></button>
@@ -247,7 +250,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, refreshLibraryItem, replaceConfig, resetAll } = useGen();
+  const { cfg: cfgMaster, update, setPreset, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, refreshLibraryItem, replaceConfig, resetAll } = useGen();
   const actBd = boards.find((b) => b.id === activeBoard);
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const [iconQuery, setIconQuery] = useState("");
@@ -263,6 +266,7 @@ export function Panel() {
   // v57: the component-icon swap needs the library even while the master
   // icon section stays parked — load it whenever a swappable piece is focused
   const iconSwappable = !!focus && (["iconbtn", "chip", "resource", "slot", "datarow", "badge"] as KitComponentId[]).includes(focus);
+  const labelEditable = !!focus && (["primary", "secondary", "small", "ghost", "chip", "tab", "header", "badge", "resource", "input", "dropdown", "bignum", "ammo"] as KitComponentId[]).includes(focus);
   useEffect(() => {
     if (!ICONS_ENABLED && !iconSwappable) return;
     let live = true;
@@ -496,7 +500,7 @@ export function Panel() {
         {/* v56: corner smoothness lives at the TOP of the section, always
             visible — it was buried under the import notes and vanished for
             pills, which read as "missing" */}
-        <Slider label="Corner smoothness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
+        <Slider label="Smoothness" value={D.bevel.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.bevel.softness = v; })} />
         {(focus ? (kitShapes[focus] ?? KIT_SHAPE[focus] ?? D.shape) : D.shape) === "pill" && (
           <div className="helper">The pill's ends are already fully round — smoothness shows on cornered silhouettes (rectangles, chamfers, tags…).</div>
         )}
@@ -571,11 +575,22 @@ export function Panel() {
         <div className="helper">Silhouette is pure geometry — switching it keeps your material, lighting, colors and type exactly as they are.</div>
       </Section>
 
-      {/* ── v57: Component icon — swap the glyph on the focused piece ── */}
-      {iconSwappable && focus && (
-        <Section id="kiticon" title="Component icon"
-          summary={<span>{kitIcons[focus]?.name ?? "stock glyph"}</span>}>
-          <div className="helper">Swap the glyph on <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and every export follow. Icons stay engine-swappable; nothing is baked into the shell.</div>
+      {/* ── v57/58: Component content — this piece's text and glyph ── */}
+      {(iconSwappable || labelEditable) && focus && (
+        <Section id="kiticon" title="Component content"
+          summary={<span>{kitIcons[focus] === "none" ? "no icon" : (kitIcons[focus] as { name?: string } | undefined)?.name ?? "stock"}</span>}>
+          {labelEditable && (<>
+            <div className="sublabel">Text</div>
+            <input className="tinput" value={kitLabels[focus] ?? ""} maxLength={32}
+              placeholder="Specimen text (leave empty for defaults)" aria-label="Component text"
+              onChange={(e) => setKitLabel(focus, e.target.value)} />
+          </>)}
+          {iconSwappable && (<>
+          <div className="sublabel">Icon</div>
+          <div className="helper">Swap the glyph on <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and every export follow. Remove it and the text recenters. Weight lives under <b>Typography → Icon weight</b>.</div>
+          <button className={`resetstate${kitIcons[focus] === "none" ? " on" : ""}`} onClick={() => setKitIcon(focus, kitIcons[focus] === "none" ? null : "none")}>
+            <Trash2 size={13} strokeWidth={2} /> {kitIcons[focus] === "none" ? "Icon removed — bring it back" : "Remove the icon"}
+          </button>
           <label className="fieldbox" style={{ minWidth: 0 }}>
             <span className="fl">Icon library</span>
             <select value={browseLib} aria-label="Icon library" onChange={(e) => setBrowseLib(e.target.value)}>
@@ -591,9 +606,10 @@ export function Panel() {
           {!libIsReady && <div className="helper">Loading library…</div>}
           <div className="icongrid">
             {results.map((name) => {
+              const cur = kitIcons[focus];
               const def = getDef(browseLib, name);
               if (!def) return null;
-              const on = kitIcons[focus]?.lib === browseLib && kitIcons[focus]?.name === name;
+              const on = cur !== "none" && cur?.lib === browseLib && cur?.name === name;
               return (
                 <button key={name} className={on ? "on" : ""} title={name}
                   onClick={() => setKitIcon(focus, def)}
@@ -601,11 +617,12 @@ export function Panel() {
               );
             })}
           </div>
-          {kitIcons[focus] && (
+          {kitIcons[focus] && kitIcons[focus] !== "none" && (
             <button className="resetstate" onClick={() => setKitIcon(focus, null)}>
               <RotateCcw size={13} strokeWidth={2} /> Back to the stock glyph
             </button>
           )}
+          </>)}
         </Section>
       )}
 
@@ -1136,6 +1153,9 @@ export function Panel() {
           <Slider label="Nudge Y" value={T2.glints?.oy ?? 0} min={-60} max={60} unit="%" onChange={(v) => update((c) => { c.type.glints = { on: c.type.glints?.on ?? true, opacity: c.type.glints?.opacity ?? 55, ox: c.type.glints?.ox, oy: v }; })} />
           <div className="helper">Crisp vector highlights riding the letterforms — a specular slab clipped to the glyphs plus star glints. They follow the master Lighting angle; the nudges shift the whole treatment in % of the letter height.</div>
         </FxToggle>
+        <div className="sublabel">Icons</div>
+        <Slider label="Icon weight" value={cfg.icon.strokeWidth} min={8} max={40} unit="" onChange={(v) => update((c) => { c.icon.strokeWidth = v; })} />
+        <div className="helper">Icons inherit the type voice — this weight drives every stroked glyph across the kit (buttons, counters, slots, rows). 24 is the neutral middle.</div>
       </Section>
 
 

@@ -89,7 +89,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   // alt-tone pieces (muted titles) render live but ignore hover and press.
   const disabled = kit?.baseState === "disabled";
   const inert = disabled || kit?.tone === "alt";
-  const value = id === "toggle" || id === "checkbox" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
+  const value = id === "toggle" || id === "checkbox" || id === "radio" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
     : id === "progress" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" || id === "speedo" || id === "speedo2" || id === "startlights" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
@@ -231,7 +231,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
   const pressedHere = useRef(false);
   const activate = (e: React.PointerEvent) => {
     if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
-    else if (id === "toggle" || id === "checkbox" || id === "orb") setOn((v) => !v);
+    else if (id === "toggle" || id === "checkbox" || id === "radio" || id === "orb") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
     else if (id === "progress" || id === "ring" || isGauge) playProgress();
     else if (isTimer) playTimer();
