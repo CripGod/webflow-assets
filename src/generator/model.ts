@@ -25,7 +25,11 @@ export type Shape =
   // v22 — measured from Vector UI Pack (dobo_ui by Duplo) renders
   | "doboMarquee" | "doboRibbon" | "doboBracket"
   // v33 — user-imported flat-vector silhouettes (registry below)
-  | `user:${string}`;
+  | `user:${string}`
+  // v64 — Silhouette Feasibility Lab imports (importedShapes.ts). Reached
+  // ONLY through the isolated lab page; never listed in the production
+  // picker until the lab results are approved.
+  | `lab:${string}`;
 /* ── user silhouettes ─────────────────────────────────────────────
    Imported flat vectors: one closed, filled outline normalized to its own
    bounding box; the renderer stretches it into each component's frame.

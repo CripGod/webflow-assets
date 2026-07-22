@@ -2,6 +2,7 @@ import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSiz
 import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE , isDarkBg, userShapes } from "./model";
 import { iconGroup } from "./icons";
 import { silhouetteMeta } from "./silhouettes";
+import { importedShape } from "./importedShapes";
 import rough from "roughjs";
 
 /* Rough.js draws the hand-drawn *line character* over the approved outline —
@@ -110,7 +111,63 @@ export function transformPath(d: string, vb: [number, number, number, number], x
   return out.join(" ");
 }
 
+/** Cap-preserving vector three-slice: the outer `capSrc` source units at each
+ *  end scale uniformly with height; only the center band stretches. One
+ *  continuous outline — control points are remapped through a piecewise
+ *  monotonic x-map, so there are no seams to hide. Falls back to uniform
+ *  scaling when the frame is too narrow to hold both rigid caps. */
+export function transformPathCapAware(d: string, vb: [number, number, number, number], x: number, y: number, w: number, h: number, capSrc: number): string {
+  const [vx, vy, vw, vh] = vb;
+  const sy = h / (vh || 1);
+  const capW = capSrc * sy;
+  const midSrc = vw - capSrc * 2;
+  const midW = w - capW * 2;
+  if (midSrc <= 4 || midW < midSrc * sy * 0.25) return transformPath(d, vb, x, y, w, h);
+  const mx = (X: number): number => {
+    const u = X - vx;
+    if (u <= capSrc) return x + u * sy;
+    if (u >= vw - capSrc) return x + w - (vw - u) * sy;
+    return x + capW + (u - capSrc) * (midW / midSrc);
+  };
+  const my = (Y: number): number => y + (Y - vy) * sy;
+  const toks = d.match(/[MLHVCSQTAZmlhvcsqtaz]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) ?? [];
+  const out: string[] = [];
+  let i = 0, cmd = "";
+  let cx = vx, cy = vy;
+  const num = () => parseFloat(toks[i++]);
+  while (i < toks.length) {
+    if (/^[a-z]$/i.test(toks[i])) cmd = toks[i++];
+    const rel = cmd === cmd.toLowerCase() && cmd.toUpperCase() !== "Z";
+    const C = cmd.toUpperCase();
+    if (C === "Z") { out.push("Z"); continue; }
+    if (C === "H") { const X = rel ? cx + num() : num(); out.push("L", mx(X).toFixed(2), my(cy).toFixed(2)); cx = X; continue; }
+    if (C === "V") { const Y = rel ? cy + num() : num(); out.push("L", mx(cx).toFixed(2), my(Y).toFixed(2)); cy = Y; continue; }
+    if (C === "A") {
+      const rxx = num(), ryy = num(), rot = num(), laf = num(), swf = num();
+      const X = rel ? cx + num() : num(), Y = rel ? cy + num() : num();
+      out.push("A", (rxx * sy).toFixed(2), (ryy * sy).toFixed(2), String(rot), String(laf), String(swf), mx(X).toFixed(2), my(Y).toFixed(2));
+      cx = X; cy = Y; continue;
+    }
+    const pairs = C === "C" ? 3 : C === "S" || C === "Q" ? 2 : 1; // M L T
+    out.push(C);
+    for (let p = 0; p < pairs; p++) {
+      const X = rel ? cx + num() : num(), Y = rel ? cy + num() : num();
+      out.push(mx(X).toFixed(2), my(Y).toFixed(2));
+      if (p === pairs - 1) { cx = X; cy = Y; }
+    }
+  }
+  return out.join(" ");
+}
+
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
+  const imp = importedShape(shape);
+  if (imp) {
+    // Feasibility-lab imports fill the frame exactly — the lab exists to
+    // observe stretch behavior, so no distortion cap applies here. The
+    // `:caps` suffix opts a render into the three-slice experiment.
+    if (shape.endsWith(":caps")) return transformPathCapAware(imp.path, imp.viewBox, x, y, w, h, imp.capSrc);
+    return transformPath(imp.path, imp.viewBox, x, y, w, h);
+  }
   if (shape.startsWith("user:")) {
     const us = userShapes().find((u) => u.id === shape);
     if (us) {
@@ -454,6 +511,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const secondary = !!opts.secondary;
   const D = designFor(cfg, state);
   const shape = opts.shapeOverride ?? D.shape;
+  // Imported (feasibility-lab) silhouettes carry their own safe-area and
+  // inset metadata — generic fields, looked up once and applied like any
+  // registered silhouette's. Undefined for every production shape.
+  const impMeta = importedShape(shape);
   const C = D.candy;
   const K = (g0.tokenH ?? g0.h) / 168; // token px scale for kit sizes
 
@@ -507,7 +568,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   /* text-safe area — the silhouette's authored content insets keep labels out
      of caps, tails and bevels, with breathing room that scales with the label
      size. The old padding stands as a floor so compact shapes don't change. */
-  const met = silhouetteMeta(shape);
+  const met = silhouetteMeta(shape) ?? impMeta;
   const endRoom = shape === "pill" ? h * 0.16 : 0; // rounded ends eat width
   const basePad = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + endRoom;
   const safeGap = Math.max(12, fs * 0.35);
@@ -531,7 +592,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     const itX = Tx.italic ? fsx * 0.3 : 0;
     const twX = (showText ? casedX.length * fsx * fontByName(Tx.font).factor * wdX * (1 + Tx.spacing / 100) * wkX * (opts.anchorLeft ? 1.13 : 1.06) : 0) + itX;
     const cwX = twX + (iconDef ? iconSize : 0) + gap;
-    const metX = silhouetteMeta(shx);
+    const metX = silhouetteMeta(shx) ?? importedShape(shx);
     const erX = shx === "pill" ? h * 0.16 : 0;
     const bpX = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + erX;
     const sgX = Math.max(12, fsx * 0.35);
@@ -566,9 +627,13 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const pad = glowPadOf(cfg);
 
   const bw = (secondary ? Math.max(4, D.bevel.width * 0.7) : D.bevel.width) * K;
+  // Metadata-driven face inset (imported silhouettes only): maxBevelRatio
+  // caps the inset a shape can survive, faceInsetScale trims it further.
+  // For every production shape bwF === bw — behavior is unchanged.
+  const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
   const rimW = C.rim.width * K;
   const outer = shapePath(shape, x, y, w, h, D.bevel.softness);
-  const faceP = shapePath(shape, x + bw, y + bw, w - bw * 2, h - bw * 2, Math.max(0, D.bevel.softness - 8));
+  const faceP = shapePath(shape, x + bwF, y + bwF, w - bwF * 2, h - bwF * 2, Math.max(0, D.bevel.softness - 8));
   const rimP = shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, D.bevel.softness);
 
   /* ── key light — global source of truth ──────────────────────── */
@@ -635,8 +700,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     ? `<ellipse cx="${(x + w / 2 + sdx * 0.35).toFixed(1)}" cy="${(y + h + visDepth + Math.max(0, lift) + 1.5).toFixed(1)}" rx="${(w * 0.47).toFixed(1)}" ry="${(5.5 * K + visDepth * 0.22).toFixed(1)}" fill="url(#${id}ct)" opacity="${contactOp.toFixed(2)}"/>`
     : "";
 
-  /* face box (for screen-space layers) */
-  const fx0 = x + bw, fy0 = y + bw, fw = w - bw * 2, fh = h - bw * 2;
+  /* face box (for screen-space layers) — follows the actual face inset */
+  const fx0 = x + bwF, fy0 = y + bwF, fw = w - bwF * 2, fh = h - bwF * 2;
   const faceCx = fx0 + fw / 2, faceCy = fy0 + fh / 2;
 
   /* 7 ── inner glow (own color, or the Glow well; unlit side) */
@@ -718,7 +783,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     } else if (SP.mode === "sweep") {
       // reflective event hugging the shell's edge curve on the lit side
       const swW = Math.max(2, spSize * 0.32);
-      const sweepP = shapePath(shape, x + bw * 0.55, y + bw * 0.55, w - bw * 1.1, h - bw * 1.1, Math.max(0, D.bevel.softness - 4));
+      const sweepP = shapePath(shape, x + bwF * 0.55, y + bwF * 0.55, w - bwF * 1.1, h - bwF * 1.1, Math.max(0, D.bevel.softness - 4));
       specular = `<path d="${sweepP}" fill="none" stroke="url(#${id}sw)" stroke-width="${swW.toFixed(1)}" opacity="${spOp.toFixed(2)}"/>`;
     } else {
       const main = `<ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spRx.toFixed(1)}" ry="${spRy.toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>`;
@@ -968,6 +1033,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   ${glintsDefs}
   ${textFxDef}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
+  ${impMeta ? `<clipPath id="${id}oc"><path d="${outer}"/></clipPath>` : ""}
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
   ${aura ? `<filter id="${id}gb" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="14"/></filter>
   <filter id="${id}gb2" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="30"/></filter>` : ""}
@@ -984,6 +1050,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${rimW > 0.2 ? `<path d="${rimP}" fill="none" stroke="url(#${id}rim)" stroke-width="${rimW.toFixed(1)}" opacity="${((C.rim.brightness / 100) * (disabled ? 0.5 : 1)).toFixed(2)}"/>` : ""}
       ${shape === "handdrawn" && !disabled ? roughInk(outer, darken(bevelC, 0.58), 1.4 * K) : ""}
     </g>
+    ${impMeta ? `<g data-oclip="1" clip-path="url(#${id}oc)">` : ""}
     <g id="${id}_face" opacity="${(T.interior / 100).toFixed(2)}">
       <path d="${faceP}" fill="url(#${id}face)"/>
       <g clip-path="url(#${id}fc)">
@@ -1015,6 +1082,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     </g>
     ${C.gloss.layer === "above" ? `<g id="${id}_gloss" opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${C.gloss.blend && C.gloss.blend !== "normal" ? ` style="mix-blend-mode:${C.gloss.blend}"` : ""}>${gloss}</g>` : ""}
     ${specular ? `<g id="${id}_specular" opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${SP.blend && SP.blend !== "normal" ? ` style="mix-blend-mode:${SP.blend}"` : ""}>${specular}</g>` : ""}
+    ${impMeta ? `</g>` : ""}
   </g>
 </g>
 </svg>`;
@@ -1031,10 +1099,38 @@ export function glowPadOf(cfg: GenConfig): number {
   return maxGlow > 0.5 ? 90 : 0;
 }
 
+/** The exact outer / rim / face geometry build() derives for a shell —
+ *  exported so the feasibility lab's diagnostic overlays audit the REAL
+ *  inset math, not a copy of it. Mirrors build()'s derivation (bw, bwF,
+ *  rimW, softness offsets); keep the two in lockstep. */
+export function shellPaths(cfg: GenConfig, shape: Shape, x: number, y: number, w: number, h: number): { outer: string; rim: string; face: string; bw: number; bwF: number; rimW: number } {
+  const D = designFor(cfg, "default");
+  const K = h / 168;
+  const bw = D.bevel.width * K;
+  const impMeta = importedShape(shape);
+  const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
+  const rimW = D.candy.rim.width * K;
+  return {
+    outer: shapePath(shape, x, y, w, h, D.bevel.softness),
+    face: shapePath(shape, x + bwF, y + bwF, w - bwF * 2, h - bwF * 2, Math.max(0, D.bevel.softness - 8)),
+    rim: shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, D.bevel.softness),
+    bw, bwF, rimW,
+  };
+}
+
 /** Master component — width follows the label. Margins are 1.5× so large
  *  shadow distances never clip against the invisible canvas bounds. */
 export function renderBevel(cfg: GenConfig, state: GenStateName): string {
   return build(cfg, state, { x: 52, y: 36, h: 168, fs: 52, iconSize: 46 });
+}
+
+/** Feasibility-lab entry: one shell at an exact frame size. Same build()
+ *  pipeline as every production render — nothing here is shape-specific.
+ *  `fs` is the pre-scale type size (build multiplies by type.size/52). */
+export function renderShell(cfg: GenConfig, state: GenStateName, w: number, h: number, opts: { label?: string; iconDef?: IconDef | null; fs?: number } = {}): string {
+  return build(cfg, state, { x: 40, y: 32, h, fs: opts.fs ?? h * 0.31, iconSize: h * 0.3 }, {
+    label: opts.label, iconDef: opts.iconDef === undefined ? null : opts.iconDef, fixedW: w,
+  });
 }
 
 /** Just the typography — the complete text treatment rendered by the same
