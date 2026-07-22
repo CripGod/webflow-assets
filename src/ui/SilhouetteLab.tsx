@@ -192,7 +192,7 @@ function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; un
         </figure>
         <div className="slab-parts" data-role="parts">
           {[...r.parts].sort((a, b) => a.zIndex - b.zIndex).map((p) => (
-            <span key={p.id} className="slab-partchip">z{p.zIndex} · {p.id}{p.mirrorX ? " ×2" : ""} · {p.material}</span>
+            <span key={p.id} className="slab-partchip">z{p.zIndex} · {p.id}{p.mirrorX ? " ×2" : ""} · {p.finish ?? r.materials[p.material].finish}{p.shadowDensity ? " · casts" : ""}</span>
           ))}
         </div>
       </div>
@@ -438,8 +438,8 @@ export function SilhouetteLab() {
 
       <section className="slab-skinsec" aria-label="Layered Skin proof">
         <div className="slab-skinhead">
-          <h2>Layered Skin — first proof</h2>
-          <p>The reference art is an <em>assembly</em>, not one inset shell. Here the strict one-path hull keeps its jobs (footprint, shadow, extrusion, max clip) while a data-driven recipe stacks independently authored parts — rear pieces, chassis, an independent face, mirrored caps — through one reusable <code>renderMaterialPath()</code>. No shape-specific components exist; each design is a recipe entry. Cap-preserving stretch runs every part through the same x-map, so mirrored caps stay rigid.</p>
+          <h2>Layered Skin — refinement pass</h2>
+          <p>The reference art is an <em>assembly</em>, not one inset shell. The strict one-path hull keeps its jobs (footprint, shadow, extrusion, max clip) while a data-driven recipe stacks independently authored parts through one reusable <code>renderMaterialPath()</code>. This pass adds <strong>per-part finish control</strong> — finish type, bevel profile, gloss strength, specular mode, highlight bias, edge darkening, bounce light, saturation — plus per-part <strong>contact shadows</strong>, so front pieces visibly sit ON the pieces behind them instead of sharing one lighting response. No shape-specific components exist; each design is a recipe entry. Cap-preserving stretch runs every part through the same x-map, so mirrored caps stay rigid.</p>
           <label className="slab-check"><input type="checkbox" checked={skinWire} onChange={(e) => setSkinWire(e.target.checked)} data-ctl="skinwire" /> Show part wireframes</label>
           <label className="slab-check"><input type="checkbox" checked={skinUniform} onChange={(e) => setSkinUniform(e.target.checked)} data-ctl="skinuniform" /> Uniform stretch (compare)</label>
         </div>

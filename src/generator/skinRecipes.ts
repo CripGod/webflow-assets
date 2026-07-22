@@ -6,7 +6,19 @@
 
    Authoring rules: absolute M L C Q Z only; author LEFT pieces and set
    mirrorX for their right-hand twins; every part must live inside the hull
-   (the hull is the maximum clipping boundary). */
+   (the hull is the maximum clipping boundary — parts may hug it, and the
+   clip marries them to the silhouette edge).
+
+   REFINEMENT PASS notes (why these paths look the way they do):
+   · Rear masses are authored to FILL their hull cap minus a ~2.5u margin,
+     so the silhouette's own lobes read as part volume, not as chassis.
+   · Front pieces overlap the parts behind them by 10–24u and declare a
+     shadowDensity, so the stack reads as stacked, not aligned.
+   · Face plates are pillowed — every edge bows outward 1–2u — instead of
+     literal rounded rects, and sit inside an explicit socket/frame part.
+   · Finishes are deliberately mixed per part (plastic drums, glass faces,
+     cylinder-gradient metal clamps, matte sockets) so no two neighboring
+     parts share one lighting response. */
 
 import type { ButtonSkinRecipe } from "./skins";
 import { IMPORTED_SHAPES } from "./importedShapes";
@@ -17,24 +29,35 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
     name: "Twin Grip Command Bar",
     hull: IMPORTED_SHAPES.twinGrip.path,
     label: "PLAY",
-    /* rear chassis (hull base coat) is painted by the renderer; the parts:
-       drum grips behind, gold clamps in front, independent center face */
+    extrusion: 9,
+    /* rear drum grips fill the hull's double-lobe caps → matte navy socket
+       recesses the center → pillowed glass face → thick gold clamp
+       cylinders overlap drum AND face by >10u each side */
     parts: [
-      { id: "grip", material: "plastic", zIndex: 2, depth: 4, bevel: 2.6, mirrorX: true, glossFrac: 0.56, path:
-        "M 32 4 C 45 4 54 12 54 26 L 54 74 C 54 88 45 96 32 96 C 19 96 10 88 10 74 L 10 26 C 10 12 19 4 32 4 Z" },
-      { id: "face", material: "face", zIndex: 3, depth: 0, bevel: 3, path:
-        "M 76 12 L 124 12 C 130 12 136 16 136 24 L 136 76 C 136 84 130 88 124 88 L 76 88 C 70 88 64 84 64 76 L 64 24 C 64 16 70 12 76 12 Z" },
-      { id: "clamp", material: "metal", zIndex: 4, depth: 3, bevel: 2.2, mirrorX: true, glossFrac: 0.34, path:
-        "M 59 10 C 64 10 68 14 68 19 L 68 81 C 68 86 64 90 59 90 C 54 90 50 86 50 81 L 50 19 C 50 14 54 10 59 10 Z" },
+      { id: "drum", material: "plastic", zIndex: 1, depth: 5, bevel: 2.8, mirrorX: true,
+        glossFrac: 0.36, glossDip: 0.05, specularMode: "dot", highlightBias: [-0.22, -0.16],
+        edgeDarkening: 0.36, saturationBoost: 0.26, bounce: 0.38, path:
+        "M 2.5 50 C 2.5 35.5 10 26 21.5 22.5 C 19.5 11 27 2.5 38 2.5 C 48.5 2.5 55 9.5 57 19 C 58.5 23 59.5 27 59.5 32 L 59.5 68 C 59.5 73 58.5 77 57 81 C 55 90.5 48.5 97.5 38 97.5 C 27 97.5 19.5 89 21.5 77.5 C 10 74 2.5 64.5 2.5 50 Z" },
+      { id: "socket", material: "frame", zIndex: 2, depth: 0, bevel: 2.6,
+        bevelProfile: "hard-frame", edgeDarkening: 0.6, path:
+        "M 74 8 L 126 8 C 134 8 140 14 140 22 L 140 78 C 140 86 134 92 126 92 L 74 92 C 66 92 60 86 60 78 L 60 22 C 60 14 66 8 74 8 Z" },
+      { id: "face", material: "face", zIndex: 3, depth: 0, bevel: 3.2,
+        glossFrac: 0.48, glossDip: 0.14, specularMode: "dot", highlightBias: [-0.1, -0.06],
+        edgeDarkening: 0.18, saturationBoost: 0.36, bounce: 0.55, shadowDensity: 0.38, path:
+        "M 80 14 C 91 13.2 109 13.2 120 14 C 128.5 14 133.5 18.5 134 26.5 C 135.2 34 135.2 66 134 73.5 C 133.5 81.5 128.5 86 120 86 C 109 86.8 91 86.8 80 86 C 71.5 86 66.5 81.5 66 73.5 C 64.8 66 64.8 34 66 26.5 C 66.5 18.5 71.5 14 80 14 Z" },
+      { id: "clamp", material: "metal", zIndex: 4, depth: 3, bevel: 2.4, mirrorX: true,
+        specularMode: "streak", highlightBias: [-0.05, -0.3],
+        edgeDarkening: 0.55, bounce: 0.45, shadowDensity: 0.62, path:
+        "M 59.5 5 C 67.5 5 71.5 9.5 71.5 17 L 71.5 44 L 69.3 50 L 71.5 56 L 71.5 83 C 71.5 90.5 67.5 95 59.5 95 C 51.5 95 47.5 90.5 47.5 83 L 47.5 56 L 49.7 50 L 47.5 44 L 47.5 17 C 47.5 9.5 51.5 5 59.5 5 Z" },
     ],
     materials: {
-      face:    { light: "#3EA3FF", base: "#0867DF", dark: "#063B9B", finish: "gloss" },
-      plastic: { light: "#2E8BF0", base: "#0F5CC0", dark: "#083A80", finish: "gloss" },
-      metal:   { light: "#FFD65A", base: "#F6A800", dark: "#8A4300", finish: "metal" },
-      frame:   { light: "#12408F", base: "#0A2B66", dark: "#081A4C", finish: "matte" },
+      face:    { light: "#9AD6FF", base: "#47A0F8", dark: "#0D57C2", finish: "glass" },
+      plastic: { light: "#54A8FA", base: "#1B6BD8", dark: "#093E92", finish: "plastic" },
+      metal:   { light: "#FFDD66", base: "#F5A80C", dark: "#8F4A00", finish: "metal" },
+      frame:   { light: "#2B57B0", base: "#0E2F6E", dark: "#081C49", finish: "matte" },
       accent:  { light: "#FFF3C4", base: "#FFD65A", dark: "#B87400", finish: "metal" },
     },
-    safeArea: { x: 68, y: 24, width: 64, height: 52 },
+    safeArea: { x: 74, y: 28, width: 52, height: 44 },
     stretch: { leftCap: 76, rightCap: 76 },
   },
   {
@@ -42,26 +65,36 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
     name: "Prize Bow Power Bar",
     hull: IMPORTED_SHAPES.prizeBow.path,
     label: "CLAIM",
-    /* rear ribbons → gold frame → independent face plate → knot jewel:
-       the front/behind ordering test */
+    extrusion: 9,
+    /* rear ribbon loops (fold-notched, hull-lobed) → thick ornamental gold
+       frame overlapping the ribbons by ~24u → puffed glass face inside the
+       frame → gold knob jewel seated on the frame's top band */
     parts: [
-      { id: "ribbon", material: "plastic", zIndex: 1, depth: 4, bevel: 2.4, mirrorX: true, glossFrac: 0.5, path:
-        "M 78 50 C 70 20 48 4 28 8 C 10 12 2 28 4 46 C 2 72 10 88 28 92 C 48 96 70 80 78 50 Z" },
-      { id: "frame", material: "metal", zIndex: 2, depth: 3, bevel: 2.4, path:
-        "M 74 8 L 126 8 C 138 8 146 16 146 28 L 146 72 C 146 84 138 92 126 92 L 74 92 C 62 92 54 84 54 72 L 54 28 C 54 16 62 8 74 8 Z" },
-      { id: "face", material: "face", zIndex: 3, depth: 0, bevel: 3, path:
-        "M 78 15 L 122 15 C 132 15 138 21 138 30 L 138 70 C 138 79 132 85 122 85 L 78 85 C 68 85 62 79 62 70 L 62 30 C 62 21 68 15 78 15 Z" },
-      { id: "jewel", material: "accent", zIndex: 4, depth: 0, bevel: 1.8, glossOn: true, path:
-        "M 100 12 C 104.5 12 108 15.5 108 20 C 108 24.5 104.5 28 100 28 C 95.5 28 92 24.5 92 20 C 92 15.5 95.5 12 100 12 Z" },
+      { id: "ribbon", material: "plastic", zIndex: 1, depth: 5, bevel: 2.6, mirrorX: true,
+        glossStrength: 0.7, glossFrac: 0.4, glossDip: 0.06, specularMode: "arc", highlightBias: [-0.15, -0.1],
+        edgeDarkening: 0.4, saturationBoost: 0.3, bounce: 0.12, path:
+        "M 78 50 C 76 30 64 10 44 4 C 24 0 6 10 3 26 C 1.5 37 7 44.5 18 46.5 C 23 47.5 27.5 48.5 30 50 C 27.5 51.5 23 52.5 18 53.5 C 7 55.5 1.5 63 3 74 C 6 90 24 100 44 96 C 64 90 76 70 78 50 Z" },
+      { id: "frame", material: "metal", zIndex: 2, depth: 3.5, bevel: 2.6,
+        specularMode: "streak", highlightBias: [-0.3, -0.28],
+        edgeDarkening: 0.5, bounce: 0.5, shadowDensity: 0.6, path:
+        "M 71 12 L 129 12 C 140 12 146 18 146 29 L 146 71 C 146 82 140 88 129 88 L 71 88 C 60 88 54 82 54 71 L 54 29 C 54 18 60 12 71 12 Z" },
+      { id: "face", material: "face", zIndex: 3, depth: 0, bevel: 3,
+        glossFrac: 0.5, glossDip: 0.18, specularMode: "dot", highlightBias: [-0.12, -0.08],
+        edgeDarkening: 0.1, saturationBoost: 0.4, bounce: 0.6, path:
+        "M 78 19.5 C 92 18.3 108 18.3 122 19.5 C 131 19.5 136.5 24 137 31 C 138.3 38 138.3 62 137 69 C 136.5 76 131 80.5 122 80.5 C 108 81.7 92 81.7 78 80.5 C 69 80.5 63.5 76 63 69 C 61.7 62 61.7 38 63 31 C 63.5 24 69 19.5 78 19.5 Z" },
+      { id: "jewel", material: "accent", zIndex: 4, depth: 0, bevel: 2,
+        bevelProfile: "soft-pill", glossStrength: 0.8, glossFrac: 0.45, specularMode: "dot", highlightBias: [-0.2, -0.24],
+        edgeDarkening: 0.35, bounce: 0.5, shadowDensity: 0.5, path:
+        "M 100 12.1 C 104.58 12.1 108.3 15.82 108.3 20.4 C 108.3 24.98 104.58 28.7 100 28.7 C 95.42 28.7 91.7 24.98 91.7 20.4 C 91.7 15.82 95.42 12.1 100 12.1 Z" },
     ],
     materials: {
-      face:    { light: "#FF8CCB", base: "#F12D91", dark: "#A60B59", finish: "gloss" },
-      plastic: { light: "#E9509E", base: "#C41E75", dark: "#7C0E49", finish: "gloss" },
-      metal:   { light: "#FFE38A", base: "#EFA900", dark: "#7A3800", finish: "metal" },
-      frame:   { light: "#8A2058", base: "#65043E", dark: "#43022A", finish: "matte" },
-      accent:  { light: "#FFF3C4", base: "#FFD65A", dark: "#B87400", finish: "metal" },
+      face:    { light: "#FFA8DB", base: "#F45CAE", dark: "#B5206F", finish: "glass" },
+      plastic: { light: "#FF8FCE", base: "#E13D97", dark: "#8C1157", finish: "plastic" },
+      metal:   { light: "#FFE58C", base: "#F0AC14", dark: "#8F4900", finish: "metal" },
+      frame:   { light: "#93265F", base: "#701048", dark: "#4A0630", finish: "matte" },
+      accent:  { light: "#FFF0B8", base: "#FFCE45", dark: "#A66300", finish: "metal" },
     },
-    safeArea: { x: 66, y: 30, width: 68, height: 44 },
+    safeArea: { x: 68, y: 30, width: 64, height: 40 },
     stretch: { leftCap: 70, rightCap: 70 },
   },
 ];

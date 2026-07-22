@@ -125,3 +125,68 @@ Two product modes now coexist in the lab: **Simple Shell** (v64 — automatic,
 any imported path) and **Layered Skin** (curated recipes, reference-grade).
 The remaining six designs need only new recipe entries. Production remains
 untouched; everything lives behind `?lab=silhouettes`.
+
+---
+
+# Addendum (v67): Layered Skin refinement — per-part finish & toy proportions
+
+The first Layered Skin proof was structurally correct but read too clean, too
+planar and too uniform: every part shared one gloss/specular response, the
+face plates were generic rounded rects, and the overlaps were too polite. This
+pass keeps the architecture untouched and refines only the renderer's material
+language and the two recipes. No new modes, no shape-specific JSX.
+
+## Renderer: per-part finish control (`resolveFinish` in `skins.ts`)
+
+Every part now resolves an independent finish over house defaults:
+
+- **`finish`** — `plastic | metal | glass | matte`, per material with per-part
+  override. Each has its own gradient build; metal on a tall part becomes a
+  **cylinder** (horizontal axis, off-center bright core, dark edge returns).
+- **`bevelProfile`** — bevel *character*, not just amount: `soft-pill`
+  (rolled toy edges), `hard-frame` (crisp inset ring — sockets, recesses),
+  `metal-ridge` (machined bright ridge inside a dark return).
+- **`glossStrength` / `glossFrac` / `glossDip`** — the gloss band is now a
+  vertical white fade with a per-part waterline and belly; staggering these
+  killed the shared-waterline flattening.
+- **`specularMode`** — `dot` (double lens blob), `streak` (diagonal highlight
+  run), `arc` (contour-following top highlight, used on the bow loops),
+  `none`; plus **`highlightBias`** to place the event per part.
+- **`edgeDarkening`** (ambient-occlusion rim), **`saturationBoost`** (lower
+  body candy depth), **`bounce`** (bottom bounce light).
+- **`shadowDensity`** — a local blurred **contact shadow** the part casts on
+  whatever is behind it. This is the single strongest depth lever: clamps now
+  visibly sit ON drums and face, the frame sits ON the ribbons.
+
+Mirrored copies re-map the *authored left* geometry through the mirror
+(`mk = map ∘ mirror`), so gloss and specular mirror with the part — matching
+how toy art lights symmetric assemblies.
+
+One generic correctness fix: the label band is now mapped through the same
+piecewise x-map as the geometry, so type respects the compressed center band
+under cap-preserving stretch (it used to scale linearly and could spill onto
+rigid caps at wide/narrow aspects).
+
+## Recipes: exaggerated toy construction
+
+- *Twin Grip*: drums re-authored to FILL the hull's double-lobe caps minus a
+  2.5u margin (the silhouette's lobes now read as drum volume, not chassis);
+  a matte navy **socket** part recesses the center; the face is **pillowed**
+  (every edge bows 1–2u) and brighter than the drums; the gold clamps are
+  chunky sharp-notched cylinder bands overlapping drum AND face by 10u+ each
+  side, casting contact shadows both ways.
+- *Prize Bow*: the rear ribbon is a real bow now — upper/lower loops with a
+  soft fold notch pinching to 30u at mid-height, hull lobes carrying the tail
+  read; arc specular traces the upper loop; the face is puffed and glassy;
+  the thicker gold frame (metal-ridge) overlaps the ribbons by ~24u and casts
+  onto them; the knot jewel is a deliberate gold knob seated on the frame's
+  top band, tangent inside the hull.
+
+## Verification
+
+`tsc -b` clean, `vite build` clean, lab page renders with zero console
+errors. States (hover lift/glow, pressed, disabled desaturation), the four
+aspect ratios under cap-preserving stretch, part wireframe overlays and the
+v64 single-shell comparison all render from the same recipes. Deliverable
+unchanged: only the two proof cards — the remaining six designs stay gated
+until this pair is approved.
