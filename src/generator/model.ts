@@ -356,6 +356,16 @@ export const GAME_FONTS: { name: string; css: string | null; factor: number; cap
   { name: "Audiowide", css: "Audiowide", factor: 0.68, caps: { weights: [400] } },
   { name: "Silkscreen", css: "Silkscreen:wght@400;700", factor: 0.72, caps: { weights: [400, 700] } },
   { name: "Pixelify Sans", css: "Pixelify+Sans:wght@400..700", factor: 0.58, caps: { wght: [400, 700, 600] } },
+  { name: "Shrikhand", css: "Shrikhand", factor: 0.62, caps: { weights: [400] } },
+  { name: "Concert One", css: "Concert+One", factor: 0.55, caps: { weights: [400] } },
+  { name: "Paytone One", css: "Paytone+One", factor: 0.6, caps: { weights: [400] } },
+  { name: "Alfa Slab One", css: "Alfa+Slab+One", factor: 0.62, caps: { weights: [400] } },
+  { name: "Bowlby One SC", css: "Bowlby+One+SC", factor: 0.66, caps: { weights: [400] } },
+  { name: "Modak", css: "Modak", factor: 0.6, caps: { weights: [400] } },
+  { name: "Chango", css: "Chango", factor: 0.62, caps: { weights: [400] } },
+  { name: "Boogaloo", css: "Boogaloo", factor: 0.5, caps: { weights: [400] } },
+  { name: "Staatliches", css: "Staatliches", factor: 0.5, caps: { weights: [400] } },
+  { name: "Grandstander", css: "Grandstander:ital,wght@0,100..900;1,100..900", factor: 0.58, caps: { wght: [100, 900, 700], italic: true } },
 ];
 /* User-added Google Fonts — registered at runtime, names persisted in the
    config. Any family from fonts.google.com works; we request a broad weight
@@ -464,6 +474,21 @@ export const PRESETS: Preset[] = [
   { id: "bubble-pop", name: "Bubble Pop", shape: "round", bevel: { width: 8, softness: 100 },
     effects: { Bevel: "#E1408F", Glow: "#FFC1DE", Highlight: "#FFFFFF", Shadow: "#8C1D53", "Inner Fill": "#F868B1" },
     candy: { gloss: { height: 50, curve: 34, opacity: 78, softness: 30 }, specular: { mode: "anime", size: 30, intensity: 92 }, bloom: { opacity: 62, size: 68 }, extrusion: { depth: 9 } } },
+  { id: "citrus-pop", name: "Citrus Pop", shape: "mazepill", bevel: { width: 11, softness: 88 },
+    effects: { Bevel: "#E8890C", Glow: "#FFD34D", Highlight: "#FFF7DB", Shadow: "#7A3B00", "Inner Fill": "#FFA726" },
+    candy: { gloss: { height: 48, curve: 30, opacity: 74 }, specular: { on: true, mode: "anime", size: 28, intensity: 80 }, extrusion: { depth: 11 }, bloom: { opacity: 55, size: 66 } } },
+  { id: "deep-ocean", name: "Deep Ocean", shape: "explorer", bevel: { width: 13, softness: 62 },
+    effects: { Bevel: "#0A5B8F", Glow: "#4DE3FF", Highlight: "#EAFBFF", Shadow: "#04263F", "Inner Fill": "#0E7FC0" },
+    candy: { gloss: { height: 40, curve: 18, opacity: 55, softness: 30 }, specular: { on: true, mode: "dual", size: 24, intensity: 62 }, innerGlow: { opacity: 70, size: 58 }, extrusion: { depth: 13, darkness: 66 } } },
+  { id: "forest-sprite", name: "Forest Sprite", shape: "tavern", bevel: { width: 12, softness: 70 },
+    effects: { Bevel: "#3E8914", Glow: "#B4F461", Highlight: "#F2FFE0", Shadow: "#1C4405", "Inner Fill": "#61B520" },
+    candy: { gloss: { height: 44, curve: 26, opacity: 62 }, specular: { on: true, mode: "soft", size: 30, intensity: 55 }, extrusion: { depth: 12, darkness: 64 }, texture: { amount: 12, scale: 46 } } },
+  { id: "sakura-arcade", name: "Sakura Arcade", shape: "blade", bevel: { width: 9, softness: 92 },
+    effects: { Bevel: "#E064A8", Glow: "#FFC7E8", Highlight: "#FFFFFF", Shadow: "#7C2050", "Inner Fill": "#F58BC5" },
+    candy: { gloss: { height: 52, curve: 36, opacity: 76, softness: 34 }, specular: { on: true, mode: "anime", size: 30, intensity: 88 }, bloom: { opacity: 62, size: 70 }, extrusion: { depth: 9 } } },
+  { id: "obsidian-ember", name: "Obsidian Ember", shape: "cutline", bevel: { width: 14, softness: 28 },
+    effects: { Bevel: "#D4491F", Glow: "#FF9A3D", Highlight: "#FFE9D4", Shadow: "#26100A", "Inner Fill": "#1E1A1E" },
+    candy: { gloss: { height: 34, curve: 10, opacity: 40 }, specular: { on: true, mode: "line", size: 55, intensity: 58 }, innerGlow: { opacity: 76, size: 44 }, extrusion: { depth: 14, darkness: 82 }, innerEdge: { strength: 66, width: 3 } } },
 ];
 
 export function presetById(id: string): Preset {
@@ -626,7 +651,7 @@ export type KitComponentId =
   | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
   | "flipclock" | "stopwatch" | "timerdigits"
-  | "speedo" | "speedo2" | "circuit" | "leaderboard" | "trophy"
+  | "speedo" | "speedo2" | "tacho" | "circuit" | "leaderboard" | "trophy"
   | "laptimes" | "telemetry" | "startlights";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
@@ -665,6 +690,7 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "bignum", name: "Big number" },
   { id: "speedo", name: "Speedometer" },
   { id: "speedo2", name: "Speedo · HUD" },
+  { id: "tacho", name: "Rev meter" },
   { id: "circuit", name: "Race circuit" },
   { id: "leaderboard", name: "Position list" },
   // ("trophy" renders but is deregistered — off-brand for this kit)

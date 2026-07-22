@@ -22,7 +22,7 @@ const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
   { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "orb", "ring", "flipclock", "stopwatch", "timerdigits"] },
   { name: "Controls", ids: ["toggle", "slider", "progress", "segbar", "input", "segment", "checkbox", "radio", "joystick"] },
   { name: "Combat & spatial", ids: ["reticle", "minimap", "ammo", "lives", "bignum"] },
-  { name: "Racing", ids: ["speedo", "speedo2", "circuit", "leaderboard", "laptimes", "telemetry", "startlights"] },
+  { name: "Racing", ids: ["speedo", "speedo2", "tacho", "circuit", "leaderboard", "laptimes", "telemetry", "startlights"] },
 ];
 
 /* Starter templates — approximate compositions for the 16:9 stage. The

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
+import { ChevronDown, Download, Lock, PenTool, ShieldCheck, SquarePen } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { EFFECT_ROLES, KIT_COMPONENTS, PRESETS, ROLE_HINT, SHAPES, SPECULAR_MODES, STOCK_ICONS, PATTERN_TYPES, applyKitDesign, applyKitTextFill, fontByName, hexMix, isDarkBg, effKitSize, resolveKitIcon } from "@/generator/model";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
@@ -174,6 +174,47 @@ function usePiece(p: PieceOpts) {
       useGen.setState((st) => ({ open: { ...st.open, kiticon: true } }));
     },
   };
+}
+
+/** Split-button export: the primary click repeats the LAST format used
+ *  (engine zip by default); the chevron lists every format with a one-line
+ *  description. One click for the common case, nothing buried. */
+function ExportMenu({ actions }: {
+  actions: { id: string; name: string; desc: string; busy?: boolean; run: () => void }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [last, setLast] = useState(() => { try { return localStorage.getItem("ui-generator-lastexport") ?? "engine"; } catch { return "engine"; } });
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  const primary = actions.find((a) => a.id === last) ?? actions[0];
+  const fire = (a: (typeof actions)[number]) => {
+    try { localStorage.setItem("ui-generator-lastexport", a.id); } catch { /* private mode */ }
+    setLast(a.id); setOpen(false); a.run();
+  };
+  return (
+    <div className="kp-export" ref={ref}>
+      <button className="kp-dlall kp-exportmain" disabled={primary.busy} onClick={() => fire(primary)} title={primary.desc}>
+        <Download size={14} strokeWidth={2.2} /> {primary.busy ? "Working…" : `Export — ${primary.name}`}
+      </button>
+      <button className="kp-dlall kp-exportarrow" aria-haspopup="menu" aria-expanded={open} title="All export formats"
+        onClick={() => setOpen((v) => !v)}>
+        <ChevronDown size={15} strokeWidth={2.2} />
+      </button>
+      {open && (
+        <div className="kp-exportmenu" role="menu">
+          {actions.map((a) => (
+            <button key={a.id} role="menuitem" disabled={a.busy} onClick={() => fire(a)}>
+              <b>{a.name}</b><span>{a.desc}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** One specced piece: live art + a caption rail with edit, sizes and export. */
@@ -801,6 +842,11 @@ export function KitPage() {
     });
     downloadZip(`${slug(st.kitName ?? "ui-kit")}-svg-pack.zip`, files);
   };
+const exportActions = [
+    { id: "engine", name: "Engine kit (ZIP)", desc: "Atomic content-free PNGs, nine-slice manifest, Unity importer, Unreal recipes.", busy: engineBusy, run: () => void downloadEngineKit() },
+    { id: "svg", name: "SVG pack", desc: "Every component, variant and state as a layered SVG — Figma / Illustrator ready.", run: downloadSvgPack },
+    { id: "sprite", name: "Sprite sheet (PNG)", desc: "One labeled catalog image of every asset — for humans, not for slicing.", busy: sheetBusy, run: () => void downloadAllAssets() },
+  ];
   const sheetEntries = (st: ReturnType<typeof useGen.getState>) => {
     {
       const pieceCfg = (cid: KitComponentId) => applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]);
@@ -857,6 +903,7 @@ export function KitPage() {
         rk("progress", "Emblem bar · Docked", { dock: {} }, 0.55),
         rk("segbar", "Segmented · 3 of 5", {}, 0.62),
         rk("segbar", "Segmented · Smooth", { bar: { segments: 8, snap: false } }, 0.55),
+        rk("tacho", "Rev meter · 7.4", {}, 0.82),
         rk("input", "Input · Focus", {}, undefined, "hover"),
         rk("input", "Input · Disabled", {}, undefined, "disabled"),
         rk("dropdown", "Dropdown · Open", {}, undefined, "pressed"),
@@ -1060,15 +1107,7 @@ export function KitPage() {
             style={{ background: cfg.effects.Bevel ?? "#0E9CC9", color: isDarkBg(cfg.effects.Bevel ?? "#0E9CC9") ? "#ffffff" : "#0d0f16" }}>
             <PenTool size={16} strokeWidth={2.3} /> Edit this Kit
           </button>
-          <button className="kp-dlall" onClick={downloadEngineKit} disabled={engineBusy} title="Atomic, content-free assets: nine-slice PNGs, manifest, Unity importer, Unreal recipes">
-            <Download size={15} strokeWidth={2.2} /> {engineBusy ? "Building engine kit…" : "Engine export — atomic assets (ZIP)"}
-          </button>
-          <button className="kp-dlall" onClick={downloadSvgPack} title="Every asset as a layered SVG — components, variants and states, named groups for Figma and Illustrator">
-            <Download size={13} strokeWidth={2.2} /> SVG pack — every asset
-          </button>
-          <button className="kp-dlall kp-dlquiet" onClick={downloadAllAssets} disabled={sheetBusy} title="One labeled PNG of every asset — a catalog for humans, not for slicing">
-            <Download size={14} strokeWidth={2.2} /> {sheetBusy ? "Building the catalog…" : "Sprite sheet — visual catalog (PNG)"}
-          </button>
+          <ExportMenu actions={exportActions} />
           <div className="kp-roleline" aria-hidden="true">
             {roles.map((r) => <span className="kp-roledot" key={r}><i style={{ background: cfg.effects[r] }} />{r}</span>)}
           </div>
@@ -1474,6 +1513,7 @@ export function KitPage() {
         <div className="kp-tray kp-axis kp-race">
           <Piece id="speedo" caption="Speedometer · classic dial" value={0.62} scale={0.52} ambient />
           <Piece id="speedo2" caption="Speedometer · HUD segments" value={0.62} scale={0.52} ambient />
+          <Piece id="tacho" caption="Rev meter · green to red" value={0.62} scale={0.52} ambient />
           <Piece id="circuit" caption="Kazuri Ring · live positions" scale={0.56} />
         </div>
         <div className="kp-tray kp-axis kp-race">
@@ -1491,15 +1531,7 @@ export function KitPage() {
 
       {/* ── 14 · build parts ── */}
       <Sec n="01" title="Build Parts" note="Everything in the kit is built from these. Each part opens the layer that produces it in the editor. Downloads are layered SVGs with named groups and nine-slice metadata.">
-        <button className="kp-dlall" onClick={downloadEngineKit} disabled={engineBusy} title="Atomic, content-free assets: nine-slice PNGs, manifest, Unity importer, Unreal recipes">
-          <Download size={15} strokeWidth={2.2} /> {engineBusy ? "Building engine kit…" : "Engine export — atomic assets (ZIP)"}
-        </button>
-        <button className="kp-dlall" onClick={downloadSvgPack} title="Every asset as a layered SVG — components, variants and states, named groups for Figma and Illustrator">
-          <Download size={13} strokeWidth={2.2} /> SVG pack — every asset
-        </button>
-        <button className="kp-dlall kp-dlquiet" onClick={downloadAllAssets} disabled={sheetBusy} title="One labeled PNG of every asset — a catalog for humans, not for slicing">
-          <Download size={14} strokeWidth={2.2} /> {sheetBusy ? "Building the catalog…" : "Sprite sheet — visual catalog (PNG)"}
-        </button>
+        <ExportMenu actions={exportActions} />
         <div className="kp-dlrow">
           {([["all", "Download full pack"], ["components", "Components"], ["layers", "Material layers"], ["controls", "Control pieces"], ["type", "Typography recipe"], ["assemblies", "Assemblies"]] as const).map(([which, capn]) => (
             <button key={which} onClick={() => {
