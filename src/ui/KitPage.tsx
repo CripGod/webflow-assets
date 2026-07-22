@@ -780,6 +780,27 @@ export function KitPage() {
       setEngineBusy(false);
     }
   };
+  /* every catalog entry — components, variants, states — as individual
+     layered SVGs. The same list the sprite sheet renders, so what you see
+     in the catalog is exactly what lands in the zip. */
+  const downloadSvgPack = () => {
+    const st = useGen.getState();
+    const slug = (s2: string) => s2.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const files: { path: string; data: string }[] = sheetEntries(st).map((e) => ({ path: `svg/${slug(e.name)}.svg`, data: e.svg }));
+    files.push({
+      path: "README.md",
+      data: [
+        "# SVG pack — every kit asset", "",
+        "One layered SVG per catalog entry: every component, variant and state,",
+        "with your content overrides (text, icons, dock, segments) baked in.",
+        "Named groups — cast-shadow, extrusion, shell, face, content, gloss,",
+        "specular — import as a readable layer tree.", "",
+        "## Figma", "Drag any SVG onto the canvas. Ungroup once to reach the layers.", "",
+        "## Illustrator", "Open directly; the 'SVG Tiny' warning only concerns re-saving.",
+      ].join("\n"),
+    });
+    downloadZip(`${slug(st.kitName ?? "ui-kit")}-svg-pack.zip`, files);
+  };
   const sheetEntries = (st: ReturnType<typeof useGen.getState>) => {
     {
       const pieceCfg = (cid: KitComponentId) => applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]);
@@ -791,6 +812,11 @@ export function KitPage() {
         // user content overrides ride every catalog entry
         o.icon = resolveKitIcon(st.kitIcons[cid], o.icon);
         if (o.label === undefined) o.label = st.kitLabels[cid];
+        if (cid === "progress" || cid === "segbar") {
+          const kb = st.kitBar[cid];
+          if (o.bar === undefined) o.bar = kb;
+          if (o.dock === undefined && kb?.dock) o.dock = { icon: resolveKitIcon(st.kitIcons[cid], undefined), side: kb.dockSide ?? "left" };
+        }
         return { name, svg: renderKit(pieceCfg(cid), cid, effKitSize(st.kitSizes[cid]), gstate, v, st.kitShapes[cid], o) };
       };
       const entries = [
@@ -1036,6 +1062,9 @@ export function KitPage() {
           </button>
           <button className="kp-dlall" onClick={downloadEngineKit} disabled={engineBusy} title="Atomic, content-free assets: nine-slice PNGs, manifest, Unity importer, Unreal recipes">
             <Download size={15} strokeWidth={2.2} /> {engineBusy ? "Building engine kit…" : "Engine export — atomic assets (ZIP)"}
+          </button>
+          <button className="kp-dlall" onClick={downloadSvgPack} title="Every asset as a layered SVG — components, variants and states, named groups for Figma and Illustrator">
+            <Download size={13} strokeWidth={2.2} /> SVG pack — every asset
           </button>
           <button className="kp-dlall kp-dlquiet" onClick={downloadAllAssets} disabled={sheetBusy} title="One labeled PNG of every asset — a catalog for humans, not for slicing">
             <Download size={14} strokeWidth={2.2} /> {sheetBusy ? "Building the catalog…" : "Sprite sheet — visual catalog (PNG)"}
@@ -1465,6 +1494,9 @@ export function KitPage() {
         <button className="kp-dlall" onClick={downloadEngineKit} disabled={engineBusy} title="Atomic, content-free assets: nine-slice PNGs, manifest, Unity importer, Unreal recipes">
           <Download size={15} strokeWidth={2.2} /> {engineBusy ? "Building engine kit…" : "Engine export — atomic assets (ZIP)"}
         </button>
+        <button className="kp-dlall" onClick={downloadSvgPack} title="Every asset as a layered SVG — components, variants and states, named groups for Figma and Illustrator">
+          <Download size={13} strokeWidth={2.2} /> SVG pack — every asset
+        </button>
         <button className="kp-dlall kp-dlquiet" onClick={downloadAllAssets} disabled={sheetBusy} title="One labeled PNG of every asset — a catalog for humans, not for slicing">
           <Download size={14} strokeWidth={2.2} /> {sheetBusy ? "Building the catalog…" : "Sprite sheet — visual catalog (PNG)"}
         </button>
@@ -1504,8 +1536,10 @@ export function KitPage() {
                   ].join("\n"),
                 });
               }
-              if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) =>
-                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], textOx: st.kitTextOx[`${cid}:${effKitSize(st.kitSizes[cid])}`], row: cid === "datarow" ? st.kitRow : undefined }) }));
+              if (which === "all" || which === "components") KIT_COMPONENTS.forEach(({ id: cid }) => {
+                const kb = cid === "progress" || cid === "segbar" ? st.kitBar[cid] : undefined;
+                files.push({ path: `components/${cid}.svg`, data: renderKit(applyKitTextFill(applyKitDesign(st.cfg, st.kitDesigns[cid]), st.kitTextFill[cid]), cid, effKitSize(st.kitSizes[cid]), "default", undefined, st.kitShapes[cid], { expand: true, icon: resolveKitIcon(st.kitIcons[cid], undefined), label: st.kitLabels[cid], textOy: st.kitTextOy[`${cid}:${effKitSize(st.kitSizes[cid])}`], textOx: st.kitTextOx[`${cid}:${effKitSize(st.kitSizes[cid])}`], bar: kb, dock: kb?.dock ? { icon: resolveKitIcon(st.kitIcons[cid], undefined), side: kb.dockSide ?? "left" } : undefined, row: cid === "datarow" ? st.kitRow : undefined }) });
+              });
               if (which === "all") {
                 files.push({
                   path: "9slice.json",

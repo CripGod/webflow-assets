@@ -5,6 +5,7 @@ import { renderBevel, renderKit } from "@/generator/bevel";
 import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES , applyKitDesign, applyKitTextFill, isDarkBg, resolveKitIcon } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { KitPage } from "./KitPage";
+import { LiveArt } from "./LiveArt";
 import { BoardView } from "./Board";
 
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
@@ -105,8 +106,22 @@ export function CanvasView() {
               </button>
             )}
             <div className="state-cap" style={{ color: capColor }}>
-              {CAP[displayed]}{playing && live ? " · live" : ""}
+              {playing && focus ? "Live — hover, press, drag" : `${CAP[displayed]}${playing && live ? " · live" : ""}`}
             </div>
+            {playing && focus ? (
+              /* v62: in Play mode the hero IS the live component — sliders
+                 drag, toggles flip, bars replay — the same LiveArt engine
+                 the kit page runs, at hero scale */
+              <div className="hero-slot hot" onPointerDown={(e) => e.stopPropagation()}>
+                <LiveArt playing scale={1}
+                  cfg={applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus])}
+                  kit={{ id: focus, size: fSize, shape: kitShapes[focus], label: kitLabels[focus],
+                    icon: resolveKitIcon(kitIcons[focus], undefined), textOy: fOy, textOx: fOx,
+                    dock: fDock, bar: fBar,
+                    row: focus === "datarow" ? kitRow : undefined,
+                    kind: focus === "panel" ? (kitKind ?? undefined) : undefined }} />
+              </div>
+            ) : (
             <div
               className={`hero-slot${playing ? " hot" : ""}`}
               {...(playing ? {
@@ -118,6 +133,7 @@ export function CanvasView() {
               } : {})}
               dangerouslySetInnerHTML={{ __html: heroSvg }}
             />
+            )}
           </div>
         ) : phase === "board" ? (
           <BoardView playing={playing} />
