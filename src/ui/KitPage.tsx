@@ -6,7 +6,7 @@ import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape }
 import { renderBevel, renderKit, renderTypeSpecimen } from "@/generator/bevel";
 import { silhouetteMeta, SILHOUETTES } from "@/generator/silhouettes";
 import { previewSvg } from "@/generator/icons";
-import { downloadSettings, downloadSvg, downloadZip, downloadSpriteSheet, buildSpriteSheetBytes } from "@/generator/exportUtils";
+import { downloadSettings, downloadSvg, downloadZip, downloadSpriteSheet, buildSpriteSheetBytes, fontDataUri } from "@/generator/exportUtils";
 import { downloadEngineExport } from "@/generator/engineExport";
 import { LiveArt } from "./LiveArt";
 import { HeroGL } from "./HeroGL";
@@ -824,27 +824,56 @@ export function KitPage() {
   /* every catalog entry — components, variants, states — as individual
      layered SVGs. The same list the sprite sheet renders, so what you see
      in the catalog is exactly what lands in the zip. */
-  const downloadSvgPack = () => {
-    const st = useGen.getState();
-    const slug = (s2: string) => s2.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const files: { path: string; data: string }[] = sheetEntries(st).map((e) => ({ path: `svg/${slug(e.name)}.svg`, data: e.svg }));
-    files.push({
-      path: "README.md",
-      data: [
-        "# SVG pack — every kit asset", "",
-        "One layered SVG per catalog entry: every component, variant and state,",
-        "with your content overrides (text, icons, dock, segments) baked in.",
-        "Named groups — cast-shadow, extrusion, shell, face, content, gloss,",
-        "specular — import as a readable layer tree.", "",
-        "## Figma", "Drag any SVG onto the canvas. Ungroup once to reach the layers.", "",
-        "## Illustrator", "Open directly; the 'SVG Tiny' warning only concerns re-saving.",
-      ].join("\n"),
-    });
-    downloadZip(`${slug(st.kitName ?? "ui-kit")}-svg-pack.zip`, files);
+  const [svgBusy, setSvgBusy] = useState(false);
+  const downloadSvgPack = async () => {
+    if (svgBusy) return;
+    setSvgBusy(true);
+    try {
+      const st = useGen.getState();
+      const slug = (s2: string) => s2.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      /* fonts travel with the pack: every face the kit uses is embedded as a
+         data-URI @font-face inside each text-bearing SVG (so browsers and
+         image pipelines render the real type), and the README carries the
+         Google Fonts links for design tools that want the family installed. */
+      const fams = [...new Set([st.cfg.type.font, ...Object.values(st.kitDesigns).map((d) => d?.type?.font).filter((f): f is string => !!f)])];
+      const famDefs = fams.map((fam) => ({ fam, css: fontByName(fam).css }));
+      const faces = (await Promise.all(famDefs.map(async ({ fam, css }) => {
+        const uri = css ? await fontDataUri(fam, css) : null;
+        return uri ? `@font-face{font-family:'${fam}';src:url(${uri}) format('woff2');}` : "";
+      }))).join("");
+      const styleTag = faces ? `<defs><style>${faces}</style></defs>` : "";
+      const files: { path: string; data: string }[] = sheetEntries(st).map((e) => ({
+        path: `svg/${slug(e.name)}.svg`,
+        data: styleTag && e.svg.includes("<text") ? e.svg.replace(/(<svg[^>]*>)/, `$1${styleTag}`) : e.svg,
+      }));
+      files.push({
+        path: "README.md",
+        data: [
+          "# SVG pack — every kit asset", "",
+          "One layered SVG per catalog entry: every component, variant and state,",
+          "with your content overrides (text, icons, dock, segments) baked in.",
+          "Named groups — cast-shadow, extrusion, shell, face, content, gloss,",
+          "specular — import as a readable layer tree.", "",
+          "## Fonts",
+          "Each text-bearing SVG embeds its font as a data-URI @font-face (one",
+          "weight), so browsers render the real type out of the box. Design",
+          "tools (Figma / Illustrator) substitute installed fonts instead —",
+          "install the families below for full fidelity:", "",
+          ...famDefs.map(({ fam, css }) => css
+            ? `- ${fam} — https://fonts.google.com/specimen/${fam.replace(/ /g, "+")} · stylesheet: https://fonts.googleapis.com/css2?family=${css}&display=swap`
+            : `- ${fam} — bundled system face`), "",
+          "## Figma", "Drag any SVG onto the canvas. Ungroup once to reach the layers.", "",
+          "## Illustrator", "Open directly; the 'SVG Tiny' warning only concerns re-saving.",
+        ].join("\n"),
+      });
+      downloadZip(`${slug(st.kitName ?? "ui-kit")}-svg-pack.zip`, files);
+    } finally {
+      setSvgBusy(false);
+    }
   };
 const exportActions = [
     { id: "engine", name: "Engine kit (ZIP)", desc: "Atomic content-free PNGs, nine-slice manifest, Unity importer, Unreal recipes.", busy: engineBusy, run: () => void downloadEngineKit() },
-    { id: "svg", name: "SVG pack", desc: "Every component, variant and state as a layered SVG — Figma / Illustrator ready.", run: downloadSvgPack },
+    { id: "svg", name: "SVG pack", desc: "Every component, variant and state as a layered SVG — fonts embedded, Figma / Illustrator ready.", busy: svgBusy, run: () => void downloadSvgPack() },
     { id: "sprite", name: "Sprite sheet (PNG)", desc: "One labeled catalog image of every asset — for humans, not for slicing.", busy: sheetBusy, run: () => void downloadAllAssets() },
   ];
   const sheetEntries = (st: ReturnType<typeof useGen.getState>) => {
@@ -1743,7 +1772,7 @@ const exportActions = [
               <span className="kp-handle" />
               <div className="gp-row">
                 <span className="gp-label">Squad details</span>
-                <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.29} />
+                <PPiece id="iconbtn" icon={STOCK_ICONS.forward} scale={0.5} />
               </div>
             </div>
           </div>
@@ -1751,7 +1780,7 @@ const exportActions = [
             <div className="gp-title">Bottom sheet · expanded</div>
             <div className="kp-sheet">
               <span className="kp-handle" />
-              <div className="gp-row"><span className="gp-label">Squad details</span><PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.26} /></div>
+              <div className="gp-row"><span className="gp-label">Squad details</span><PPiece id="iconbtn" icon={STOCK_ICONS.close} scale={0.46} /></div>
               <PPiece id="datarow" value={0.4} scale={0.48} />
               <PPiece id="datarow" label="Iron Golem" sub="Level 8 · Tank" value={0.7} scale={0.48} />
               <div className="kp-sheetfoot"><PPiece id="small" label="DEPLOY" scale={0.45} /></div>

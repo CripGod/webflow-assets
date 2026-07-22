@@ -2,6 +2,7 @@ import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSiz
 import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE , isDarkBg, userShapes } from "./model";
 import { iconGroup } from "./icons";
 import { silhouetteMeta } from "./silhouettes";
+import { importedShape } from "./importedShapes";
 import rough from "roughjs";
 
 /* Rough.js draws the hand-drawn *line character* over the approved outline —
@@ -110,7 +111,63 @@ export function transformPath(d: string, vb: [number, number, number, number], x
   return out.join(" ");
 }
 
+/** Cap-preserving vector three-slice: the outer `capSrc` source units at each
+ *  end scale uniformly with height; only the center band stretches. One
+ *  continuous outline — control points are remapped through a piecewise
+ *  monotonic x-map, so there are no seams to hide. Falls back to uniform
+ *  scaling when the frame is too narrow to hold both rigid caps. */
+export function transformPathCapAware(d: string, vb: [number, number, number, number], x: number, y: number, w: number, h: number, capSrc: number): string {
+  const [vx, vy, vw, vh] = vb;
+  const sy = h / (vh || 1);
+  const capW = capSrc * sy;
+  const midSrc = vw - capSrc * 2;
+  const midW = w - capW * 2;
+  if (midSrc <= 4 || midW < midSrc * sy * 0.25) return transformPath(d, vb, x, y, w, h);
+  const mx = (X: number): number => {
+    const u = X - vx;
+    if (u <= capSrc) return x + u * sy;
+    if (u >= vw - capSrc) return x + w - (vw - u) * sy;
+    return x + capW + (u - capSrc) * (midW / midSrc);
+  };
+  const my = (Y: number): number => y + (Y - vy) * sy;
+  const toks = d.match(/[MLHVCSQTAZmlhvcsqtaz]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) ?? [];
+  const out: string[] = [];
+  let i = 0, cmd = "";
+  let cx = vx, cy = vy;
+  const num = () => parseFloat(toks[i++]);
+  while (i < toks.length) {
+    if (/^[a-z]$/i.test(toks[i])) cmd = toks[i++];
+    const rel = cmd === cmd.toLowerCase() && cmd.toUpperCase() !== "Z";
+    const C = cmd.toUpperCase();
+    if (C === "Z") { out.push("Z"); continue; }
+    if (C === "H") { const X = rel ? cx + num() : num(); out.push("L", mx(X).toFixed(2), my(cy).toFixed(2)); cx = X; continue; }
+    if (C === "V") { const Y = rel ? cy + num() : num(); out.push("L", mx(cx).toFixed(2), my(Y).toFixed(2)); cy = Y; continue; }
+    if (C === "A") {
+      const rxx = num(), ryy = num(), rot = num(), laf = num(), swf = num();
+      const X = rel ? cx + num() : num(), Y = rel ? cy + num() : num();
+      out.push("A", (rxx * sy).toFixed(2), (ryy * sy).toFixed(2), String(rot), String(laf), String(swf), mx(X).toFixed(2), my(Y).toFixed(2));
+      cx = X; cy = Y; continue;
+    }
+    const pairs = C === "C" ? 3 : C === "S" || C === "Q" ? 2 : 1; // M L T
+    out.push(C);
+    for (let p = 0; p < pairs; p++) {
+      const X = rel ? cx + num() : num(), Y = rel ? cy + num() : num();
+      out.push(mx(X).toFixed(2), my(Y).toFixed(2));
+      if (p === pairs - 1) { cx = X; cy = Y; }
+    }
+  }
+  return out.join(" ");
+}
+
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
+  const imp = importedShape(shape);
+  if (imp) {
+    // Feasibility-lab imports fill the frame exactly — the lab exists to
+    // observe stretch behavior, so no distortion cap applies here. The
+    // `:caps` suffix opts a render into the three-slice experiment.
+    if (shape.endsWith(":caps")) return transformPathCapAware(imp.path, imp.viewBox, x, y, w, h, imp.capSrc);
+    return transformPath(imp.path, imp.viewBox, x, y, w, h);
+  }
   if (shape.startsWith("user:")) {
     const us = userShapes().find((u) => u.id === shape);
     if (us) {
@@ -454,6 +511,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const secondary = !!opts.secondary;
   const D = designFor(cfg, state);
   const shape = opts.shapeOverride ?? D.shape;
+  // Imported (feasibility-lab) silhouettes carry their own safe-area and
+  // inset metadata — generic fields, looked up once and applied like any
+  // registered silhouette's. Undefined for every production shape.
+  const impMeta = importedShape(shape);
   const C = D.candy;
   const K = (g0.tokenH ?? g0.h) / 168; // token px scale for kit sizes
 
@@ -507,7 +568,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   /* text-safe area — the silhouette's authored content insets keep labels out
      of caps, tails and bevels, with breathing room that scales with the label
      size. The old padding stands as a floor so compact shapes don't change. */
-  const met = silhouetteMeta(shape);
+  const met = silhouetteMeta(shape) ?? impMeta;
   const endRoom = shape === "pill" ? h * 0.16 : 0; // rounded ends eat width
   const basePad = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + endRoom;
   const safeGap = Math.max(12, fs * 0.35);
@@ -531,7 +592,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     const itX = Tx.italic ? fsx * 0.3 : 0;
     const twX = (showText ? casedX.length * fsx * fontByName(Tx.font).factor * wdX * (1 + Tx.spacing / 100) * wkX * (opts.anchorLeft ? 1.13 : 1.06) : 0) + itX;
     const cwX = twX + (iconDef ? iconSize : 0) + gap;
-    const metX = silhouetteMeta(shx);
+    const metX = silhouetteMeta(shx) ?? importedShape(shx);
     const erX = shx === "pill" ? h * 0.16 : 0;
     const bpX = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + erX;
     const sgX = Math.max(12, fsx * 0.35);
@@ -566,9 +627,13 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const pad = glowPadOf(cfg);
 
   const bw = (secondary ? Math.max(4, D.bevel.width * 0.7) : D.bevel.width) * K;
+  // Metadata-driven face inset (imported silhouettes only): maxBevelRatio
+  // caps the inset a shape can survive, faceInsetScale trims it further.
+  // For every production shape bwF === bw — behavior is unchanged.
+  const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
   const rimW = C.rim.width * K;
   const outer = shapePath(shape, x, y, w, h, D.bevel.softness);
-  const faceP = shapePath(shape, x + bw, y + bw, w - bw * 2, h - bw * 2, Math.max(0, D.bevel.softness - 8));
+  const faceP = shapePath(shape, x + bwF, y + bwF, w - bwF * 2, h - bwF * 2, Math.max(0, D.bevel.softness - 8));
   const rimP = shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, D.bevel.softness);
 
   /* ── key light — global source of truth ──────────────────────── */
@@ -635,8 +700,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     ? `<ellipse cx="${(x + w / 2 + sdx * 0.35).toFixed(1)}" cy="${(y + h + visDepth + Math.max(0, lift) + 1.5).toFixed(1)}" rx="${(w * 0.47).toFixed(1)}" ry="${(5.5 * K + visDepth * 0.22).toFixed(1)}" fill="url(#${id}ct)" opacity="${contactOp.toFixed(2)}"/>`
     : "";
 
-  /* face box (for screen-space layers) */
-  const fx0 = x + bw, fy0 = y + bw, fw = w - bw * 2, fh = h - bw * 2;
+  /* face box (for screen-space layers) — follows the actual face inset */
+  const fx0 = x + bwF, fy0 = y + bwF, fw = w - bwF * 2, fh = h - bwF * 2;
   const faceCx = fx0 + fw / 2, faceCy = fy0 + fh / 2;
 
   /* 7 ── inner glow (own color, or the Glow well; unlit side) */
@@ -718,7 +783,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     } else if (SP.mode === "sweep") {
       // reflective event hugging the shell's edge curve on the lit side
       const swW = Math.max(2, spSize * 0.32);
-      const sweepP = shapePath(shape, x + bw * 0.55, y + bw * 0.55, w - bw * 1.1, h - bw * 1.1, Math.max(0, D.bevel.softness - 4));
+      const sweepP = shapePath(shape, x + bwF * 0.55, y + bwF * 0.55, w - bwF * 1.1, h - bwF * 1.1, Math.max(0, D.bevel.softness - 4));
       specular = `<path d="${sweepP}" fill="none" stroke="url(#${id}sw)" stroke-width="${swW.toFixed(1)}" opacity="${spOp.toFixed(2)}"/>`;
     } else {
       const main = `<ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spRx.toFixed(1)}" ry="${spRy.toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>`;
@@ -968,6 +1033,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   ${glintsDefs}
   ${textFxDef}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
+  <clipPath id="${id}oc"><path d="${outer}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
   ${aura ? `<filter id="${id}gb" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="14"/></filter>
   <filter id="${id}gb2" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="30"/></filter>` : ""}
@@ -984,6 +1050,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${rimW > 0.2 ? `<path d="${rimP}" fill="none" stroke="url(#${id}rim)" stroke-width="${rimW.toFixed(1)}" opacity="${((C.rim.brightness / 100) * (disabled ? 0.5 : 1)).toFixed(2)}"/>` : ""}
       ${shape === "handdrawn" && !disabled ? roughInk(outer, darken(bevelC, 0.58), 1.4 * K) : ""}
     </g>
+    <g data-oclip="1" clip-path="url(#${id}oc)">
     <g id="${id}_face" opacity="${(T.interior / 100).toFixed(2)}">
       <path d="${faceP}" fill="url(#${id}face)"/>
       <g clip-path="url(#${id}fc)">
@@ -1015,6 +1082,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     </g>
     ${C.gloss.layer === "above" ? `<g id="${id}_gloss" opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${C.gloss.blend && C.gloss.blend !== "normal" ? ` style="mix-blend-mode:${C.gloss.blend}"` : ""}>${gloss}</g>` : ""}
     ${specular ? `<g id="${id}_specular" opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${SP.blend && SP.blend !== "normal" ? ` style="mix-blend-mode:${SP.blend}"` : ""}>${specular}</g>` : ""}
+    </g>
   </g>
 </g>
 </svg>`;
@@ -1031,10 +1099,38 @@ export function glowPadOf(cfg: GenConfig): number {
   return maxGlow > 0.5 ? 90 : 0;
 }
 
+/** The exact outer / rim / face geometry build() derives for a shell —
+ *  exported so the feasibility lab's diagnostic overlays audit the REAL
+ *  inset math, not a copy of it. Mirrors build()'s derivation (bw, bwF,
+ *  rimW, softness offsets); keep the two in lockstep. */
+export function shellPaths(cfg: GenConfig, shape: Shape, x: number, y: number, w: number, h: number): { outer: string; rim: string; face: string; bw: number; bwF: number; rimW: number } {
+  const D = designFor(cfg, "default");
+  const K = h / 168;
+  const bw = D.bevel.width * K;
+  const impMeta = importedShape(shape);
+  const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
+  const rimW = D.candy.rim.width * K;
+  return {
+    outer: shapePath(shape, x, y, w, h, D.bevel.softness),
+    face: shapePath(shape, x + bwF, y + bwF, w - bwF * 2, h - bwF * 2, Math.max(0, D.bevel.softness - 8)),
+    rim: shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, D.bevel.softness),
+    bw, bwF, rimW,
+  };
+}
+
 /** Master component — width follows the label. Margins are 1.5× so large
  *  shadow distances never clip against the invisible canvas bounds. */
 export function renderBevel(cfg: GenConfig, state: GenStateName): string {
   return build(cfg, state, { x: 52, y: 36, h: 168, fs: 52, iconSize: 46 });
+}
+
+/** Feasibility-lab entry: one shell at an exact frame size. Same build()
+ *  pipeline as every production render — nothing here is shape-specific.
+ *  `fs` is the pre-scale type size (build multiplies by type.size/52). */
+export function renderShell(cfg: GenConfig, state: GenStateName, w: number, h: number, opts: { label?: string; iconDef?: IconDef | null; fs?: number } = {}): string {
+  return build(cfg, state, { x: 40, y: 32, h, fs: opts.fs ?? h * 0.31, iconSize: h * 0.3 }, {
+    label: opts.label, iconDef: opts.iconDef === undefined ? null : opts.iconDef, fixedW: w,
+  });
 }
 
 /** Just the typography — the complete text treatment rendered by the same
@@ -1217,7 +1313,9 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
   const font = cfg.type.font;
   const wellOf = (w: number, h: number, inset: number) =>
-    shapePath(cfg.shape, 39 + inset, 30 + inset, w - inset * 2, h - inset * 2, Math.max(0, cfg.bevel.softness - 10));
+    // the well follows the same silhouette resolution as the shell: the
+    // per-component override wins, then the curated default, then the master
+    shapePath(shapeOv ?? KIT_SHAPE[id] ?? cfg.shape, 39 + inset, 30 + inset, w - inset * 2, h - inset * 2, Math.max(0, cfg.bevel.softness - 10));
   /* bar-fill styling layers (BarFx): second gradient with a blend mode,
      outer glow, inner shadow — identical on progress, sliders and rows */
   const BFX = cfg.barFx;
@@ -1309,7 +1407,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: opts.label ?? "TAB", iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "segment": {
       const w = 560 * k, h = 106 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const cy = 30 + h / 2 + 1;
       const segW = (w - bw * 2) / 3;
       // value picks the active segment (0..2) — play mode drives it live;
@@ -1354,7 +1452,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       // compact premium proportion: shell ≈ 2–2.5× the knob diameter, with the
       // knob filling most of the inner height like a hardware switch
       const w = 148 * k, h = 102 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw + 4;
       const knobR = (h - bw * 2) / 2 - 8;
       const kx = on ? 39 + w - inset - 5 - knobR : 39 + inset + 5 + knobR;
@@ -1364,7 +1462,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     }
     case "slider": {
       const w = 460 * k, h = 64 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw * 0.7 + 3;
       const gapPad = 5 * k;
       const bh = h - inset * 2 - gapPad * 2;
@@ -1380,29 +1478,46 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const fillW = Math.max(0, knobX - bx);
       const knobY = 30 + h / 2;
       const sfx = barFx(gid, bx, by, fillW, bh, Math.min(bh / 2, fillW / 2));
+      // slider mercury follows the silhouette too — the left cap clips to a
+      // silhouette-shaped region; the knob owns the leading edge
+      const mercS = shapePath(shapeOv ?? KIT_SHAPE[id] ?? cfg.shape, bx, by, trackW, bh, Math.max(0, cfg.bevel.softness - 12));
       return stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
-         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${sfx.defs}</defs>
-         ${fillW > 1 ? `${sfx.open}<path d="${roundRect(bx, by, fillW, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${sfx.close}
-         <path d="${roundRect(bx, by + bh * 0.08, fillW, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${sfx.over}` : ""}` +
+         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${sfx.defs}<clipPath id="${gid}w"><path d="${mercS}"/></clipPath></defs>
+         ${fillW > 1 ? `<g clip-path="url(#${gid}w)">${sfx.open}<path d="${roundRect(bx - 2, by, fillW + 2, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${sfx.close}
+         <path d="${roundRect(bx - 2, by + bh * 0.08, fillW + 2, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${sfx.over}</g>` : ""}` +
         candyKnob(knobX, knobY, kr, knobC)), bx, trackW);
     }
     case "progress": {
       const w = 520 * k, h = 64 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw + 3;
       const gapPad = 6 * k;
       const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
       const bh = h - inset * 2 - gapPad * 2;
       const trackW = w - inset * 2 - gapPad * 2;
-      const fw = trackW * clamp(value ?? 0.62, 0, 1);
+      const v01p = clamp(value ?? 0.62, 0, 1);
+      const fw = trackW * v01p;
       const gid = "pg" + UID++;
       const pfx = barFx(gid, bx, by, fw, bh, bh / 2);
+      /* the mercury follows the silhouette (design canon): the fill clips to
+         its own silhouette-shaped region, so the left cap always inherits the
+         component's contour and a full bar IS the contour. Partial fills keep
+         a rounded leading bead on the right. */
+      const mercP = shapePath(shapeOv ?? KIT_SHAPE[id] ?? cfg.shape, bx, by, trackW, bh, Math.max(0, cfg.bevel.softness - 12));
+      const full = v01p >= 0.995;
+      const fx1 = bx + fw;
+      const r5 = Math.min(bh / 2, Math.max(2, fw / 2));
+      const dimP = state === "disabled" ? 0.35 : 0.95;
+      const mercFill = full
+        ? `<path d="${mercP}" fill="url(#${gid})" opacity="${dimP}"/>`
+        : `<path d="M ${(bx - 2).toFixed(1)} ${by.toFixed(1)} H ${(fx1 - r5).toFixed(1)} Q ${fx1.toFixed(1)} ${by.toFixed(1)} ${fx1.toFixed(1)} ${(by + r5).toFixed(1)} V ${(by + bh - r5).toFixed(1)} Q ${fx1.toFixed(1)} ${(by + bh).toFixed(1)} ${(fx1 - r5).toFixed(1)} ${(by + bh).toFixed(1)} H ${(bx - 2).toFixed(1)} Z" fill="url(#${gid})" opacity="${dimP}"/>`;
+      const mercGloss = `<path d="${roundRect(bx - 2, by + bh * 0.08, Math.max(0, fw + 2 - bh * 0.1), bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>`;
       let out = stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
-         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${pfx.defs}</defs>
-         ${fw > 1 ? `${pfx.open}<path d="${roundRect(bx, by, fw, bh, bh / 2)}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${pfx.close}
-         <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${pfx.over}` : ""}`), bx, trackW);
+         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${pfx.defs}<clipPath id="${gid}w"><path d="${mercP}"/></clipPath></defs>
+         ${fw > 1 ? `<g clip-path="url(#${gid}w)">${pfx.open}${mercFill}${pfx.close}
+         ${mercGloss}${pfx.over}</g>` : ""}`), bx, trackW);
       // emblem bar: the docked socket rides the track end, over the fill
       if (opts.dock) out = applyDock(out, opts.dock, 39, w, 30 + h / 2, h * 1.9);
       return out;
@@ -1413,7 +1528,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          well path); middle cells stay squared. Snap mode lights whole
          cells; smooth mode slides one fill under the notches. */
       const w = 520 * k, h = 72 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw + 3;
       const gapPad = 6 * k;
       const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
@@ -1468,7 +1583,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     }
     case "input": {
       const w = 560 * k, h = 124 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw + 4;
       const tyIn = 30 + h / 2 + 1 + (opts.textOy ?? cfg.type.oy ?? 0) * k;
       // the typeable area is the 9-slice text-safe zone: value and caret clip
@@ -1503,7 +1618,27 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const tw5 = lbl5.length * fs5 * fontByName(T5.font).factor * (1 + T5.spacing / 100) * 1.18 + (T5.italic ? fs5 * 0.35 : 0);
       const inset5 = met5 ? Math.max(met5.content.left, met5.capScale) * h5 + Math.max(12, fs5 * 0.3) : 90 * k;
       const w5 = Math.min(2600 * k, Math.max(430 * k, tw5 + inset5 * 2));
-      return build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx, fixedW: w5 });
+      /* v65 ribbon construction: the swallowtail stays a pure themed shell,
+         but the label rides a RECESSED CENTER PLATE between the tails — the
+         classic game-ribbon read, and the same grammar as the timer wells.
+         This replaces "type floating on the folded face", which fell apart
+         on wide banners under high-contrast themes (thin band strips + the
+         gloss fold cutting through the letters). */
+      const shell5 = build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: "", iconDef: null, shapeOverride: sov, fixedW: w5 });
+      const bnShape = sov ?? cfg.shape;
+      const c5 = (bnShape === "banner" ? Math.min(w5 * 0.13, h5 * 0.62) : Math.max(met5 ? met5.capScale * h5 : h5 * 0.4, bw + 10 * k)) + 12 * k;
+      const wellW5 = w5 - c5 * 2;
+      const wellH5 = h5 * 0.54;
+      const wellY5 = 34 + (h5 - wellH5) / 2;
+      const wellD5 = roundRect(52 + c5, wellY5, wellW5, wellH5, wellH5 * 0.22);
+      const gid5 = "hd" + UID++;
+      const dim5 = state === "disabled" ? 0.45 : 1;
+      return inject(shell5,
+        `<defs><clipPath id="${gid5}w"><path d="${wellD5}"/></clipPath></defs>
+         <path d="${wellD5}" fill="${wellFill}" opacity="0.9"/>
+         <g clip-path="url(#${gid5}w)"><rect x="${(52 + c5).toFixed(1)}" y="${wellY5.toFixed(1)}" width="${wellW5.toFixed(1)}" height="${(wellH5 * 0.5).toFixed(1)}" fill="#04060C" opacity="0.28"/>
+         <rect x="${(52 + c5).toFixed(1)}" y="${(wellY5 + wellH5 - 2).toFixed(1)}" width="${wellW5.toFixed(1)}" height="2" fill="#FFFFFF" opacity="0.10"/></g>` +
+        contentText((opts.label ?? cfg.content.label) || "BANNER", 52 + w5 / 2 + (opts.textOx ?? cfg.type.ox ?? 0) * k, 34 + h5 / 2 + 1 + (opts.textOy ?? cfg.type.oy ?? 0) * k, fs5, { anchor: "middle", opacity: dim5 }));
     }
     case "panel": {
       // container shell — same recipe, bigger canvas. tokenH keeps walls,
@@ -1551,12 +1686,23 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       /* Data row — portrait slot, two independent text groups, mini progress,
          trailing action. Characters, missions, inventory, shop rows. */
       const R2 = opts.row ?? {};
-      const w = 620 * k, h = 128 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 128 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const w = 620 * k;
+      /* overlap-proof: type sizes are known before the shell exists, so the
+         block's height GROWS with the stack — title line + sub line + bar can
+         never collide no matter how big the display face gets (universal
+         no-overlap law). 128k stands as the floor so default kits don't move. */
+      const sizeK2 = clamp(cfg.type.size / 52, 0.5, 2.2);
+      const fsT = 26 * k * sizeK2 * ((R2.titleSize ?? 100) / 100);
+      const fsS = 17 * k * Math.max(0.75, sizeK2 * 0.85 + 0.15) * ((R2.subSize ?? 100) / 100);
       const inset = bw + 6;
       const showAvatar = R2.avatar ?? true;
       const showBar = R2.progress ?? true;
       const showAction = R2.action ?? true;
+      const lineAdv = Math.max(24 * k, fsT * 0.55 + fsS * 0.78 + 4 * k);
+      const subOn = R2.subOn !== false;
+      const needH = inset + 16 * k + (subOn ? lineAdv + fsS * 0.6 : fsT * 0.55) + (showBar ? 36 * k : 16 * k) + inset;
+      const h = Math.max(128 * k, needH);
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 128 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const slotS = h - inset * 2 - 8;
       const sx = 39 + inset + 6, sy2 = 30 + inset + 4 + 2;
       const icon = opts.icon ?? STOCK_ICONS.user;
@@ -1564,10 +1710,6 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const dim = state === "disabled" ? 0.45 : 1;
       const title = opts.label ?? R2.title ?? "Shadow Knight";
       const sub = opts.sub ?? R2.sub ?? "Level 12 · Warrior";
-      // the row's own text follows the global type Size like every label
-      const sizeK2 = clamp(cfg.type.size / 52, 0.5, 2.2);
-      const fsT = 26 * k * sizeK2 * ((R2.titleSize ?? 100) / 100);
-      const fsS = 17 * k * Math.max(0.75, sizeK2 * 0.85 + 0.15) * ((R2.subSize ?? 100) / 100);
 
       const barY = 30 + h - inset - 16 * k;
       const barW = w - (tx - 39) - (showAction ? 90 * k : 34 * k);
@@ -1588,8 +1730,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         /* auto-leading from BOTH line heights: the title's lower half (with
            its depth treatment) plus the subtitle's cap height — big display
            type can never crash into line two (universal no-overlap law) */
-        (R2.subOn === false ? "" :
-          `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + Math.max(24 * k, fsT * 0.55 + fsS * 0.78 + 4 * k) + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>`) +
+        (!subOn ? "" :
+          `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + lineAdv + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>`) +
         `</g>` +
         (showBar
           ? (() => { const rfx = barFx(gid2, tx, barY, fillW2, 10 * k, 5 * k); return `<defs>${rfx.defs}</defs><path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
@@ -1875,19 +2017,28 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       /* v61: each tile is a REAL themed shell — the full candy stack in the
          kit silhouette, portrait — with the split-flap instrument recessed
          into a dark well so the digits keep their contrast */
+      /* container exception (curated defaults): silhouettes that don't read
+         at the tile's portrait aspect ship WITHOUT themed containers — the
+         split-flap instrument stands alone on its dark well. The timer-safe
+         list is curated in silhouettes.ts (`supports` includes "timer");
+         imported silhouettes default to bare until a human curates them in. */
+      const tMeta = silhouetteMeta(sov ?? cfg.shape);
+      const themedTiles = !!tMeta && tMeta.supports.includes("timer");
       const tiles = segs.map((sg, i) => {
         const x = pad3 + i * (tw + gap2);
         const midY = pad3 + th / 2;
-        const shellSvg2 = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: th, fs: 0, iconSize: 0 }, { iconDef: null, label: "", shapeOverride: sov, fixedW: tw });
-        const shm = /data-shell="([-\d. ]+)"/.exec(shellSvg2);
+        const shellSvg2 = themedTiles ? build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: th, fs: 0, iconSize: 0 }, { iconDef: null, label: "", shapeOverride: sov, fixedW: tw }) : "";
+        const shm = themedTiles ? /data-shell="([-\d. ]+)"/.exec(shellSvg2) : null;
         const [tsx, tsy] = shm ? shm[1].split(" ").map(Number) : [33, 27];
-        const tileInner = shellSvg2.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
-        const insT = bw + 5 * k;
-        const wellD = shapePath(sov ?? cfg.shape, x + insT, pad3 + insT, tw - insT * 2, th - insT * 2, Math.max(0, cfg.bevel.softness - 10));
+        const tileInner = themedTiles ? shellSvg2.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "") : "";
+        const insT = themedTiles ? bw + 5 * k : 3 * k;
+        const wellD = themedTiles
+          ? shapePath(sov ?? cfg.shape, x + insT, pad3 + insT, tw - insT * 2, th - insT * 2, Math.max(0, cfg.bevel.softness - 10))
+          : roundRect(x + insT, pad3 + insT, tw - insT * 2, th - insT * 2, 20 * k);
         const gidT = "fc" + UID++;
-        return `<g transform="translate(${(x - tsx).toFixed(1)} ${(pad3 - tsy).toFixed(1)})">${tileInner}</g>
+        return `${themedTiles ? `<g transform="translate(${(x - tsx).toFixed(1)} ${(pad3 - tsy).toFixed(1)})">${tileInner}</g>` : ""}
           <clipPath id="${gidT}w"><path d="${wellD}"/></clipPath>
-          <path d="${wellD}" fill="${tileFace}"${urgent ? ` stroke="${alarm}" stroke-width="2.5"` : ""}/>
+          <path d="${wellD}" fill="${tileFace}"${urgent ? ` stroke="${alarm}" stroke-width="2.5"` : themedTiles ? "" : ` stroke="${hexMix(bevel, glow, 0.3)}" stroke-width="2" stroke-opacity="0.55"`}/>
           <g clip-path="url(#${gidT}w)"><rect x="${x}" y="${pad3}" width="${tw}" height="${(th / 2).toFixed(1)}" fill="#FFFFFF" opacity="0.055"/></g>
           ${contentText(sg, x + tw / 2 + 3 * k, midY + 2, fsD, { anchor: "middle", keepCase: true, opacity: dim })}
           <g clip-path="url(#${gidT}w)">
@@ -1940,7 +2091,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const arc = v3 > 0.01
         ? `<path d="M ${cx3} ${(cy3 - arcR).toFixed(1)} A ${arcR.toFixed(1)} ${arcR.toFixed(1)} 0 ${large} 1 ${(cx3 + Math.cos(aH) * arcR).toFixed(1)} ${(cy3 + Math.sin(aH) * arcR).toFixed(1)}" fill="none" stroke="${urgent ? alarm : glow}" stroke-width="${(5 * k).toFixed(1)}" stroke-linecap="round" opacity="0.4"/>`
         : "";
-      const swShell = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: d2, fs: 0, iconSize: 0 }, { iconDef: null, label: "", shapeOverride: sov, fixedW: d2 });
+      // container exception: shapes that don't read as a square watch housing
+      // fall back to the neutral circular body (curated `supports: "timer"`)
+      const swMeta = silhouetteMeta(sov ?? cfg.shape);
+      const swShell = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: d2, fs: 0, iconSize: 0 }, { iconDef: null, label: "", shapeOverride: swMeta && swMeta.supports.includes("timer") ? sov : "round", fixedW: d2 });
       const swSh = /data-shell="([-\d. ]+)"/.exec(swShell);
       const [ssx, ssy, ssw, ssh] = swSh ? swSh[1].split(" ").map(Number) : [33, 27, d2, d2];
       const swInner = swShell.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
