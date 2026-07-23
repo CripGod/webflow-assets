@@ -40,14 +40,36 @@ Supabase (managed auth + Postgres, RLS everywhere)
 
 - The document is the app's entire `ui-generator-*` localStorage keyspace,
   as one JSONB (`workspaces.doc`). Whole-doc last-write-wins.
-- Change detection: 3 s signature poll (FNV-1a over sorted keys+values) →
-  debounced push (1.2 s) → flush on tab-hidden and on Sync now.
+- Change detection: a storage write-hook stamps `forge-cloud-lastedit` the
+  moment any synced key changes (signed in or not) and schedules a
+  debounced push; a 3 s signature poll (FNV-1a over sorted keys+values)
+  backstops it. Tab-hidden flushes whenever the doc is ahead of the cloud.
 - Sign-in reconciliation: no server copy → push local; local edited more
   recently than the server row → push local; otherwise the server copy
-  wins — the local copy is snapshotted to `forge-cloud-prevlocal` first,
-  then the page reloads from the pulled state.
+  wins — the local copy is snapshotted to `forge-cloud-prevlocal` first
+  (never overwriting an unrestored snapshot; restorable from the account
+  menu), and the page reloads only after the pull verifiably applied.
+- Hardening invariants (each closed a reviewed failure mode):
+  - **No push before pull** — pushes are gated on a successful
+    reconciliation; a failed first pull retries with backoff instead of
+    letting a near-empty local doc clobber the cloud copy.
+  - **Account-boundary guard** — `forge-cloud-owner` remembers which
+    account the local doc belongs to; a different user signing in on the
+    same browser never uploads the previous user's work.
+  - **Verified pulls, capped reloads** — `applyDoc` verifies the applied
+    signature; a per-tab counter stops quota failures from reload-looping.
+  - **Serialized, retried, rebasing pushes** — one in-flight push,
+    exponential backoff on failure, and a staleness check that re-runs
+    reconciliation when another device wrote since our last pull.
+  - **Honest chip** — sync errors show as "Cloud paused — saved locally",
+    never as a green saved state.
 - The DB keeps one previous revision (`workspaces.previous`, maintained by
   trigger only when the doc actually changes) as a server-side undo.
+- Magic links are sign-in only (`shouldCreateUser: false`): account
+  creation stays on the consent-gated path, so no account exists without a
+  13+/terms record. The consent marker is bound to the accepting email and
+  carries the real acceptance timestamp. Draft Terms/Privacy live at
+  `public/legal/` and are linked from the sign-up checkbox.
 
 ## Security posture (what is and is not protected)
 

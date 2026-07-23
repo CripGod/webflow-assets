@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { LogIn, LogOut, UserPlus, Mail, KeyRound, RefreshCw, FileDown, Cable } from "lucide-react";
+import { LogIn, LogOut, UserPlus, Mail, KeyRound, RefreshCw, FileDown, Cable, History } from "lucide-react";
 import {
   cloudConfig, setCloudOverride, clearCloudOverride, onCloudStatus, cloudStatus,
   signIn, signUp, signInMagic, requestPasswordReset, setNewPassword, signOutCloud,
-  syncNow, downloadMyData, type CloudStatus,
+  syncNow, downloadMyData, hasLocalSnapshot, restoreLocalSnapshot, type CloudStatus,
 } from "@/generator/cloud";
 
 export function useCloudStatus(): CloudStatus {
@@ -65,6 +65,11 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
         </div>
         <button onClick={() => syncNow()}><RefreshCw size={15} strokeWidth={1.8} /> Sync now</button>
         <button onClick={() => downloadMyData()}><FileDown size={15} strokeWidth={1.8} /> Download my data</button>
+        {hasLocalSnapshot() && (
+          <button onClick={() => {
+            if (window.confirm("Bring back the work this device had before your cloud copy loaded? Your account will sync to the restored version.")) restoreLocalSnapshot();
+          }}><History size={15} strokeWidth={1.8} /> Restore this device's earlier work</button>
+        )}
         <button onClick={() => { void signOutCloud(); onClose(); }}><LogOut size={15} strokeWidth={1.8} /> Sign out</button>
         <div className="menu-note acct-note">Signing out keeps your work on this device.</div>
       </div>
@@ -77,7 +82,7 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
       <div className="menu-pop acct-pop">
         <div className="menu-note">
           {mode === "signup" ? "Create your account — your kits and boards will save to it."
-            : mode === "magic" ? "We'll email you a one-time sign-in link."
+            : mode === "magic" ? "We'll email a one-time sign-in link (existing accounts only)."
             : mode === "reset" ? "We'll email you a password-reset link."
             : "Sign in — your saved work follows you to any device."}
         </div>
@@ -92,7 +97,11 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
         {mode === "signup" && (
           <label className="acct-agree">
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-            <span>I'm 13 or older and accept the Terms &amp; Privacy Policy (draft).</span>
+            <span>
+              I'm 13 or older and accept the{" "}
+              <a href="legal/terms.html" target="_blank" rel="noreferrer">Terms</a> &amp;{" "}
+              <a href="legal/privacy.html" target="_blank" rel="noreferrer">Privacy Policy</a> (drafts).
+            </span>
           </label>
         )}
         {mode === "signin" && (
@@ -126,6 +135,11 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
           {mode !== "magic" && <button className="acct-link" onClick={() => { setMode("magic"); setNote(null); }}>Email link</button>}
           {mode !== "reset" && <button className="acct-link" onClick={() => { setMode("reset"); setNote(null); }}>Forgot password</button>}
         </div>
+        {hasLocalSnapshot() && (
+          <button className="acct-link" onClick={() => {
+            if (window.confirm("Bring back the work this device had before a cloud copy loaded?")) restoreLocalSnapshot();
+          }}>Restore this device's earlier work</button>
+        )}
         {cfg.fromOverride && (
           <button className="acct-link" onClick={() => { clearCloudOverride(); window.location.reload(); }}>
             Disconnect this browser's cloud project

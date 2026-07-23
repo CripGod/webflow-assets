@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { CheckCircle2, CloudUpload, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Moon, Sun, Gamepad2, Sparkles } from "lucide-react";
+import { CheckCircle2, CloudOff, CloudUpload, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Moon, Sun, Gamepad2, Sparkles } from "lucide-react";
 import { useGen, hydrate, getDefault } from "@/generator/store";
 import { AccountMenu, useCloudStatus } from "./AccountMenu";
 import { renderBevel } from "@/generator/bevel";
@@ -163,7 +163,12 @@ export function TopBar() {
       <div className="top-spacer" />
 
       <div className="saved">
-        {cloud.state === "synced" || cloud.state === "syncing" ? (
+        {cloud.state === "error" ? (
+          <>
+            <span className="ok"><CloudOff size={19} strokeWidth={1.9} color="#d97706" /></span>
+            Cloud paused — saved locally
+          </>
+        ) : cloud.state === "synced" || cloud.state === "syncing" ? (
           <>
             <span className="ok"><CloudUpload size={19} strokeWidth={1.9} color={cloud.state === "synced" && saveStatus === "saved" ? "#16a34a" : "#9aa1ac"} /></span>
             {cloud.state === "synced" && saveStatus === "saved" ? "Saved to your account" : "Syncing…"}
