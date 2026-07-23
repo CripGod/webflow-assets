@@ -802,7 +802,9 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 .kp-pointer { color: rgba(235,238,255,.8); font-size: 13px; margin-top: -4px; }
 
 /* map nodes + connectors */
-.kp-map { position: relative; width: 94%; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 10px 0 4px; }
+/* v73: the map centers as a unit in whatever height the card gets — margin
+   auto splits leftover space evenly even when a grid row stretches the card */
+.kp-map { position: relative; width: 94%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 10px 0 4px; margin: auto 0; }
 .kp-nodes { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; position: relative; z-index: 1; }
 .kp-node { display: flex; flex-direction: column; align-items: center; position: relative; }
 .kp-node span:last-child { font-size: 12.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--st-ink2); margin-top: 6px; }
