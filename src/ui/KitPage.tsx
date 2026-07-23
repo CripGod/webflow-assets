@@ -230,14 +230,30 @@ function ExportMenu({ actions }: {
   );
 }
 
+/** Per-piece random shine timing: each active piece glints on its own clock
+ *  (staggered delay) at its own pace (varied duration), so the sweep never
+ *  fires in unison across the screen. Recomputed only when shine flips on. */
+function useShineVars(active: boolean): React.CSSProperties | undefined {
+  return useMemo(
+    () => active
+      ? ({ "--shine-delay": `-${(Math.random() * 11).toFixed(2)}s`, "--shine-dur": `${(9 + Math.random() * 6).toFixed(2)}s` } as React.CSSProperties)
+      : undefined,
+    [active],
+  );
+}
+
 /** One specced piece: live art + a caption rail with edit, sizes and export. */
 function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
   const { cfg, locked, size, setKitSize, sizable, name, kit, onEdit } = usePiece(p);
   const shineOn = useGen((s) => s.shine);
+  // the global toggle now rides the clipped SVG band (masked to the face),
+  // not the old card overlay
+  const shine = shineOn || !!p.shine;
+  const shineVars = useShineVars(shine);
   return (
-    <figure className={`kp-piece${shineOn ? " kp-shine" : ""}`}>
+    <figure className="kp-piece" style={shineVars}>
       <LiveArt cfg={cfg} playing scale={p.scale ?? PIECE_SCALE} className="kp-live"
-        kit={kit} title={p.caption} ambient={p.ambient} shine={p.shine} />
+        kit={kit} title={p.caption} ambient={p.ambient} shine={shine} />
       <figcaption className="kp-cap">
         {locked && <Lock className="kp-lockic" size={11} strokeWidth={2.4} aria-label="Locked to its own look" />}
         <span>{p.caption}</span>
@@ -274,8 +290,9 @@ function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
 /** A piece inside a pattern or assembly mock — no caption rail, tighter scale. */
 function PPiece(p: PieceOpts & { ambient?: boolean }) {
   const { cfg, name, kit } = usePiece({ ...p, size: p.size ?? "m" });
+  const shineVars = useShineVars(!!p.shine);
   return (
-    <LiveArt cfg={cfg} playing scale={p.scale ?? PATTERN_SCALE} className="gp-piece"
+    <LiveArt cfg={cfg} playing scale={p.scale ?? PATTERN_SCALE} className="gp-piece" style={shineVars}
       kit={kit} title={name} ambient={p.ambient} trim={p.trim} tight={p.tight} shine={p.shine} />
   );
 }
@@ -1698,7 +1715,7 @@ const exportActions = [
                   path: "README.md",
                   data: [
                     "# UI Kit asset pack", "",
-                    "Layered SVGs from The UI Generator. Every component keeps named groups —",
+                    "Layered SVGs from UI Kit Maker. Every component keeps named groups —",
                     "cast-shadow, extrusion, shell, face, content, gloss, specular — so Figma", "imports them as a readable layer tree.", "",
                     "## Figma", "Drag any SVG onto the canvas. Ungroup once to reach the named layers.", "",
                     "## Illustrator", "Open directly. You may see 'Clipping will be lost on roundtrip to Tiny' —",
@@ -2375,7 +2392,7 @@ const exportActions = [
         </div>
       </Sec>
 
-      <footer className="kp-foot">The UI Generator Design System · five levels, one material recipe, one renderer, zero mockups.</footer>
+      <footer className="kp-foot">UI Kit Maker Design System · five levels, one material recipe, one renderer, zero mockups.</footer>
     </div>
   );
 }

@@ -39,7 +39,11 @@ export function ProjectsPanel({ onBack, onClose }: { onBack: () => void; onClose
 
   const doSave = async () => {
     setBusy(true); setNote(null);
-    const { project, error } = await saveProject(newName || kitName || "Untitled kit", useGen.getState().kitPayload());
+    const name = newName.trim() || kitName || "Untitled kit";
+    // the kit takes the project's name, so the kit-page title reflects the
+    // project you just saved (and the saved snapshot carries it)
+    useGen.getState().setKitName(name);
+    const { project, error } = await saveProject(name, useGen.getState().kitPayload());
     setBusy(false);
     if (error || !project) { setNote(error ?? "Couldn't save."); return; }
     setNewName("");
