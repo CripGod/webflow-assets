@@ -4,7 +4,7 @@ import { iconGroup } from "./icons";
 import { silhouetteMeta } from "./silhouettes";
 import { importedShape, flattenPath, pointInPoly, selfIntersections, type Pt } from "./importedShapes";
 import { productionSkinRecipe } from "./skinRecipes";
-import { renderSkinRecipe } from "./skins";
+import { renderSkinRecipe, themeSkinRecipe } from "./skins";
 import rough from "roughjs";
 
 /* Rough.js draws the hand-drawn *line character* over the approved outline —
@@ -1362,9 +1362,16 @@ export function renderBevel(cfg: GenConfig, state: GenStateName): string {
   // band widens for longer labels.
   const rec = productionSkinRecipe(cfg.shape);
   if (rec) {
+    // Adopt the user's theme: rebuild the recipe palette from the color
+    // roles, then honor the recipe's own layout metadata for proportions.
+    const themed = themeSkinRecipe(rec, cfg.effects);
     const label = cfg.content.label || rec.label;
-    const w = Math.max(336, Math.min(640, 200 + label.length * 28));
-    return renderSkinRecipe(rec, state, w, 168, { label, font: cfg.type.font });
+    const h = 168;
+    const L = rec.layout ?? {};
+    const need = 200 + label.length * 28;
+    let w = Math.max(h * (L.idealAspect ?? 2), L.minHeroWidth ?? 336, Math.min(need, h * (L.maxAspect ?? 3.2)));
+    w = Math.min(Math.max(w, h * (L.minAspect ?? 2)), h * (L.maxAspect ?? 3.8));
+    return renderSkinRecipe(themed, state, w, h, { label, font: cfg.type.font });
   }
   return build(cfg, state, { x: 52, y: 36, h: 168, fs: 52, iconSize: 46 });
 }

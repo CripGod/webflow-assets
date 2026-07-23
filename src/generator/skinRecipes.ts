@@ -83,37 +83,38 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
   {
     id: "prizeBow",
     name: "Prize Bow Power Bar",
-    /* Smooth authored outline containing the ribbon asset and the wide
+    /* Smooth authored outline containing the bow asset and the wide
        plate. Clip + shadow + aura only — the asset's own footprint and the
        plate define every visible edge; nothing is painted behind them. */
     footprint:
-      "M 0 50 C 0 30 10 14 26 4 Q 34 0 44 4 L 58 22 L 142 22 L 156 4 Q 166 0 174 4 C 190 14 200 30 200 50 C 200 70 190 86 174 96 Q 166 100 156 96 L 142 78 L 58 78 L 44 96 Q 34 100 26 96 C 10 86 0 70 0 50 Z",
+      "M 0 50 C 0 24 6 6 22 1.5 Q 32 -1 42 3 L 58 22 L 142 22 L 158 3 Q 168 -1 178 1.5 C 194 6 200 24 200 50 C 200 76 194 94 178 98.5 Q 168 101 158 97 L 142 78 L 58 78 L 42 97 Q 32 101 22 98.5 C 6 94 0 76 0 50 Z",
     label: "CLAIM",
-    /* rear COMPOUND ribbon asset (baked loops/tail/folds/cavities/authored
-       highlights, live skin, per-layer depth) → wide gold frame → low
-       pillowed glass face → the asset's front wrap collar rides over the
-       frame edge at frontZIndex 4 */
+    /* V72 bow: rear COMPOUND ribbon asset (hollow loop, hanging fishtail,
+       hidden knot bridge — per-layer profiles and depth) → thin saturated
+       gold frame → low pillowed glass face → the asset's tall front
+       COLLAR rides over the frame edge at frontZIndex 4 */
     parts: [
       { id: "ribbon", material: "plastic", zIndex: 1, depth: 5, bevel: 2.6, mirrorX: true,
         asset: "prizeBowRibbon", frontZIndex: 4,
         assetSkin: { finish: "plastic", glossStrength: 1, contrast: 1 } },
-      { id: "frame", material: "metal", zIndex: 2, depth: 3.5, bevel: 2.6,
+      { id: "frame", material: "metal", zIndex: 2, depth: 3.2, bevel: 2.2,
         specularMode: "streak", highlightBias: [-0.3, -0.28],
         edgeDarkening: 0.5, bounce: 0.5, shadowDensity: 0.6, path:
-        "M 54 22 L 146 22 C 153 22 158 27 158 34 L 158 66 C 158 73 153 78 146 78 L 54 78 C 47 78 42 73 42 66 L 42 34 C 42 27 47 22 54 22 Z" },
+        "M 60 22 L 140 22 C 147.5 22 152 26.5 152 33 L 152 67 C 152 73.5 147.5 78 140 78 L 60 78 C 52.5 78 48 73.5 48 67 L 48 33 C 48 26.5 52.5 22 60 22 Z" },
       { id: "face", material: "face", zIndex: 3, depth: 0, bevel: 3,
         glossFrac: 0.5, glossDip: 0.18, specularMode: "dot", highlightBias: [-0.12, -0.08],
         edgeDarkening: 0.1, saturationBoost: 0.4, bounce: 0.6, path:
-        "M 64 30 C 88 28.8 112 28.8 136 30 C 143 30 147.5 33.5 148 39 C 149.2 43 149.2 57 148 61 C 147.5 66.5 143 70 136 70 C 112 71.2 88 71.2 64 70 C 57 70 52.5 66.5 52 61 C 50.8 57 50.8 43 52 39 C 52.5 33.5 57 30 64 30 Z" },
+        "M 68 29 C 90 27.9 110 27.9 132 29 C 139 29 143.5 32.5 144 37.5 C 145.1 41.5 145.1 58.5 144 62.5 C 143.5 67.5 139 71 132 71 C 110 72.1 90 72.1 68 71 C 61 71 56.5 67.5 56 62.5 C 54.9 58.5 54.9 41.5 56 37.5 C 56.5 32.5 61 29 68 29 Z" },
     ],
     materials: {
       face:    { light: "#FFA8DB", base: "#F45CAE", dark: "#B5206F", finish: "glass" },
       plastic: { light: "#FF8FCE", base: "#E13D97", dark: "#8C1157", finish: "plastic" },
-      metal:   { light: "#FFE58C", base: "#F0AC14", dark: "#8F4900", finish: "metal" },
+      metal:   { light: "#FFD84D", base: "#F29D0D", dark: "#9A4E00", finish: "metal" },
       frame:   { light: "#93265F", base: "#701048", dark: "#4A0630", finish: "matte" },
       accent:  { light: "#FFF0B8", base: "#FFCE45", dark: "#A66300", finish: "metal" },
     },
-    safeArea: { x: 58, y: 34, width: 84, height: 32 },
-    stretch: { leftCap: 70, rightCap: 70 },
+    safeArea: { x: 62, y: 33, width: 76, height: 34 },
+    stretch: { leftCap: 58, rightCap: 58 },
+    layout: { idealAspect: 2.6, minAspect: 2.4, maxAspect: 3.2, minHeroWidth: 420 },
   },
 ];

@@ -323,7 +323,45 @@ sizes intact, Twin Grip regression-clean under the new chassis model.
 Copy-SVG remains the exact rendered string. No new assets until this pass
 is approved.
 
-## Follow-up (same pass): mid-notch removed, complete bodies
+---
+
+# Addendum (v72): Bow geometry truth pass + theme adoption
+
+The v71 asset mathematically described a candy wrapper — three similar
+horizontal pillows per side gathered by a bead — and the renderer drew it
+faithfully. v72 re-authored the TOPOLOGY to the target's bow:
+
+- **Candy-wrapper middle lobe deleted.** Each side is now: one large
+  hollow upper loop (tilted curled tube; its cavity path deliberately
+  overlaps the loop's inner-lower boundary so the clip makes the dark
+  opening MEET the silhouette edge — you look into the tube), a rolled
+  inner lip, one distinct hanging tail (narrow at the collar, FLARING
+  down-outward to a fishtail cut), one tall blunt-ended gathering collar
+  (y 17–83, overlapping the frame edge by ~10u, casting onto it), and a
+  hidden `rearKnotBridge` that closes seams without reading as a lobe.
+- **Per-layer material overrides** (generic compound-layer data):
+  `profile` (`soft-pill` / `flat-satin` / `cylinder` — the collar runs a
+  horizontal rolled gradient), `bevelScale`, `depthScale`, `glossScale`.
+  Loop 1.2× bevel; tail flat-satin at 0.6× depth; collar cylinder.
+- **Recipe layout metadata** honored by `renderBevel()`:
+  `layout { idealAspect 2.6, minAspect 2.4, maxAspect 3.2,
+  minHeroWidth 420 }`; caps 70 → 58; frame x 48–152 (thinner, more
+  saturated gold), face x 56–144 (≈2.3:1).
+- **THEME ADOPTION**: `themeSkinRecipe()` rebuilds the recipe palette
+  from the app's color roles (Inner Fill → face/ribbon, Bevel → metals,
+  Shadow → frame role, Highlight → accents) — a promoted design now
+  restyles with the user's theme instead of shipping frozen colors.
+  Verified in-app: the default cyan theme renders a cyan bow.
+- **Flat-color acceptance test** (all surfaces flat pink, cavity flat
+  dark, frame flat gold, no gloss/extrusion/label) passes: the silhouette
+  reads as a bow, not a wrapper/capsules/wings/bone. Only then was the
+  picker entry renamed **Candy Wrapper → Prize Bow**.
+- Validator after re-authoring: escape 0.07u, excess 0.69u (footprint
+  reuses exact loop/tail sub-curves — de Casteljau splits at the collar
+  crossings). No target SVG survived upload (PNG only) — regions were
+  measured from the supplied spec sheet instead.
+
+## Follow-up (v70): mid-notch removed, complete bodies
 
 Per direction on the candy wrapper: the tail's fishtail V at mid-height
 is gone — the tail is a smooth complete lobe, and the outer silhouette

@@ -107,9 +107,9 @@ export const SILHOUETTES: SilhouetteMeta[] = [
      frame, glass face); kit pieces and previews use the recipe footprint
      through the standard engine. Twin Grip is NOT listed — it has not
      passed art direction and stays behind the lab page. */
-  { id: "skin:prizeBow", name: "Candy Wrapper", category: "Banners & Labels", source: "Vector Drawing Lab — Layered Skin proof", license: "original", renderer: "layered",
-    capScale: 0.35, content: { top: 0.32, right: 0.29, bottom: 0.32, left: 0.29 }, minWidth: 150, minHeight: 60,
-    supports: ["button"], character: "Wrapped bow assembly — compound ribbon loops behind a wide gold-framed plate, gathering collars in front." },
+  { id: "skin:prizeBow", name: "Prize Bow", category: "Banners & Labels", source: "Vector Drawing Lab — Layered Skin proof", license: "original", renderer: "layered",
+    capScale: 0.29, content: { top: 0.33, right: 0.31, bottom: 0.33, left: 0.31 }, minWidth: 150, minHeight: 60,
+    supports: ["button"], character: "Gift-bow assembly — hollow ribbon loops and hanging fishtails behind a wide framed plate, gathered by front collars. Adopts the theme's color roles." },
 ];
 
 export function silhouetteMeta(id: Shape): SilhouetteMeta | undefined {

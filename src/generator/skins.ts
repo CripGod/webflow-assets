@@ -108,6 +108,31 @@ export interface ButtonSkinRecipe {
   safeArea: { x: number; y: number; width: number; height: number };
   stretch: { leftCap: number; rightCap: number };
   label: string;
+  /** Recipe-specific hero sizing — some designs want wider, lower frames
+   *  than the universal 2:1 minimum. renderBevel() honors this. */
+  layout?: { idealAspect?: number; minAspect?: number; maxAspect?: number; minHeroWidth?: number };
+}
+
+/** Rebuild a recipe's material palette from the app's color roles, so a
+ *  promoted Layered Skin design adopts the user's theme instead of
+ *  shipping frozen recipe colors. Generic: role → material mapping only.
+ *    Inner Fill → face + ribbon plastics · Bevel → metals ·
+ *    Shadow → chassis/frame role · Highlight → accents.
+ *  Finishes, geometry and every authored mask stay untouched; compound
+ *  skins with no explicit primary follow their part's material, so the
+ *  whole assembly restyles live. */
+export function themeSkinRecipe(recipe: ButtonSkinRecipe, effects: Record<string, string | null | undefined>): ButtonSkinRecipe {
+  const inner = effects["Inner Fill"], bev = effects.Bevel;
+  if (!inner || !bev) return recipe;
+  const trio = (base: string, lAmt: number, dAmt: number, sat: number) =>
+    ({ light: lighten(saturate(base, sat * 0.5), lAmt), base, dark: darken(saturate(base, sat), dAmt) });
+  const mats: ButtonSkinRecipe["materials"] = { ...recipe.materials };
+  mats.face = { ...mats.face, ...trio(inner, 0.38, 0.32, 0.25) };
+  mats.plastic = { ...mats.plastic, ...trio(darken(saturate(inner, 0.18), 0.1), 0.36, 0.34, 0.3) };
+  mats.metal = { ...mats.metal, ...trio(bev, 0.4, 0.45, 0.2) };
+  if (effects.Shadow) mats.frame = { ...mats.frame, ...trio(lighten(effects.Shadow, 0.12), 0.3, 0.3, 0) };
+  if (effects.Highlight) mats.accent = { ...mats.accent, ...trio(effects.Highlight, 0.3, 0.4, 0.1) };
+  return { ...recipe, materials: mats };
 }
 
 /** House defaults per finish type — the baseline each part starts from
@@ -341,7 +366,7 @@ export function renderCompoundAsset(o: {
 
   const slotPaint: Record<string, { fill: string; opacity: number }> = {
     fold: { fill: P(pal.fold), opacity: Math.min(1, 0.6 * contrast) },
-    cavity: { fill: P(pal.cavity), opacity: Math.min(1, 0.58 * contrast) },
+    cavity: { fill: P(pal.cavity), opacity: Math.min(1, 0.72 * contrast) },
     highlight: { fill: "#FFFFFF", opacity: Math.min(1, 0.85 * gloss) },
     crease: { fill: P(lighten(pal.primaryLight, 0.35)), opacity: 0.8 },
     edge: { fill: P(pal.edge), opacity: 0.9 },
@@ -357,25 +382,44 @@ export function renderCompoundAsset(o: {
     body += `<path d="${fd}" transform="translate(0 ${N(o.dpx)})" fill="${P(pal.extrusionDark)}" stroke="${darken(pal.extrusionDark, 0.3)}" stroke-width="0.8" data-asset-depth="footprint"/>`;
   }
 
+  let li = 0;
   for (const l of asset.layers) {
     if (!inPass(l.zSlot)) continue;
     const d = o.mk(l.path);
+    li++;
     if (l.kind === "material") {
       lastMaterial = l.id;
+      /* per-layer material character — generic compound-layer data */
+      const prof = l.profile ?? "soft-pill";
+      const lb = bpx * (l.bevelScale ?? 1);
+      const dpxL = o.dpx * (l.depthScale ?? 1);
+      const gs = l.glossScale ?? 1;
       if (l.castShadow && l.castShadow > 0.01)
         body += `<path d="${d}" transform="translate(0 ${N(2.6 * o.sy)})" fill="${o.shadeTint}" opacity="${N(l.castShadow)}" filter="url(#${o.shadowFilterId})" data-asset-shadow="${l.id}"/>`;
-      if (asset.depthMode === "per-material-layer" && o.dpx > 0) {
-        body += `<path d="${d}" transform="translate(0 ${N(o.dpx)})" fill="${P(pal.extrusionDark)}" stroke="${darken(pal.extrusionDark, 0.3)}" stroke-width="0.8" data-asset-depth="${l.id}"/>`;
-        if (o.dpx > 5 * o.sy * 0.8)
-          body += `<path d="${d}" transform="translate(0 ${N(o.dpx * 0.55)})" fill="${P(pal.extrusionLight)}" data-asset-depth="${l.id}"/>`;
+      if (asset.depthMode === "per-material-layer" && dpxL > 0) {
+        body += `<path d="${d}" transform="translate(0 ${N(dpxL)})" fill="${P(pal.extrusionDark)}" stroke="${darken(pal.extrusionDark, 0.3)}" stroke-width="0.8" data-asset-depth="${l.id}"/>`;
+        if (dpxL > 5 * o.sy * 0.8)
+          body += `<path d="${d}" transform="translate(0 ${N(dpxL * 0.55)})" fill="${P(pal.extrusionLight)}" data-asset-depth="${l.id}"/>`;
       }
+      let fillRef = `${gradRef}g`;
+      if (prof === "cylinder") {
+        fillRef = `${id}gc${li}`;
+        defs += `<linearGradient id="${fillRef}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${P(darken(pal.primaryBase, 0.3))}"/><stop offset="0.18" stop-color="${P(pal.primaryBase)}"/><stop offset="0.42" stop-color="${P(lighten(pal.primaryLight, 0.35))}"/><stop offset="0.55" stop-color="${P(pal.primaryLight)}"/><stop offset="0.8" stop-color="${P(pal.primaryBase)}"/><stop offset="1" stop-color="${P(darken(pal.primaryDark, 0.25))}"/></linearGradient>`;
+      }
+      const bevels = prof === "flat-satin"
+        ? `<path d="${d}" fill="none" stroke="${hexRgba(P(lighten(pal.primaryLight, 0.3)), 0.35 * gs)}" stroke-width="${N(lb * 1.2)}" transform="translate(0 ${N(lb * 0.8)})"/>
+        <path d="${d}" fill="none" stroke="${hexRgba(P(darken(pal.primaryDark, 0.3)), 0.3)}" stroke-width="${N(lb * 1.1)}" transform="translate(0 ${N(-lb * 0.7)})"/>`
+        : prof === "cylinder"
+          ? `<path d="${d}" fill="none" stroke="${hexRgba(P(lighten(pal.primaryLight, 0.35)), 0.4 * gs)}" stroke-width="${N(lb * 1.4)}" transform="translate(0 ${N(lb * 0.8)})"/>
+        <path d="${d}" fill="none" stroke="${hexRgba(P(darken(pal.primaryDark, 0.32)), 0.35)}" stroke-width="${N(lb * 1.4)}" transform="translate(0 ${N(-lb * 0.8)})"/>`
+          : `<path d="${d}" fill="none" stroke="${hexRgba(P(lighten(pal.primaryLight, 0.32)), 0.6 * gs)}" stroke-width="${N(lb * 2.2)}" transform="translate(0 ${N(lb)})"/>
+        <path d="${d}" fill="none" stroke="${hexRgba(P(darken(pal.primaryDark, 0.35)), 0.45)}" stroke-width="${N(lb * 2)}" transform="translate(0 ${N(-lb * 0.9)})"/>`;
       const cid = clipFor(l.id);
-      body += `<g clip-path="url(#${cid})" data-asset-layer="${l.id}" data-slot="${l.slot}">
-        <path d="${d}" fill="url(#${gradRef}g)"/>
+      body += `<g clip-path="url(#${cid})" data-asset-layer="${l.id}" data-slot="${l.slot}" data-profile="${prof}">
+        <path d="${d}" fill="url(#${fillRef})"/>
         ${l.patternSurface && pat && pat.type !== "none" ? `<path d="${d}" fill="url(#${gradRef}pat)" opacity="${N(Math.min(1, pat.opacity))}"/>` : ""}
-        <path d="${d}" fill="url(#${gradRef}v)"/>
-        <path d="${d}" fill="none" stroke="${hexRgba(P(lighten(pal.primaryLight, 0.32)), 0.6)}" stroke-width="${N(bpx * 2.2)}" transform="translate(0 ${N(bpx)})"/>
-        <path d="${d}" fill="none" stroke="${hexRgba(P(darken(pal.primaryDark, 0.35)), 0.45)}" stroke-width="${N(bpx * 2)}" transform="translate(0 ${N(-bpx * 0.9)})"/>
+        <path d="${d}" fill="url(#${gradRef}v)" opacity="${N(Math.min(1, gs * (prof === "flat-satin" ? 0.55 : 1)))}"/>
+        ${bevels}
       </g>
       <path d="${d}" fill="none" stroke="${P(pal.edge)}" stroke-width="1.4" opacity="0.9"/>`;
     } else {
