@@ -4,27 +4,29 @@
    the reference art, which is an ASSEMBLY of separate pieces. This module
    renders a data-driven recipe instead:
 
-     1  shadow from the hull          5  independent central face
-     2  extrusion from the hull       6  foreground clamps / accents
-     3  rear decorative parts         7  per-part finish, gloss, specular
-     4  chassis / frame               8  label
+     1  cast shadow from the footprint   5  independent central face
+     2  optional chassis + extrusion     6  foreground clamps / accents
+     3  rear decorative parts            7  per-part finish, gloss, specular
+     4  frames / sockets                 8  front compound layers, label
 
    Everything is generic: a recipe is pure data (paths + material roles +
    z-order + mirroring + finish controls) authored in the same 0 0 200 100
    system as the imported hulls. No shape-specific components exist anywhere
    — a new design is a new recipe file entry, nothing else.
 
-   REFINEMENT PASS (post-first-proof feedback): the first proof layered
-   correctly but every part shared one gloss/specular response, so the
-   assembly collapsed back into a single planar object. Parts now resolve an
-   independent finish — finish type, bevel profile, gloss strength, specular
-   mode, highlight bias, edge darkening, bounce light, lower-body saturation
-   — plus a local contact shadow so front parts visibly sit ON the parts
-   behind them. Mirrored copies re-map the authored LEFT geometry through
-   the mirror, so highlights mirror with the part exactly like toy art.
+   v69 GEOMETRY CONTRACT — footprint vs chassis:
+   The old `hull` did five jobs at once (hit area, max clip, shadow, painted
+   fill, full-object extrusion), which left a dark ghost slab behind
+   assemblies whose parts carry their own depth. Now:
+     · `footprint` — hit area, overall bounds, MAXIMUM CLIP, hover aura,
+       cast shadow. Never painted, never extruded.
+     · `chassis?` — an explicitly declared painted+extruded body for
+       recipes that genuinely have one (Twin Grip). Recipes whose parts
+       provide all visible depth (Prize Bow) simply omit it.
+   Compound-asset parts extrude per physical material layer (each dark
+   lower edge follows its own ribbon contour), colored by the LIVE resolved
+   compound palette — never by the recipe material after a reskin.
 
-   The hull keeps the strict one-path importer contract and acts as the
-   footprint, shadow mask, extrusion body and maximum clipping boundary.
    Cap-preserving stretch runs EVERY part through the same piecewise x-map,
    so mirrored end-caps stay rigid while only the center band stretches. */
 
@@ -32,8 +34,10 @@ import { transformPath, transformPathCapAware } from "./bevel";
 import { flattenPath, bounds } from "./importedShapes";
 import { lighten, darken, desaturate, saturate, hexMix, hexRgba, fontByName } from "./model";
 import type { GenStateName } from "./model";
-import { COMPOUND_ASSETS, patternDef } from "./compound";
+import { COMPOUND_ASSETS, patternDef, mirrorPathX, resolveCompoundSkin, materialLayers } from "./compound";
 import type { CompoundVectorAsset, CompoundSkin } from "./compound";
+
+export { mirrorPathX };
 
 export type MaterialRole = "face" | "frame" | "metal" | "plastic" | "accent";
 export type FinishType = "plastic" | "metal" | "glass" | "matte";
@@ -51,31 +55,16 @@ export interface MaterialSpec {
  *  to the resolved finish type's house defaults, so simple parts stay
  *  simple while hero parts can be fully art-directed. */
 export interface PartFinish {
-  /** Overrides the material's finish for this part only. */
   finish?: FinishType;
-  /** Bevel CHARACTER, not just amount: soft-pill rolls, hard-frame insets,
-   *  metal-ridge returns a bright machined edge. */
   bevelProfile?: BevelProfile;
-  /** 0..1 multiplier on the gloss band. */
   glossStrength?: number;
-  /** Gloss band depth as a fraction of the part's height. */
   glossFrac?: number;
-  /** Extra downward belly of the gloss band's bottom edge, as a fraction of
-   *  part height (0 = straight waterline). Staggering this across parts
-   *  kills the shared-waterline read. */
   glossDip?: number;
-  /** Highlight event shape: lens dot, diagonal streak, contour arc, none. */
   specularMode?: PartSpecular;
-  /** Shifts gloss + specular placement, in part-bbox fractions (-1..1). */
   highlightBias?: [number, number];
-  /** 0..1 ambient-occlusion rim inside the part's own edge. */
   edgeDarkening?: number;
-  /** 0..1 saturation push on the part's lower body (candy depth). */
   saturationBoost?: number;
-  /** 0..1 bottom bounce-light strength (the lit floor reflecting back). */
   bounce?: number;
-  /** 0..1 local contact shadow this part casts on whatever is behind it —
-   *  the strongest single lever for front/back hierarchy. */
   shadowDensity?: number;
 }
 
@@ -91,6 +80,10 @@ export interface SkinPart extends PartFinish {
   /** Live skin for the compound asset. Colors default to this part's
    *  material role, so recipes stay palette-driven. */
   assetSkin?: CompoundSkin;
+  /** Stack position for the asset's `front` zSlot layers (the gathering
+   *  wrap) — lets one asset put loops behind the frame and its collar in
+   *  front, all through data. */
+  frontZIndex?: number;
   /** Any key of the recipe's materials map (the five house roles + extras). */
   material: string;
   zIndex: number;
@@ -103,15 +96,18 @@ export interface SkinPart extends PartFinish {
 export interface ButtonSkinRecipe {
   id: string;
   name: string;
-  /** One-path importer silhouette — footprint, shadow, extrusion, max clip. */
-  hull: string;
+  /** Hit area, overall bounds, maximum clip, hover aura, cast shadow.
+   *  NOT painted, NOT extruded. */
+  footprint: string;
+  /** Explicit visible body for recipes that genuinely have one — painted
+   *  with the material's gradient and extruded by `depth`. Omit when the
+   *  parts provide all visible depth themselves. */
+  chassis?: { path: string; material: string; depth: number };
   parts: SkinPart[];
   materials: Record<MaterialRole, MaterialSpec> & Record<string, MaterialSpec>;
   safeArea: { x: number; y: number; width: number; height: number };
   stretch: { leftCap: number; rightCap: number };
   label: string;
-  /** Hull extrusion depth in recipe units (default 8). */
-  extrusion?: number;
 }
 
 /** House defaults per finish type — the baseline each part starts from
@@ -161,23 +157,6 @@ const VB: [number, number, number, number] = [0, 0, 200, 100];
 let SUID = 0;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const N = (v: number) => v.toFixed(1);
-
-/** Mirror an absolute-coordinate recipe path across the vertical center of
- *  the 200-unit space. Recipes author LEFT pieces; mirrorX makes the right. */
-export function mirrorPathX(d: string): string {
-  const toks = d.match(/[MLCQZmlcqz]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) ?? [];
-  const out: string[] = [];
-  let i = 0, cmd = "";
-  while (i < toks.length) {
-    if (/^[a-z]$/i.test(toks[i])) { cmd = toks[i++].toUpperCase(); out.push(cmd); if (cmd === "Z") continue; }
-    const pairs = cmd === "C" ? 3 : cmd === "Q" ? 2 : 1;
-    for (let p = 0; p < pairs; p++) {
-      const X = parseFloat(toks[i++]), Y = parseFloat(toks[i++]);
-      out.push((200 - X).toFixed(2), Y.toFixed(2));
-    }
-  }
-  return out.join(" ");
-}
 
 /** Ellipse as two cubics — M/L/C/Q/Z only, so it survives mirrorPathX. */
 const blob = (cx: number, cy: number, rx: number, ry: number) =>
@@ -300,12 +279,13 @@ export function renderMaterialPath(o: {
   return { defs, body };
 }
 
-/** Render a compound vector asset — baked construction, live skin. The
- *  asset supplies geometry and semantic slots; the skin supplies colors,
- *  pattern, finish, gloss, contrast. Painted per SURFACE GROUP (each
- *  material layer followed by its clipped overlays), so folds, cavities
- *  and authored highlights always shade the pattern, and later surfaces
- *  correctly occlude earlier ones. */
+/** Render one zSlot pass of a compound vector asset — baked construction,
+ *  live skin. Painted per SURFACE GROUP (each material layer's own
+ *  extrusion slab, then its surface, then its clipped overlays), so folds,
+ *  cavities and authored highlights always shade the pattern, later
+ *  surfaces occlude earlier ones, and every dark lower edge follows its
+ *  own contour. All colors come from resolveCompoundSkin — a reskinned
+ *  ribbon reskins its depth with it. */
 export function renderCompoundAsset(o: {
   id: string;
   asset: CompoundVectorAsset;
@@ -319,24 +299,32 @@ export function renderCompoundAsset(o: {
   /** Button's vertical axis in target px — mirrored pattern placement
    *  reflects the motif about this line. */
   axisX: number;
+  /** Which layers to paint: rear+body at the part's zIndex, front at
+   *  frontZIndex. */
+  zPass: "body" | "front";
+  /** Part extrusion in target px, applied per material layer. */
+  dpx: number;
+  shadowFilterId: string;
+  shadeTint: string;
 }): { defs: string; body: string } {
   const { id, asset, skin, P } = o;
-  const primary = skin.primary ?? { light: o.mat.light, base: o.mat.base, dark: o.mat.dark };
+  const pal = resolveCompoundSkin(skin, { light: o.mat.light, base: o.mat.base, dark: o.mat.dark });
+  const primary = { light: pal.primaryLight, base: pal.primaryBase, dark: pal.primaryDark };
   const finish = skin.finish ?? "plastic";
   const gloss = skin.glossStrength ?? 1;
   const contrast = skin.contrast ?? 1;
-  const secondary = skin.secondary ?? darken(primary.dark, 0.18);
-  const edgeC = skin.edge ?? darken(primary.dark, 0.32);
   const pat = skin.pattern;
   const bpx = o.bevel * o.sy;
 
+  /* each pass carries its own defs — pass ids are unique per call */
   let defs = `<linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1">${finishStopsV(primary, finish, P, 0.3)}</linearGradient>
-  <linearGradient id="${id}v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.24"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="${darken(primary.dark, 0.3)}" stop-opacity="0.3"/></linearGradient>`;
+  <linearGradient id="${id}v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.24"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="${darken(pal.primaryDark, 0.3)}" stop-opacity="0.3"/></linearGradient>`;
   if (pat && pat.type !== "none") {
     const reflect = o.mirror && pat.placement === "mirrored";
     const transform = `${reflect ? `translate(${N(o.axisX * 2)} 0) scale(-1 1) ` : ""}rotate(${pat.angle})`;
     defs += patternDef(`${id}pat`, pat, P(pat.color), transform);
   }
+  const gradRef = id;
 
   /* per-layer clip defs, created lazily for clip targets */
   const clipIds = new Map<string, string>();
@@ -345,37 +333,53 @@ export function renderCompoundAsset(o: {
     if (!cid) {
       cid = `${id}c${clipIds.size}`;
       const l = asset.layers.find((x) => x.id === layerId);
-      defs += `<clipPath id="${cid}"><path d="${o.mk(l?.path ?? asset.silhouette)}"/></clipPath>`;
+      defs += `<clipPath id="${cid}"><path d="${o.mk(l?.path ?? asset.footprint)}"/></clipPath>`;
       clipIds.set(layerId, cid);
     }
     return cid;
   };
 
   const slotPaint: Record<string, { fill: string; opacity: number }> = {
-    fold: { fill: P(secondary), opacity: Math.min(1, 0.6 * contrast) },
-    cavity: { fill: P(darken(primary.dark, 0.45)), opacity: Math.min(1, 0.58 * contrast) },
+    fold: { fill: P(pal.fold), opacity: Math.min(1, 0.6 * contrast) },
+    cavity: { fill: P(pal.cavity), opacity: Math.min(1, 0.58 * contrast) },
     highlight: { fill: "#FFFFFF", opacity: Math.min(1, 0.85 * gloss) },
-    crease: { fill: P(lighten(primary.light, 0.35)), opacity: 0.8 },
-    edge: { fill: P(edgeC), opacity: 0.9 },
+    crease: { fill: P(lighten(pal.primaryLight, 0.35)), opacity: 0.8 },
+    edge: { fill: P(pal.edge), opacity: 0.9 },
   };
 
+  const inPass = (zSlot?: string) => (zSlot === "front") === (o.zPass === "front");
   let body = "";
   let lastMaterial = "";
+
+  /* legacy whole-footprint depth mode, for assets that want one slab */
+  if (o.zPass === "body" && asset.depthMode === "footprint" && o.dpx > 0) {
+    const fd = o.mk(asset.footprint);
+    body += `<path d="${fd}" transform="translate(0 ${N(o.dpx)})" fill="${P(pal.extrusionDark)}" stroke="${darken(pal.extrusionDark, 0.3)}" stroke-width="0.8" data-asset-depth="footprint"/>`;
+  }
+
   for (const l of asset.layers) {
+    if (!inPass(l.zSlot)) continue;
     const d = o.mk(l.path);
     if (l.kind === "material") {
       lastMaterial = l.id;
+      if (l.castShadow && l.castShadow > 0.01)
+        body += `<path d="${d}" transform="translate(0 ${N(2.6 * o.sy)})" fill="${o.shadeTint}" opacity="${N(l.castShadow)}" filter="url(#${o.shadowFilterId})" data-asset-shadow="${l.id}"/>`;
+      if (asset.depthMode === "per-material-layer" && o.dpx > 0) {
+        body += `<path d="${d}" transform="translate(0 ${N(o.dpx)})" fill="${P(pal.extrusionDark)}" stroke="${darken(pal.extrusionDark, 0.3)}" stroke-width="0.8" data-asset-depth="${l.id}"/>`;
+        if (o.dpx > 5 * o.sy * 0.8)
+          body += `<path d="${d}" transform="translate(0 ${N(o.dpx * 0.55)})" fill="${P(pal.extrusionLight)}" data-asset-depth="${l.id}"/>`;
+      }
       const cid = clipFor(l.id);
       body += `<g clip-path="url(#${cid})" data-asset-layer="${l.id}" data-slot="${l.slot}">
-        <path d="${d}" fill="url(#${id}g)"/>
-        ${l.patternSurface && pat && pat.type !== "none" ? `<path d="${d}" fill="url(#${id}pat)" opacity="${N(Math.min(1, pat.opacity))}"/>` : ""}
-        <path d="${d}" fill="url(#${id}v)"/>
-        <path d="${d}" fill="none" stroke="${hexRgba(P(lighten(primary.light, 0.32)), 0.6)}" stroke-width="${N(bpx * 2.2)}" transform="translate(0 ${N(bpx)})"/>
-        <path d="${d}" fill="none" stroke="${hexRgba(P(darken(primary.dark, 0.35)), 0.45)}" stroke-width="${N(bpx * 2)}" transform="translate(0 ${N(-bpx * 0.9)})"/>
+        <path d="${d}" fill="url(#${gradRef}g)"/>
+        ${l.patternSurface && pat && pat.type !== "none" ? `<path d="${d}" fill="url(#${gradRef}pat)" opacity="${N(Math.min(1, pat.opacity))}"/>` : ""}
+        <path d="${d}" fill="url(#${gradRef}v)"/>
+        <path d="${d}" fill="none" stroke="${hexRgba(P(lighten(pal.primaryLight, 0.32)), 0.6)}" stroke-width="${N(bpx * 2.2)}" transform="translate(0 ${N(bpx)})"/>
+        <path d="${d}" fill="none" stroke="${hexRgba(P(darken(pal.primaryDark, 0.35)), 0.45)}" stroke-width="${N(bpx * 2)}" transform="translate(0 ${N(-bpx * 0.9)})"/>
       </g>
-      <path d="${d}" fill="none" stroke="${P(edgeC)}" stroke-width="1.4" opacity="0.9"/>`;
+      <path d="${d}" fill="none" stroke="${P(pal.edge)}" stroke-width="1.4" opacity="0.9"/>`;
     } else {
-      const paint = slotPaint[l.slot] ?? { fill: P(primary.base), opacity: 1 };
+      const paint = slotPaint[l.slot] ?? { fill: P(pal.primaryBase), opacity: 1 };
       const cid = clipFor(l.clipTo ?? lastMaterial);
       body += `<g clip-path="url(#${cid})"><path d="${d}" fill="${paint.fill}" opacity="${N(Math.min(1, paint.opacity * (l.opacity ?? 1)))}" data-asset-layer="${l.id}" data-slot="${l.slot}"/></g>`;
     }
@@ -390,10 +394,18 @@ const STATE_ADJ: Record<GenStateName, { tone: number; lift: number; glow: number
   disabled: { tone: 0, lift: 0, glow: 0, opacity: 0.62 },
 };
 
+interface RenderEntry {
+  p: SkinPart;
+  mirror: boolean;
+  key: string;
+  z: number;
+  pass: "body" | "front";
+}
+
 /** Render a full layered-skin assembly at an exact frame. Pure
  *  (recipe, state, size) → SVG string, like every engine entry point. */
 export function renderSkinRecipe(recipe: ButtonSkinRecipe, state: GenStateName, w: number, h: number, opts: {
-  label?: string; font?: string; caps?: boolean; wireframe?: boolean;
+  label?: string; font?: string; caps?: boolean; wireframe?: boolean; diagnostic?: boolean;
 } = {}): string {
   const id = "sk" + SUID++;
   const adj = STATE_ADJ[state];
@@ -409,54 +421,81 @@ export function renderSkinRecipe(recipe: ButtonSkinRecipe, state: GenStateName, 
     ? transformPathCapAware(d, VB, x, y, w, h, capSrc)
     : transformPath(d, VB, x, y, w, h);
 
-  const depth = (recipe.extrusion ?? 8) * sy;
+  const chassis = recipe.chassis;
+  const chassisMat = chassis ? recipe.materials[chassis.material] : undefined;
+  const shadeCore = recipe.materials.frame;
+  const maxPartDepth = recipe.parts.reduce((m, p) => Math.max(m, p.depth), 0);
+  const depth = (chassis ? chassis.depth : maxPartDepth) * sy;
   const pad = 60; // glow / shadow air
   const W = x * 2 + w, H = y * 2 + h + depth + 14;
-  const hullD = mk(recipe.hull);
-  const chassis = recipe.materials.frame;
+  const footD = mk(recipe.footprint);
 
-  /* 1 · cast shadow + 2 · hull extrusion (the proven translated-path hull) */
-  const shadow = `<path d="${hullD}" transform="translate(0 ${N(depth + 5 + Math.max(0, adj.lift))})" fill="#04060C" opacity="${disabled ? 0.2 : 0.46}" filter="url(#${id}sb)"/>`;
-  const nSl = Math.max(2, Math.ceil(depth / 2.5));
-  const slabs = Array.from({ length: nSl }, (_, i) =>
-    `<path d="${hullD}" transform="translate(0 ${N((depth * (i + 1)) / nSl)})" fill="${P(darken(chassis.dark, 0.12))}"${i === nSl - 1 ? ` stroke="${darken(chassis.dark, 0.4)}" stroke-width="1"` : ""}/>`).join("");
+  /* 1 · cast shadow from the FOOTPRINT (hit area, bounds, clip, shadow —
+     never painted, never extruded) */
+  const shadow = `<path d="${footD}" transform="translate(0 ${N(depth + 5 + Math.max(0, adj.lift))})" fill="#04060C" opacity="${disabled ? 0.2 : 0.46}" filter="url(#${id}sb)"/>`;
 
-  /* 3–6 · parts by z-order; mirrored copies re-map the authored LEFT
-     geometry through the mirror so lighting events mirror with the part */
-  const expanded = recipe.parts.flatMap((p) => {
-    const list = [{ p, mirror: false, key: p.id }];
-    if (p.mirrorX) list.push({ p, mirror: true, key: p.id + "-r" });
-    return list;
-  }).sort((a, b) => a.p.zIndex - b.p.zIndex);
+  /* 2 · optional chassis — the only whole-body paint + extrusion left */
+  let chassisArt = "", chassisSlabs = "";
+  if (chassis && chassisMat) {
+    const chD = mk(chassis.path);
+    const nSl = Math.max(2, Math.ceil((chassis.depth * sy) / 2.5));
+    chassisSlabs = Array.from({ length: nSl }, (_, i) =>
+      `<path d="${chD}" transform="translate(0 ${N((chassis.depth * sy * (i + 1)) / nSl)})" fill="${P(darken(chassisMat.dark, 0.12))}"${i === nSl - 1 ? ` stroke="${darken(chassisMat.dark, 0.4)}" stroke-width="1"` : ""}/>`).join("");
+    chassisArt = `<path d="${chD}" fill="url(#${id}hg)"/>`;
+  }
 
-  let defs = "", stack = "", usedPartShadow = false;
-  expanded.forEach((e, i) => {
+  /* 3–8 · parts by z-order; compound assets contribute a body pass at
+     their zIndex and (optionally) a front pass at frontZIndex */
+  const entries: RenderEntry[] = recipe.parts.flatMap((p) => {
+    const copies = p.mirrorX ? [false, true] : [false];
+    return copies.flatMap((mirror): RenderEntry[] => {
+      const key = p.id + (mirror ? "-r" : "");
+      const list: RenderEntry[] = [{ p, mirror, key, z: p.zIndex, pass: "body" }];
+      const asset = p.asset ? COMPOUND_ASSETS[p.asset] : undefined;
+      if (asset && p.frontZIndex !== undefined && asset.layers.some((l) => l.zSlot === "front"))
+        list.push({ p, mirror, key: key + "-front", z: p.frontZIndex, pass: "front" });
+      return list;
+    });
+  }).sort((a, b) => a.z - b.z);
+
+  let defs = "", stack = "";
+  entries.forEach((e, i) => {
     const p = e.p;
     const mat = recipe.materials[p.material];
     const fin = resolveFinish(p, mat);
     const mkP = e.mirror ? (d: string) => mk(mirrorPathX(d)) : mk;
     const asset = p.asset ? COMPOUND_ASSETS[p.asset] : undefined;
-    const dP = mkP(asset ? asset.silhouette : p.path ?? "");
-    if (fin.shadowDensity > 0.01) {
-      usedPartShadow = true;
-      stack += `<path d="${dP}" transform="translate(0 ${N(2.8 * sy)})" fill="${darken(chassis.dark, 0.4)}" opacity="${N(fin.shadowDensity * (disabled ? 0.5 : 1))}" filter="url(#${id}pb)" data-part-shadow="${e.key}"/>`;
+    const pal = asset ? resolveCompoundSkin(p.assetSkin ?? {}, mat) : undefined;
+    const shadeTint = pal ? darken(pal.extrusionDark, 0.25) : darken(shadeCore.dark, 0.4);
+    if (e.pass === "body" && fin.shadowDensity > 0.01) {
+      const dP = mkP(asset ? asset.footprint : p.path ?? "");
+      stack += `<path d="${dP}" transform="translate(0 ${N(2.8 * sy)})" fill="${shadeTint}" opacity="${N(fin.shadowDensity * (disabled ? 0.5 : 1))}" filter="url(#${id}pb)" data-part-shadow="${e.key}"/>`;
     }
-    if (p.depth > 0) {
-      const dpx = p.depth * sy;
-      const nS = dpx > 5 ? 2 : 1;
-      for (let s = nS; s >= 1; s--)
-        stack += `<path d="${dP}" transform="translate(0 ${N((dpx * s) / nS)})" fill="${P(darken(mat.dark, s === nS ? 0.34 : 0.24))}"${s === nS ? ` stroke="${darken(mat.dark, 0.5)}" stroke-width="0.8"` : ""} data-part-depth="${e.key}"/>`;
+    if (asset) {
+      const m = renderCompoundAsset({
+        id: `${id}p${i}${e.pass === "front" ? "f" : ""}`, asset, skin: p.assetSkin ?? {}, mat,
+        mk: mkP, P, sy, bevel: p.bevel, mirror: e.mirror, axisX: x + w / 2,
+        zPass: e.pass, dpx: p.depth * sy, shadowFilterId: `${id}pb`, shadeTint,
+      });
+      defs += m.defs;
+      stack += `<g data-part="${e.key}" data-material="${p.material}" data-asset="${asset.id}">${m.body}</g>`;
+    } else {
+      if (p.depth > 0) {
+        const dP = mkP(p.path ?? "");
+        const dpx = p.depth * sy;
+        const nS = dpx > 5 ? 2 : 1;
+        for (let s = nS; s >= 1; s--)
+          stack += `<path d="${dP}" transform="translate(0 ${N((dpx * s) / nS)})" fill="${P(darken(mat.dark, s === nS ? 0.34 : 0.24))}"${s === nS ? ` stroke="${darken(mat.dark, 0.5)}" stroke-width="0.8"` : ""} data-part-depth="${e.key}"/>`;
+      }
+      const m = renderMaterialPath({ id: `${id}p${i}`, path: p.path ?? "", mk: mkP, mat, fin, bevel: p.bevel, P, sy });
+      defs += m.defs;
+      stack += `<g data-part="${e.key}" data-material="${p.material}" data-finish="${fin.finish}">${m.body}</g>`;
     }
-    const m = asset
-      ? renderCompoundAsset({ id: `${id}p${i}`, asset, skin: p.assetSkin ?? {}, mat, mk: mkP, P, sy, bevel: p.bevel, mirror: e.mirror, axisX: x + w / 2 })
-      : renderMaterialPath({ id: `${id}p${i}`, path: p.path ?? "", mk: mkP, mat, fin, bevel: p.bevel, P, sy });
-    defs += m.defs;
-    stack += `<g data-part="${e.key}" data-material="${p.material}"${asset ? ` data-asset="${asset.id}"` : ` data-finish="${fin.finish}"`}>${m.body}</g>`;
   });
 
-  /* 8 · label — sized to the recipe's safe area, mapped through the SAME
-     piecewise x-map as the geometry, so the label respects the compressed
-     center band under cap-preserving stretch instead of scaling linearly */
+  /* label — sized to the recipe's safe area, mapped through the SAME
+     piecewise x-map as the geometry, so type respects the compressed
+     center band under cap-preserving stretch */
   const capW = capSrc * sy;
   const midSrc = 200 - capSrc * 2;
   const midW = w - capW * 2;
@@ -479,15 +518,15 @@ export function renderSkinRecipe(recipe: ButtonSkinRecipe, state: GenStateName, 
     <text x="${N(cxT)}" y="${N(cyT)}" font-family="'${font}', Inter, sans-serif" font-size="${N(fs)}" font-weight="700" font-style="italic" text-anchor="middle" dominant-baseline="central" fill="url(#${id}tg)">${label}</text>
   </g>`;
 
-  /* hover aura from the hull */
+  /* hover aura from the footprint */
   const aura = adj.glow > 0.01 && !disabled
-    ? `<path d="${hullD}" fill="${P(recipe.materials.metal.light)}" opacity="${(adj.glow * 0.55).toFixed(2)}" filter="url(#${id}gb)"/>`
+    ? `<path d="${footD}" fill="${P(recipe.materials.metal.light)}" opacity="${(adj.glow * 0.55).toFixed(2)}" filter="url(#${id}gb)"/>`
     : "";
 
   const wire = opts.wireframe
     ? `<g data-skin-wire="1" fill="none" stroke-width="1.3">
-        <path d="${hullD}" stroke="#FF3B30"/>
-        ${expanded.map((e, i) => {
+        <path d="${footD}" stroke="#FF3B30"/>
+        ${entries.filter((e) => e.pass === "body").map((e, i) => {
       const mkW = e.mirror ? (d: string) => mk(mirrorPathX(d)) : mk;
       const col = ["#32E6FF", "#FFCC00", "#5BE49B", "#EC68FF", "#FF9A3D", "#EAF5FF"][i % 6];
       const a = e.p.asset ? COMPOUND_ASSETS[e.p.asset] : undefined;
@@ -498,28 +537,61 @@ export function renderSkinRecipe(recipe: ButtonSkinRecipe, state: GenStateName, 
       </g>`
     : "";
 
+  /* alignment diagnostic — the SAME transforms, cap mapping and mirroring
+     as the finished render (mk / mkP), never a separate approximation.
+     red: recipe footprint · yellow: compound footprints · cyan: material
+     layers · white: single-path parts · purple: actual depth contours ·
+     orange fill: compound footprint minus its material surfaces. */
+  let diag = "";
+  if (opts.diagnostic) {
+    let g = `<path d="${footD}" stroke="#FF3B30" stroke-width="1.6" fill="none"/>`;
+    let dDefs = "";
+    entries.forEach((e, i) => {
+      const mkP = e.mirror ? (d: string) => mk(mirrorPathX(d)) : mk;
+      const a = e.p.asset ? COMPOUND_ASSETS[e.p.asset] : undefined;
+      if (a && e.pass === "body") {
+        const mats = materialLayers(a);
+        dDefs += `<mask id="${id}dm${i}"><path d="${mkP(a.footprint)}" fill="#FFFFFF"/>${mats.map((l) => `<path d="${mkP(l.path)}" fill="#000000"/>`).join("")}</mask>`;
+        g += `<g mask="url(#${id}dm${i})"><path d="${mkP(a.footprint)}" fill="#FF9A3D" opacity="0.55"/></g>`;
+        g += `<path d="${mkP(a.footprint)}" stroke="#FFCC00" stroke-width="1.4" fill="none"/>`;
+        g += mats.map((l) => `<path d="${mkP(l.path)}" stroke="#32E6FF" stroke-width="1" fill="none"/>`).join("");
+        if (e.p.depth > 0) {
+          const dpx = e.p.depth * sy;
+          const src = a.depthMode === "per-material-layer" ? mats.map((l) => l.path) : [a.footprint];
+          g += src.map((pth) => `<path d="${mkP(pth)}" transform="translate(0 ${N(dpx)})" stroke="#EC68FF" stroke-width="1" fill="none" stroke-dasharray="3 2"/>`).join("");
+        }
+      } else if (!a && e.pass === "body" && e.p.path) {
+        g += `<path d="${mkP(e.p.path)}" stroke="#FFFFFF" stroke-width="0.9" fill="none" stroke-dasharray="5 3"/>`;
+        if (e.p.depth > 0) g += `<path d="${mkP(e.p.path)}" transform="translate(0 ${N(e.p.depth * sy)})" stroke="#EC68FF" stroke-width="1" fill="none" stroke-dasharray="3 2"/>`;
+      }
+    });
+    if (chassis) g += `<path d="${mk(chassis.path)}" transform="translate(0 ${N(chassis.depth * sy)})" stroke="#EC68FF" stroke-width="1.2" fill="none" stroke-dasharray="6 3"/>`;
+    diag = `<defs>${dDefs}</defs><g data-skin-diag="1">${g}</g>`;
+  }
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W + pad * 2}" height="${H + pad * 2}" viewBox="${-pad} ${-pad} ${W + pad * 2} ${H + pad * 2}" data-skin="${recipe.id}" data-shell="${x} ${y + adj.lift} ${w} ${h}" role="img" aria-label="${esc(recipe.name)}, ${state} state">
 <defs>
   ${defs}
-  <linearGradient id="${id}hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(lighten(chassis.base, 0.16))}"/><stop offset="0.5" stop-color="${P(chassis.base)}"/><stop offset="1" stop-color="${P(chassis.dark)}"/></linearGradient>
+  ${chassisMat ? `<linearGradient id="${id}hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P(lighten(chassisMat.base, 0.16))}"/><stop offset="0.5" stop-color="${P(chassisMat.base)}"/><stop offset="1" stop-color="${P(chassisMat.dark)}"/></linearGradient>` : ""}
   <linearGradient id="${id}tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="${disabled ? "#C9CCD6" : hexMix(faceMat.light, "#FFFFFF", 0.55)}"/></linearGradient>
-  <clipPath id="${id}hc"><path d="${hullD}"/></clipPath>
+  <clipPath id="${id}hc"><path d="${footD}"/></clipPath>
   <filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="5"/></filter>
-  ${usedPartShadow ? `<filter id="${id}pb" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="${N(2 * sy)}"/></filter>` : ""}
+  <filter id="${id}pb" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="${N(2 * sy)}"/></filter>
   ${aura ? `<filter id="${id}gb" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="16"/></filter>` : ""}
 </defs>
 <g opacity="${adj.opacity.toFixed(2)}">
   ${shadow}
   ${aura}
   <g transform="translate(0 ${adj.lift})">
-    ${slabs}
+    ${chassisSlabs}
     <g clip-path="url(#${id}hc)" data-skin-stack="1">
-      <path d="${hullD}" fill="url(#${id}hg)"/>
+      ${chassisArt}
       ${stack}
     </g>
-    <path d="${hullD}" fill="none" stroke="${P(darken(chassis.dark, 0.3))}" stroke-width="1.6"/>
+    ${chassis ? `<path d="${mk(chassis.path)}" fill="none" stroke="${P(darken((chassisMat as MaterialSpec).dark, 0.3))}" stroke-width="1.6"/>` : ""}
     ${text}
     ${wire}
+    ${diag}
   </g>
 </g>
 </svg>`;

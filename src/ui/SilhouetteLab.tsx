@@ -14,7 +14,7 @@ import { renderShell, shellPaths, shapePath } from "../generator/bevel";
 import { IMPORTED_SHAPES, validateImported, auditInset, type ImportedSilhouette } from "../generator/importedShapes";
 import { renderSkinRecipe, type ButtonSkinRecipe, type SkinPart } from "../generator/skins";
 import { SKIN_RECIPES } from "../generator/skinRecipes";
-import { COMPOUND_ASSETS, type CompoundSkin, type PatternType } from "../generator/compound";
+import { COMPOUND_ASSETS, validateCompoundAsset, type CompoundSkin, type PatternType } from "../generator/compound";
 import { ensureFont } from "../generator/fonts";
 
 /* Engine-native material presets, mapped from the brief's palettes. The
@@ -164,7 +164,7 @@ function reskinAsset(r: ButtonSkinRecipe, patch: CompoundSkin): ButtonSkinRecipe
 /* ── Layered Skin proof card — recipe-driven assembly vs the single shell.
    Everything rendered here comes from renderSkinRecipe + pure recipe data;
    the side-by-side single-shell render is the same v64 pipeline. */
-function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; uniform: boolean }) {
+function SkinCard({ r, wire, uniform, diag }: { r: ButtonSkinRecipe; wire: boolean; uniform: boolean; diag: boolean }) {
   const [copied, setCopied] = useState(false);
   const [heroPat, setHeroPat] = useState<PatternType | "">("");
   const [heroPlace, setHeroPlace] = useState<"continuous" | "mirrored">("mirrored");
@@ -174,7 +174,10 @@ function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; un
   const rLive = useMemo(() => heroPat === "" ? r : reskinAsset(r, {
     pattern: heroPat === "none" ? undefined : { type: heroPat, color: "#FFFFFF", opacity: 0.32, scale: 55, angle: heroPat === "stripes" ? 35 : -10, placement: heroPlace },
   }), [r, heroPat, heroPlace]);
-  const hero = useMemo(() => renderSkinRecipe(rLive, "default", w, h, { caps: !uniform, wireframe: wire }), [rLive, w, h, uniform, wire]);
+  const hero = useMemo(() => renderSkinRecipe(rLive, "default", w, h, { caps: !uniform, wireframe: wire, diagnostic: diag }), [rLive, w, h, uniform, wire, diag]);
+  const assetAudits = useMemo(() =>
+    r.parts.filter((p) => p.asset).map((p) => ({ id: p.asset as string, audit: validateCompoundAsset(COMPOUND_ASSETS[p.asset as string]) })),
+  [r]);
   const shellTwin = useMemo(() => {
     const s = IMPORTED_SHAPES[r.id];
     const cfg = skinnedConfig(s, {}, true, false);
@@ -189,7 +192,7 @@ function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; un
       <header className="slab-cardhead">
         <div>
           <h3>{r.name}</h3>
-          <p className="slab-dims">{r.parts.length} authored parts · {r.parts.filter((p) => p.mirrorX).length} mirrored · hull = footprint, shadow, extrusion, max clip</p>
+          <p className="slab-dims">{r.parts.length} authored parts · {r.parts.filter((p) => p.mirrorX).length} mirrored · footprint = clip, shadow, hit · {r.chassis ? "explicit chassis" : "no chassis — parts carry all depth"}</p>
         </div>
         <span className="slab-rating slab-rating--pass-lim">LAYERED SKIN</span>
       </header>
@@ -245,7 +248,12 @@ function SkinCard({ r, wire, uniform }: { r: ButtonSkinRecipe; wire: boolean; un
         </figure>
         <div className="slab-parts" data-role="parts">
           {[...r.parts].sort((a, b) => a.zIndex - b.zIndex).map((p) => (
-            <span key={p.id} className="slab-partchip">z{p.zIndex} · {p.id}{p.mirrorX ? " ×2" : ""} · {p.asset ? `compound(${COMPOUND_ASSETS[p.asset].layers.length} layers)` : p.finish ?? r.materials[p.material].finish}{p.shadowDensity ? " · casts" : ""}</span>
+            <span key={p.id} className="slab-partchip">z{p.zIndex}{p.frontZIndex !== undefined ? `+z${p.frontZIndex}` : ""} · {p.id}{p.mirrorX ? " ×2" : ""} · {p.asset ? `compound(${COMPOUND_ASSETS[p.asset].layers.length} layers)` : p.finish ?? r.materials[p.material].finish}{p.shadowDensity ? " · casts" : ""}</span>
+          ))}
+          {assetAudits.map(({ id: aid, audit }) => (
+            <span key={aid} className="slab-partchip" data-role="asset-audit" title={audit.checks.map((c) => `${c.name}: ${c.note}`).join(" · ")}>
+              {aid}: {audit.checks.every((c) => c.pass) ? "✓" : "✕"} escape {audit.materialEscape.toFixed(1)}u · excess {audit.footprintExcess.toFixed(1)}u
+            </span>
           ))}
         </div>
       </div>
@@ -411,6 +419,7 @@ export function SilhouetteLab() {
   const [wave2, setWave2] = useState(false);
   const [skinWire, setSkinWire] = useState(false);
   const [skinUniform, setSkinUniform] = useState(false);
+  const [skinDiag, setSkinDiag] = useState(false);
   const [w, setW] = useState(200);
   const [h, setH] = useState(100);
   useEffect(() => { ensureFont("Russo One"); document.title = "Silhouette Feasibility Lab — FORGE"; }, []);
@@ -495,9 +504,10 @@ export function SilhouetteLab() {
           <p>The reference art is an <em>assembly</em>, not one inset shell. The strict one-path hull keeps its jobs (footprint, shadow, extrusion, max clip) while a data-driven recipe stacks independently authored parts — per-part finish, bevel profile, specular, contact shadows. New this pass: the Prize Bow ribbon is the first <strong>compound vector asset</strong> — its construction (loops, tail, fold wedges, loop cavities, authored highlight masks) is <em>baked</em> as semantic-slot geometry, while its skin stays <em>live</em>: base color, fold color, finish, gloss, contrast and a clipped <strong>pattern system</strong> (stripes / dots / stars / scales, continuous or mirrored placement) that touches fabric surfaces only — never shadows, cavities or extrusion. The variant row renders the SAME baked geometry through different skins. No shape-specific components exist; each design is a recipe entry.</p>
           <label className="slab-check"><input type="checkbox" checked={skinWire} onChange={(e) => setSkinWire(e.target.checked)} data-ctl="skinwire" /> Show part wireframes</label>
           <label className="slab-check"><input type="checkbox" checked={skinUniform} onChange={(e) => setSkinUniform(e.target.checked)} data-ctl="skinuniform" /> Uniform stretch (compare)</label>
+          <label className="slab-check"><input type="checkbox" checked={skinDiag} onChange={(e) => setSkinDiag(e.target.checked)} data-ctl="skindiag" /> Alignment diagnostic (footprint · materials · depth)</label>
         </div>
         <div className="slab-grid">
-          {SKIN_RECIPES.map((r) => <SkinCard key={r.id} r={r} wire={skinWire} uniform={skinUniform} />)}
+          {SKIN_RECIPES.map((r) => <SkinCard key={r.id} r={r} wire={skinWire} uniform={skinUniform} diag={skinDiag} />)}
         </div>
       </section>
 

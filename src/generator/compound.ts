@@ -13,26 +13,40 @@
      · Recipe (skinRecipes.ts)              — how the asset combines with
                                               faces, frames and other parts
 
-   Layers paint in array order and point at SEMANTIC SLOTS, never colors.
-   The renderer resolves each slot from the skin's primary/secondary pair,
-   so the same baked ribbon can be pink candy, blue satin with stars, or
-   gold metal without touching a path. Patterns clip to the layers flagged
-   `patternSurface` — fabric surfaces only, never shadows, highlights,
-   cavities or extrusion.
+   v69 alignment contract:
+     · `footprint` is the EXACT authored union outline of the physical
+       material layers — not a generalized blob. Its outer segments reuse
+       the material layers' own curve segments, so the validator can hold
+       it to ≤1u of unexplained excess.
+     · Physical material layers extrude individually (depthMode
+       "per-material-layer"); overlays, cavities, highlights and patterns
+       never extrude.
+     · One palette resolver (resolveCompoundSkin) feeds surfaces, folds,
+       cavities, edges AND extrusion — a recolored ribbon recolors its
+       depth with it.
+     · `anchors` + `attachmentZone` are baked metadata: where the center
+       assembly attaches and where hidden overlap is intentional (the
+       validator excuses that zone instead of counting it as excess).
+     · Layers carry a zSlot — rear/body render at the containing part's
+       zIndex, `front` layers (the gathering wrap) render at the part's
+       `frontZIndex`, so a ribbon can put loops behind the frame and its
+       collar in front, all through data. */
 
-   Authoring rules match recipe parts: absolute M L C Q Z only, authored
-   LEFT in the 0 0 200 100 recipe space (the recipe's mirrorX makes the
-   right-hand twin, re-mapping geometry through the mirror so folds and
-   highlights mirror like real toy art). Everything must live inside the
-   recipe hull — the hull remains the maximum clipping boundary. */
+import { darken } from "./model";
+import { flattenPath, bounds } from "./importedShapes";
+import { transformPathCapAware } from "./bevel";
+import type { Pt } from "./importedShapes";
 
 export type CompoundSlot =
   | "base"       // primary material surface (receives gradient + bevel)
-  | "fold"       // soft dark crease shading where the form folds
-  | "cavity"     // deep interior openings (loop holes, recesses)
-  | "highlight"  // authored gloss masks (replaces procedural specular)
+  | "fold"       // soft dark creases where the form gathers
+  | "cavity"     // deep interior openings (loop holes)
+  | "highlight"  // authored gloss masks (replace procedural specular)
   | "crease"     // thin bright accent slivers
   | "edge";      // reserved: explicit edge geometry (default is procedural)
+
+export type CompoundZSlot = "rear" | "body" | "front";
+export type CompoundDepthMode = "footprint" | "per-material-layer";
 
 export interface CompoundLayer {
   id: string;
@@ -40,11 +54,16 @@ export interface CompoundLayer {
   path: string;
   kind: "material" | "overlay" | "detail";
   slot: CompoundSlot;
+  /** rear/body paint at the part's zIndex; front paints at frontZIndex. */
+  zSlot?: CompoundZSlot;
   /** Clip this layer inside another layer's geometry (by layer id) so
    *  shading can never escape its surface. */
   clipTo?: string;
   /** Marks a material layer as a fabric surface the pattern may fill. */
   patternSurface?: boolean;
+  /** Local soft shadow this layer casts on whatever is behind it (0..1) —
+   *  used by the front wrap to seat itself on the frame. */
+  castShadow?: number;
   opacity?: number;
 }
 
@@ -52,10 +71,21 @@ export interface CompoundVectorAsset {
   id: string;
   name: string;
   viewBox: [number, number, number, number];
-  /** Union outline — extrusion slab, contact shadow, wireframe footprint. */
-  silhouette: string;
-  /** Painted in array order (rear → front). */
+  /** EXACT union outline of the physical material layers — contact shadow,
+   *  wireframe footprint, validator ground truth. Never extruded when
+   *  depthMode is "per-material-layer". */
+  footprint: string;
+  depthMode: CompoundDepthMode;
+  /** Painted in array order (rear → front) within each zSlot pass. */
   layers: CompoundLayer[];
+  /** Baked attachment metadata — never user-facing sliders. */
+  anchors: {
+    innerAttachment: { x: number; y: number };
+    opticalCenter: { x: number; y: number };
+  };
+  /** Region where hidden overlap under the center assembly is intentional;
+   *  the validator excuses footprint excess inside it. */
+  attachmentZone: { x: number; y: number; width: number; height: number };
   /** Which knobs the generator should surface for this asset. */
   exposedControls: {
     baseColor: boolean; secondaryColor: boolean; pattern: boolean;
@@ -97,6 +127,55 @@ export interface CompoundSkin {
   pattern?: PatternSpec;
 }
 
+/** The ONE place compound colors are derived. Everything downstream —
+ *  surfaces, outlines, per-layer extrusion, depth edges, bounce, contact
+ *  tint — reads from this, so a live recolor recolors ALL of it. */
+export interface ResolvedCompoundPalette {
+  primaryLight: string;
+  primaryBase: string;
+  primaryDark: string;
+  fold: string;
+  cavity: string;
+  edge: string;
+  extrusionLight: string;
+  extrusionDark: string;
+}
+
+export function resolveCompoundSkin(
+  skin: CompoundSkin,
+  fallback: { light: string; base: string; dark: string },
+): ResolvedCompoundPalette {
+  const primary = skin.primary ?? fallback;
+  return {
+    primaryLight: primary.light,
+    primaryBase: primary.base,
+    primaryDark: primary.dark,
+    fold: skin.secondary ?? darken(primary.dark, 0.18),
+    cavity: darken(primary.dark, 0.45),
+    edge: skin.edge ?? darken(primary.dark, 0.32),
+    extrusionLight: darken(primary.dark, 0.22),
+    extrusionDark: darken(primary.dark, 0.38),
+  };
+}
+
+/** Mirror an absolute-coordinate recipe path across the vertical center of
+ *  the 200-unit space. Assets and parts author LEFT pieces; mirrorX makes
+ *  the right-hand twin. */
+export function mirrorPathX(d: string): string {
+  const toks = d.match(/[MLCQZmlcqz]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) ?? [];
+  const out: string[] = [];
+  let i = 0, cmd = "";
+  while (i < toks.length) {
+    if (/^[a-z]$/i.test(toks[i])) { cmd = toks[i++].toUpperCase(); out.push(cmd); if (cmd === "Z") continue; }
+    const pairs = cmd === "C" ? 3 : cmd === "Q" ? 2 : 1;
+    for (let p = 0; p < pairs; p++) {
+      const X = parseFloat(toks[i++]), Y = parseFloat(toks[i++]);
+      out.push((200 - X).toFixed(2), Y.toFixed(2));
+    }
+  }
+  return out.join(" ");
+}
+
 /* ── procedural pattern tiles (userSpaceOnUse target px) ──────────────── */
 
 const starD = (cx: number, cy: number, ro: number, ri: number): string => {
@@ -122,46 +201,142 @@ export function patternDef(id: string, spec: PatternSpec, color: string, transfo
   return `<pattern id="${id}" width="${t(1)}" height="${t(1)}" patternUnits="userSpaceOnUse" patternTransform="${transform}">${tile}</pattern>`;
 }
 
+/* ── geometry validation (pure, no DOM) ───────────────────────────────── */
+
+function pointInPoly(p: Pt, poly: Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+function distToPoly(p: Pt, poly: Pt[]): number {
+  let best = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const L2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2));
+    const ex = a.x + t * dx - p.x, ey = a.y + t * dy - p.y;
+    best = Math.min(best, Math.hypot(ex, ey));
+  }
+  return best;
+}
+
+export interface CompoundAuditResult {
+  checks: { name: string; pass: boolean; note: string }[];
+  materialEscape: number;
+  footprintExcess: number;
+}
+
+/** Measure the v69 alignment contract: every physical material path inside
+ *  the footprint; footprint never visibly beyond the material union; both
+ *  bounded after mirroring and cap-aware transformation. Overlap inside
+ *  the declared attachmentZone is an attachment, not an error. */
+export function validateCompoundAsset(asset: CompoundVectorAsset): CompoundAuditResult {
+  const zone = asset.attachmentZone;
+  const inZone = (p: Pt) => p.x >= zone.x && p.x <= zone.x + zone.width && p.y >= zone.y && p.y <= zone.y + zone.height;
+  const foot = flattenPath(asset.footprint, 18).flat();
+  const mats = asset.layers.filter((l) => l.kind === "material").map((l) => flattenPath(l.path, 18).flat());
+
+  let materialEscape = 0;
+  for (const poly of mats)
+    for (const p of poly)
+      if (!pointInPoly(p, foot) && !inZone(p)) materialEscape = Math.max(materialEscape, distToPoly(p, foot));
+
+  let footprintExcess = 0;
+  let excessAt: Pt | null = null;
+  for (const p of foot) {
+    if (inZone(p)) continue;
+    if (mats.some((poly) => pointInPoly(p, poly))) continue;
+    const d = Math.min(...mats.map((poly) => distToPoly(p, poly)));
+    if (d > footprintExcess) { footprintExcess = d; excessAt = p; }
+  }
+
+  const VB: [number, number, number, number] = [0, 0, 200, 100];
+  const mirrored = bounds(flattenPath(mirrorPathX(asset.footprint), 12).flat());
+  const capped = bounds(flattenPath(transformPathCapAware(asset.footprint, VB, 0, 0, 400, 100, 70), 12).flat());
+  const mirrorOk = mirrored.minX >= -0.5 && mirrored.maxX <= 200.5 && mirrored.minY >= -0.5 && mirrored.maxY <= 100.5;
+  const capOk = capped.minX >= -0.5 && capped.maxX <= 400.5 && capped.minY >= -0.5 && capped.maxY <= 100.5;
+
+  return {
+    materialEscape,
+    footprintExcess,
+    checks: [
+      { name: "material ⊂ footprint", pass: materialEscape <= 0.35, note: `escape ${materialEscape.toFixed(2)}u` },
+      { name: "footprint excess ≤1u", pass: footprintExcess <= 1, note: `excess ${footprintExcess.toFixed(2)}u${excessAt ? ` at (${excessAt.x.toFixed(0)},${excessAt.y.toFixed(0)})` : ""}` },
+      { name: "mirror bounds", pass: mirrorOk, note: `${mirrored.minX.toFixed(1)}..${mirrored.maxX.toFixed(1)}` },
+      { name: "cap-map bounds", pass: capOk, note: `${capped.minX.toFixed(1)}..${capped.maxX.toFixed(1)}` },
+    ],
+  };
+}
+
 /* ── the first production-capable compound asset: the Prize Bow ribbon ──
-   Baked: two loops with interior cavities, an outer tail pair, fold wedges
-   gathering toward the knot, a V-crease at the tail tip, authored top-edge
-   highlight masks. Live: everything else. Geometry hugs the recipe hull's
-   bow lobes — the hull clip marries the outer edges to the silhouette. */
+   Baked: two loops with interior cavities, an outer tail pair with a
+   V-crease, fold wedges gathering toward the knot, authored top-edge
+   highlight masks, and a FRONT wrap collar that seats the ribbon on the
+   center frame. The footprint's outer segments reuse the loop/tail curve
+   segments verbatim, so union and bodies agree within tolerance. */
 
 export const COMPOUND_ASSETS: Record<string, CompoundVectorAsset> = {
   prizeBowRibbon: {
     id: "prizeBowRibbon",
     name: "Prize Bow ribbon",
     viewBox: [0, 0, 200, 100],
-    silhouette:
-      "M 78 50 C 76 30 64 10 44 4 C 24 0 6 10 3 26 C 1.5 37 7 44.5 18 46.5 C 23 47.5 27.5 48.5 30 50 C 27.5 51.5 23 52.5 18 53.5 C 7 55.5 1.5 63 3 74 C 6 90 24 100 44 96 C 64 90 76 70 78 50 Z",
+    depthMode: "per-material-layer",
+    /* The footprint is the EXACT union trace of the bodies: it reuses the
+       upper loop's crown/outer segments, dips into the authored notch at
+       J1 (10,34), follows the tail's outer edge through the fishtail V
+       (2.5,47 → 9,50 → 2.5,53), mirrors through J2 (10,66) and the lower
+       loop, and closes across the attachment tips (excused by the
+       attachmentZone under the frame). */
+    footprint:
+      "M 54 36 C 52 22 44 8 33 3.5 C 21 -0.5 8 5 5.5 15 C 3.5 24 5 30.5 10 34 C 5 38 2.5 43 2.5 47 L 9 50 L 2.5 53 C 2.5 57 5 62 10 66 C 5 69.5 3.5 76 5.5 85 C 8 95 21 100.5 33 96.5 C 44 92 52 78 54 64 C 54.5 56 54.5 44 54 36 Z",
+    anchors: {
+      innerAttachment: { x: 54, y: 50 },
+      opticalCenter: { x: 24, y: 50 },
+    },
+    attachmentZone: { x: 42, y: 28, width: 15, height: 44 },
     layers: [
-      /* rear: outer tail pair (one mass, V-notched by the loops above it) */
+      /* rear: fishtail dart between the loops */
       { id: "tail", kind: "material", slot: "base", patternSurface: true, path:
-        "M 44 50 C 40 41 30 36 19 36 C 8.5 36 2 41.5 2 50 C 2 58.5 8.5 64 19 64 C 30 64 40 59 44 50 Z" },
+        "M 52 50 C 48 41 40 36 28 35.5 C 20 35.2 13 34.6 10 34 C 5 38 2.5 43 2.5 47 L 9 50 L 2.5 53 C 2.5 57 5 62 10 66 C 13 65.4 20 64.8 28 64.5 C 40 64 48 59 52 50 Z" },
       { id: "tailCrease", kind: "overlay", slot: "fold", clipTo: "tail", path:
-        "M 44 50 C 40 46 35 43.5 30 42.5 C 34 45 37.5 47.5 40 50 C 37.5 52.5 34 55 30 57.5 C 35 56.5 40 54 44 50 Z" },
+        "M 50 50 C 44 46 37 44 30 44 C 36 46.5 41 48.5 45 50 C 41 51.5 36 53.5 30 56 C 37 56 44 54 50 50 Z" },
       { id: "tailShine", kind: "detail", slot: "highlight", clipTo: "tail", path:
-        "M 6 44 C 10 39 16 37 22 37.5 C 16 39 11 41.5 8 45.5 C 7.3 45 6.6 44.5 6 44 Z" },
+        "M 6 43 C 9 39.5 14 37.5 19 38 C 14 39.5 10 42 7.5 45.5 C 7 44.7 6.5 43.8 6 43 Z" },
       /* lower loop behind upper at the knot */
       { id: "lowerLoop", kind: "material", slot: "base", patternSurface: true, path:
-        "M 74 58 C 66 74 52 90 38 95 C 24 99 10 92 8 80 C 6 70 12 60 24 55 C 38 50 60 51 74 58 Z" },
+        "M 54 64 C 52 78 44 92 33 96.5 C 21 100.5 8 95 5.5 85 C 3.5 76 5 69.5 10 66 C 20 60 38 58 54 64 Z" },
       { id: "lowerCavity", kind: "overlay", slot: "cavity", clipTo: "lowerLoop", path:
-        "M 20 62 C 28 56 44 54 60 56 C 46 51 28 52 20 62 Z" },
+        "M 14 64 C 22 60.5 34 59 46 61 C 32 56 18 57.5 14 64 Z" },
       { id: "lowerFold", kind: "overlay", slot: "fold", clipTo: "lowerLoop", path:
-        "M 58 53 C 51 57 45 64 42 73 C 48 69 54 63 57 57 Z" },
+        "M 52 62.5 C 46 66 41 72 39 80 C 44 75.5 49 69.5 51 64.5 Z" },
       { id: "lowerShine", kind: "detail", slot: "highlight", clipTo: "lowerLoop", path:
-        "M 12 63 C 16 58 22 55.5 28 56 C 22 57.5 17 60 14 64 C 13.3 63.7 12.6 63.3 12 63 Z" },
+        "M 8 86 C 12 93.5 22 97.5 31 95.5 C 23 94.5 14 91 10 84.5 C 9.3 85 8.6 85.5 8 86 Z" },
       /* upper loop */
       { id: "upperLoop", kind: "material", slot: "base", patternSurface: true, path:
-        "M 74 42 C 66 26 52 10 38 5 C 24 1 10 8 8 20 C 6 30 12 40 24 45 C 38 50 60 49 74 42 Z" },
+        "M 54 36 C 52 22 44 8 33 3.5 C 21 -0.5 8 5 5.5 15 C 3.5 24 5 30.5 10 34 C 20 40 38 42 54 36 Z" },
       { id: "upperCavity", kind: "overlay", slot: "cavity", clipTo: "upperLoop", path:
-        "M 20 38 C 28 44 44 46 60 44 C 46 49 28 48 20 38 Z" },
+        "M 14 36 C 22 39.5 34 41 46 39 C 32 44 18 42.5 14 36 Z" },
       { id: "upperFold", kind: "overlay", slot: "fold", clipTo: "upperLoop", path:
-        "M 58 47 C 51 43 45 36 42 27 C 48 31 54 37 57 43 Z" },
+        "M 52 37.5 C 46 34 41 28 39 20 C 44 24.5 49 30.5 51 35.5 Z" },
       { id: "upperShine", kind: "detail", slot: "highlight", clipTo: "upperLoop", path:
-        "M 13 19 C 18 9 30 3.5 41 5.5 C 32 7 22 12 16 20 C 15 19.7 14 19.4 13 19 Z" },
+        "M 8 14 C 12 6.5 22 2.5 31 4.5 C 23 5.5 14 9 10 15.5 C 9.3 15 8.6 14.5 8 14 Z" },
+      /* front: the compact gathering collar, seated over the frame edge */
+      { id: "frontWrap", kind: "material", slot: "base", zSlot: "front", patternSurface: true, castShadow: 0.45, path:
+        "M 43 36 C 49 37.5 50.5 42 50.5 50 C 50.5 58 49 62.5 43 64 C 38.5 60 36 55 36 50 C 36 45 38.5 40 43 36 Z" },
+      { id: "wrapFold", kind: "overlay", slot: "fold", clipTo: "frontWrap", zSlot: "front", path:
+        "M 48 41 C 46 45.5 46 54.5 48 59 C 44.5 55.5 44.5 44.5 48 41 Z" },
+      { id: "wrapShine", kind: "detail", slot: "highlight", clipTo: "frontWrap", zSlot: "front", path:
+        "M 41 38.5 C 44.5 40.5 47 43.5 48 47.5 C 45 44 42.5 41.5 39.5 40.5 C 40 39.8 40.5 39.2 41 38.5 Z" },
     ],
     exposedControls: { baseColor: true, secondaryColor: true, pattern: true, finish: true, gloss: true, contrast: true },
   },
 };
+
+/** Convenience for renderers/diagnostics: physical material layers only. */
+export const materialLayers = (asset: CompoundVectorAsset, zPass?: "body" | "front") =>
+  asset.layers.filter((l) => l.kind === "material" && (zPass === undefined || (zPass === "front") === (l.zSlot === "front")));

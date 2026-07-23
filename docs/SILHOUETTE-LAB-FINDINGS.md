@@ -252,3 +252,73 @@ part in any recipe can now reference any compound asset.
 aspect stretch, wireframes (now showing all asset layers) and the v64
 comparison all render from the same data. Next candidates once approved:
 frame ornaments and wing/crest assets using the same slot vocabulary.
+
+---
+
+# Addendum (v69): Compound alignment & target proportions
+
+The v68 breakthrough had three competing contours (recipe hull, broad
+asset silhouette, actual material paths) ghosting behind the assembly, a
+magenta extrusion surviving under recolored variants, and a square badge
+composition. This pass corrected geometry RESPONSIBILITIES, not pixels.
+
+## Footprint vs chassis (recipe level)
+
+`ButtonSkinRecipe.hull` split into:
+- **`footprint`** — hit area, bounds, MAX CLIP, hover aura, cast shadow.
+  Never painted, never extruded.
+- **`chassis?`** — explicit `{ path, material, depth }` painted+extruded
+  body, declared only where one truly exists. Twin Grip keeps its navy
+  chassis; Prize Bow declares none — nothing paints behind the assembly,
+  so no legacy slab can ghost.
+
+## Exact asset footprint + validator
+
+`CompoundVectorAsset.silhouette` → **`footprint`**: the exact authored
+union trace of the physical bodies — its outer segments reuse the loop and
+tail curve segments verbatim (junctions J1/J2 baked at (10,34)/(10,66),
+fishtail V at the tail tip). `validateCompoundAsset()` measures material
+escape, unexplained footprint excess (with location), bounds after
+mirroring and after cap-aware transform, excusing the declared
+`attachmentZone` under the frame. Prize Bow ribbon measures **escape
+0.00u, excess 0.00u** (tolerances: 0 / ≤1u); results surface as chips on
+the proof card.
+
+## Per-material-layer depth + one palette
+
+`depthMode: "per-material-layer"` extrudes tail, loops and wrap
+individually, each slab immediately beneath its own surface in rear→front
+order — every dark lower edge follows its own contour. All compound color
+— surfaces, folds, cavities, edges, extrusion, contact tint — resolves
+through ONE `resolveCompoundSkin()` palette, so the blue/green/purple/gold
+variants carry navy/dark-green/deep-purple/bronze depth. No residual
+magenta anywhere.
+
+## Attachment metadata + front wrap
+
+Assets now bake `anchors` (innerAttachment, opticalCenter) and an
+`attachmentZone` — alignment lives in data, not scattered render offsets.
+Layers carry a `zSlot`; `front` layers render at the part's `frontZIndex`,
+so the new `frontWrap` collar (one authored left path, mirrored) rides
+OVER the frame edge with its own bevel, depth and cast shadow while the
+loops stay behind — the gathered-bow read the target demands. Ribbon/frame
+overlap is 12u (anchor x54 vs frame edge x42), inside the 8–12u spec.
+
+## Target proportions
+
+Jewel removed; frame x 42–158 / y 22–78 (58% of width), pillowed face
+x 52–148 / y 30–70 (≈2.3:1); ribbon ornament ≈21% per side with loops and
+fishtails spanning the full height. The plate dominates; the ribbon
+supports. An alignment diagnostic toggle renders red footprint / yellow
+asset footprint / cyan material layers / white plate paths / purple depth
+contours plus a masked footprint-minus-materials fill — through the exact
+production transforms, no separate renderer.
+
+## Verification
+
+`tsc -b` + `vite build` clean; lab page zero console errors. Visual
+acceptance sheet at 100/200/400% (diagnostic at 400%): no ghost hull, no
+foreign-color depth, patterns still fabric-only, states and cap-aware
+sizes intact, Twin Grip regression-clean under the new chassis model.
+Copy-SVG remains the exact rendered string. No new assets until this pass
+is approved.

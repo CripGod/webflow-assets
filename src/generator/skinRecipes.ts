@@ -1,24 +1,29 @@
 /* ── Layered Skin recipes — the two-design architecture proof ──────────────
    Twin Grip (mirrored side assembly) and Prize Bow (front/behind ordering):
    the two opposite construction problems from the brief. Each recipe is
-   PURE DATA — hull from the imported registry, plus independently authored
+   PURE DATA — footprint, optional chassis, plus independently authored
    part paths in the same 0 0 200 100 space. No component knows these ids.
 
    Authoring rules: absolute M L C Q Z only; author LEFT pieces and set
-   mirrorX for their right-hand twins; every part must live inside the hull
-   (the hull is the maximum clipping boundary — parts may hug it, and the
-   clip marries them to the silhouette edge).
+   mirrorX for their right-hand twins; every part must live inside the
+   footprint (the footprint is the maximum clipping boundary — parts may
+   hug it, and the clip marries them to the silhouette edge).
 
-   REFINEMENT PASS notes (why these paths look the way they do):
-   · Rear masses are authored to FILL their hull cap minus a ~2.5u margin,
-     so the silhouette's own lobes read as part volume, not as chassis.
-   · Front pieces overlap the parts behind them by 10–24u and declare a
-     shadowDensity, so the stack reads as stacked, not aligned.
-   · Face plates are pillowed — every edge bows outward 1–2u — instead of
-     literal rounded rects, and sit inside an explicit socket/frame part.
-   · Finishes are deliberately mixed per part (plastic drums, glass faces,
-     cylinder-gradient metal clamps, matte sockets) so no two neighboring
-     parts share one lighting response. */
+   v69 GEOMETRY RESPONSIBILITIES:
+   · `footprint` — hit area, bounds, max clip, hover aura, cast shadow.
+     Never painted, never extruded.
+   · `chassis` — declared explicitly ONLY where a visible whole body
+     exists. Twin Grip has one (the navy body the drums and clamps mount
+     on). Prize Bow has none: the ribbon asset and the center assembly
+     provide every visible surface and its depth, so nothing paints
+     behind them and no legacy hull slab can ghost.
+   · Prize Bow uses TARGET PROPORTIONS: a wide, low center plate
+     (frame x 42–158, y 22–78 ≈ 58% of width; face aspect ≈ 2.3:1) with
+     the ribbon reading as support, not butterfly wings around a badge.
+     The ribbon asset overlaps the frame by ~12u — its baked
+     innerAttachment anchor sits at x≈52.5 against the frame edge at
+     x=42 — and its front wrap collar rides OVER the frame edge via the
+     part's frontZIndex. */
 
 import type { ButtonSkinRecipe } from "./skins";
 import { IMPORTED_SHAPES } from "./importedShapes";
@@ -27,11 +32,11 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
   {
     id: "twinGrip",
     name: "Twin Grip Command Bar",
-    hull: IMPORTED_SHAPES.twinGrip.path,
+    footprint: IMPORTED_SHAPES.twinGrip.path,
+    chassis: { path: IMPORTED_SHAPES.twinGrip.path, material: "frame", depth: 9 },
     label: "PLAY",
-    extrusion: 9,
-    /* rear drum grips fill the hull's double-lobe caps → matte navy socket
-       recesses the center → pillowed glass face → thick gold clamp
+    /* rear drum grips fill the footprint's double-lobe caps → matte navy
+       socket recesses the center → pillowed glass face → thick gold clamp
        cylinders overlap drum AND face by >10u each side */
     parts: [
       { id: "drum", material: "plastic", zIndex: 1, depth: 5, bevel: 2.8, mirrorX: true,
@@ -63,29 +68,28 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
   {
     id: "prizeBow",
     name: "Prize Bow Power Bar",
-    hull: IMPORTED_SHAPES.prizeBow.path,
+    /* Smooth authored outline containing the ribbon asset and the wide
+       plate. Clip + shadow + aura only — the asset's own footprint and the
+       plate define every visible edge; nothing is painted behind them. */
+    footprint:
+      "M 0 50 C 0 30 10 14 26 4 Q 34 0 44 4 L 58 22 L 142 22 L 156 4 Q 166 0 174 4 C 190 14 200 30 200 50 C 200 70 190 86 174 96 Q 166 100 156 96 L 142 78 L 58 78 L 44 96 Q 34 100 26 96 C 10 86 0 70 0 50 Z",
     label: "CLAIM",
-    extrusion: 9,
     /* rear COMPOUND ribbon asset (baked loops/tail/folds/cavities/authored
-       highlights, live skin) → thick ornamental gold frame overlapping the
-       ribbons by ~24u → puffed glass face inside the frame → gold knob
-       jewel seated on the frame's top band */
+       highlights, live skin, per-layer depth) → wide gold frame → low
+       pillowed glass face → the asset's front wrap collar rides over the
+       frame edge at frontZIndex 4 */
     parts: [
       { id: "ribbon", material: "plastic", zIndex: 1, depth: 5, bevel: 2.6, mirrorX: true,
-        asset: "prizeBowRibbon",
+        asset: "prizeBowRibbon", frontZIndex: 4,
         assetSkin: { finish: "plastic", glossStrength: 1, contrast: 1 } },
       { id: "frame", material: "metal", zIndex: 2, depth: 3.5, bevel: 2.6,
         specularMode: "streak", highlightBias: [-0.3, -0.28],
         edgeDarkening: 0.5, bounce: 0.5, shadowDensity: 0.6, path:
-        "M 71 12 L 129 12 C 140 12 146 18 146 29 L 146 71 C 146 82 140 88 129 88 L 71 88 C 60 88 54 82 54 71 L 54 29 C 54 18 60 12 71 12 Z" },
+        "M 54 22 L 146 22 C 153 22 158 27 158 34 L 158 66 C 158 73 153 78 146 78 L 54 78 C 47 78 42 73 42 66 L 42 34 C 42 27 47 22 54 22 Z" },
       { id: "face", material: "face", zIndex: 3, depth: 0, bevel: 3,
         glossFrac: 0.5, glossDip: 0.18, specularMode: "dot", highlightBias: [-0.12, -0.08],
         edgeDarkening: 0.1, saturationBoost: 0.4, bounce: 0.6, path:
-        "M 78 19.5 C 92 18.3 108 18.3 122 19.5 C 131 19.5 136.5 24 137 31 C 138.3 38 138.3 62 137 69 C 136.5 76 131 80.5 122 80.5 C 108 81.7 92 81.7 78 80.5 C 69 80.5 63.5 76 63 69 C 61.7 62 61.7 38 63 31 C 63.5 24 69 19.5 78 19.5 Z" },
-      { id: "jewel", material: "accent", zIndex: 4, depth: 0, bevel: 2,
-        bevelProfile: "soft-pill", glossStrength: 0.8, glossFrac: 0.45, specularMode: "dot", highlightBias: [-0.2, -0.24],
-        edgeDarkening: 0.35, bounce: 0.5, shadowDensity: 0.5, path:
-        "M 100 12.1 C 104.58 12.1 108.3 15.82 108.3 20.4 C 108.3 24.98 104.58 28.7 100 28.7 C 95.42 28.7 91.7 24.98 91.7 20.4 C 91.7 15.82 95.42 12.1 100 12.1 Z" },
+        "M 64 30 C 88 28.8 112 28.8 136 30 C 143 30 147.5 33.5 148 39 C 149.2 43 149.2 57 148 61 C 147.5 66.5 143 70 136 70 C 112 71.2 88 71.2 64 70 C 57 70 52.5 66.5 52 61 C 50.8 57 50.8 43 52 39 C 52.5 33.5 57 30 64 30 Z" },
     ],
     materials: {
       face:    { light: "#FFA8DB", base: "#F45CAE", dark: "#B5206F", finish: "glass" },
@@ -94,7 +98,7 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
       frame:   { light: "#93265F", base: "#701048", dark: "#4A0630", finish: "matte" },
       accent:  { light: "#FFF0B8", base: "#FFCE45", dark: "#A66300", finish: "metal" },
     },
-    safeArea: { x: 68, y: 30, width: 64, height: 40 },
+    safeArea: { x: 58, y: 34, width: 84, height: 32 },
     stretch: { leftCap: 70, rightCap: 70 },
   },
 ];
