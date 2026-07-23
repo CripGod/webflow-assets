@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, GridStyle, CandyTokens, Shape, KitDesign } from "./model";
-import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, PRESETS, darken, hexMix, registerCustomFont, pickDesign, KIT_SHAPE, applyKitDesign, applyKitTextFill, setUserShapes, DESIGN_KEYS, effKitSize } from "./model";
+import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetById, PRESETS, darken, hexMix, registerCustomFont, pickDesign, KIT_SHAPE, applyKitDesign, applyKitTextFill, setUserShapes, DESIGN_KEYS, effKitSize, migrateKitDesigns } from "./model";
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
@@ -628,7 +628,7 @@ export const useGen = create<GenStore>((set, get) => ({
       cfg: (p.cfg as GenConfig) ?? st.cfg,
       kitName: (p.kitName as string) ?? st.kitName,
       kitShapes: (p.kitShapes as GenStore["kitShapes"]) ?? {},
-      kitDesigns: (p.kitDesigns as GenStore["kitDesigns"]) ?? {},
+      kitDesigns: migrateKitDesigns((p.cfg as GenConfig) ?? st.cfg, (p.kitDesigns as GenStore["kitDesigns"]) ?? {}).forks,
       kitTextFill: (p.kitTextFill as GenStore["kitTextFill"]) ?? {},
       kitLabels: (p.kitLabels as GenStore["kitLabels"]) ?? {},
       kitIcons: (p.kitIcons as GenStore["kitIcons"]) ?? {},
@@ -704,7 +704,13 @@ export const useGen = create<GenStore>((set, get) => ({
     saveJson("ui-generator-kitlabels", kitLabels);
     set({ kitLabels });
   },
-  kitDesigns: loadJson<Partial<Record<KitComponentId, KitDesign>>>("ui-generator-kitdesigns", {}),
+  kitDesigns: (() => {
+    // v70: stored full-snapshot forks are re-read as sparse overrides so
+    // components resume following the parent design (kit auto-updates)
+    const m = migrateKitDesigns(load(), loadJson<Partial<Record<KitComponentId, KitDesign>>>("ui-generator-kitdesigns", {}));
+    if (m.changed) saveJson("ui-generator-kitdesigns", m.forks);
+    return m.forks;
+  })(),
   setKitDesign: (id, d) => {
     markTouched();
     const kitDesigns = { ...get().kitDesigns };

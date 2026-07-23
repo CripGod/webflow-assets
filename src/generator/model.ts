@@ -819,21 +819,90 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "startlights", name: "Start lights" },
 ];
 
-/* A locked component keeps a full design snapshot of its own — the master
-   keeps evolving, the locked piece doesn't move. State forks ride along so
-   hover/pressed render exactly as they looked when locked. */
-export interface KitDesign extends StateDesign { stateDesigns?: GenConfig["stateDesigns"] }
+/* v70 · SPARSE forks. A component's fork stores only the design paths the
+   user actually changed on that piece — everything else keeps following the
+   parent design live. (Full-snapshot forks froze a component forever: one
+   rim tweak and the piece stopped auto-updating with the kit.) */
+export type DeepPartial<T> = { [K in keyof T]?: T[K] extends (infer U)[] ? U[] : T[K] extends object ? DeepPartial<T[K]> : T[K] };
+export type KitDesign = DeepPartial<StateDesign> & { stateDesigns?: GenConfig["stateDesigns"] };
 
-/** Render-time merge: a locked component's snapshot replaces every design
- *  field of the master config. Content, states-adjustments and canvas stay
- *  shared — the lock is about the look, not the words. */
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+/* effects is a dynamic record where keys can be REMOVED — a merge can't
+   express deletion, so the whole record is treated as one leaf value */
+function deepMergeDesign(base: unknown, over: unknown): unknown {
+  if (over === undefined) return base;
+  if (!isObj(over) || !isObj(base)) return JSON.parse(JSON.stringify(over));
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(over)) out[k] = deepMergeDesign(base[k], v);
+  return out;
+}
+
+/** Render-time merge: the fork's overridden paths sit on top of the parent
+ *  design; untouched paths flow through live. Content, state-adjustments
+ *  and canvas stay shared — the fork is about the look, not the words. */
 export function applyKitDesign(cfg: GenConfig, kd?: KitDesign | null): GenConfig {
   if (!kd) return cfg;
-  return {
-    ...cfg, shape: kd.shape, effects: kd.effects, face: kd.face, bevel: kd.bevel, candy: kd.candy,
-    lighting: kd.lighting, shadow: kd.shadow, transparency: kd.transparency, type: kd.type,
-    stateDesigns: kd.stateDesigns ?? {},
-  };
+  const out = { ...cfg, stateDesigns: kd.stateDesigns ?? cfg.stateDesigns } as GenConfig;
+  const src = cfg as unknown as Record<string, unknown>, o = out as unknown as Record<string, unknown>;
+  for (const k of DESIGN_KEYS) {
+    const ov = (kd as Record<string, unknown>)[k];
+    if (ov === undefined) continue;
+    o[k] = k === "effects" ? JSON.parse(JSON.stringify(ov)) : deepMergeDesign(src[k], ov);
+  }
+  return out;
+}
+
+function deepDiff(a: unknown, b: unknown): unknown {
+  if (b === undefined) return undefined; // fixed-shape objects never drop keys
+  if (JSON.stringify(a) === JSON.stringify(b)) return undefined;
+  if (!isObj(a) || !isObj(b)) return JSON.parse(JSON.stringify(b));
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(b)) {
+    const d = deepDiff(a[k], b[k]);
+    if (d !== undefined) out[k] = d;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** The design paths where `b` departs from `a` — what a focused edit pins. */
+export function designDiff(a: StateDesign, b: StateDesign): KitDesign | null {
+  const ra = a as unknown as Record<string, unknown>, rb = b as unknown as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of DESIGN_KEYS) {
+    if (k === "effects") {
+      if (JSON.stringify(ra[k]) !== JSON.stringify(rb[k])) out[k] = JSON.parse(JSON.stringify(rb[k]));
+    } else {
+      const d = deepDiff(ra[k], rb[k]);
+      if (d !== undefined) out[k] = d;
+    }
+  }
+  return Object.keys(out).length ? (out as KitDesign) : null;
+}
+
+/** Fold a fresh edit diff into a component's existing override set. */
+export function mergeKitDesign(base: KitDesign | null | undefined, d: KitDesign): KitDesign {
+  const out = JSON.parse(JSON.stringify(base ?? {})) as Record<string, unknown>;
+  for (const [k, v] of Object.entries(d)) {
+    out[k] = k !== "effects" && isObj(v) && isObj(out[k]) ? deepMergeDesign(out[k], v) : JSON.parse(JSON.stringify(v));
+  }
+  return out as KitDesign;
+}
+
+/** Older builds stored forks as FULL design snapshots — re-read them as
+ *  "whatever still differs from the parent today"; identical fields resume
+ *  following the parent design (the kit auto-updates again). */
+export function migrateKitDesigns(cfg: GenConfig, forks: Partial<Record<KitComponentId, KitDesign>>): { forks: Partial<Record<KitComponentId, KitDesign>>; changed: boolean } {
+  const out: Partial<Record<KitComponentId, KitDesign>> = {};
+  let changed = false;
+  const isFull = (kd: KitDesign) => DESIGN_KEYS.every((k) => (kd as Record<string, unknown>)[k] !== undefined);
+  for (const [id, kd] of Object.entries(forks) as [KitComponentId, KitDesign][]) {
+    if (!kd) continue;
+    if (!isFull(kd)) { out[id] = kd; continue; }
+    changed = true;
+    const d = designDiff(pickDesign(cfg), kd as unknown as StateDesign);
+    if (d) out[id] = d;
+  }
+  return { forks: out, changed };
 }
 
 /** Per-component text color — the answer to "changing text color changes it

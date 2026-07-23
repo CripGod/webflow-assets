@@ -26,47 +26,106 @@ const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
 ];
 
 /* Starter templates — approximate compositions for the 16:9 stage. The
-   user nudges from here; every piece stays a live kit asset. */
+   user nudges from here; every piece stays a live kit asset. Refreshed for
+   the current roster: vsbar, hotbar, tacho, segbar, timers, big numbers. */
 const BOARD_TEMPLATES: Record<string, { kitId: KitComponentId; x: number; y: number; scale?: number }[]> = {
   "Main menu": [
     { kitId: "header", x: 560, y: 90, scale: 1.1 },
-    { kitId: "primary", x: 700, y: 420, scale: 1.1 },
-    { kitId: "small", x: 790, y: 640 },
-    { kitId: "ghost", x: 790, y: 790 },
-    { kitId: "resource", x: 70, y: 60 },
+    { kitId: "primary", x: 700, y: 390, scale: 1.1 },
+    { kitId: "badge", x: 1165, y: 370, scale: 0.9 },
+    { kitId: "secondary", x: 610, y: 585 },
+    { kitId: "ghost", x: 760, y: 780 },
+    { kitId: "resource", x: 70, y: 55 },
+    { kitId: "resource", x: 70, y: 160 },
     { kitId: "iconbtn", x: 1680, y: 60, scale: 0.9 },
   ],
-  "Game HUD": [
-    { kitId: "resource", x: 70, y: 55 },
-    { kitId: "lives", x: 90, y: 200, scale: 0.9 },
-    { kitId: "progress", x: 640, y: 60, scale: 1.1 },
+  "FPS HUD": [
+    { kitId: "reticle", x: 870, y: 450 },
+    { kitId: "lives", x: 90, y: 55, scale: 0.85 },
+    { kitId: "chip", x: 850, y: 60, scale: 0.9 },
     { kitId: "minimap", x: 1540, y: 55, scale: 0.9 },
-    { kitId: "joystick", x: 110, y: 640 },
-    { kitId: "ammo", x: 1470, y: 850 },
+    { kitId: "progress", x: 70, y: 890 },
+    { kitId: "hotbar", x: 490, y: 895, scale: 0.85 },
+    { kitId: "ammo", x: 1500, y: 860 },
+  ],
+  "Arena HUD": [
+    { kitId: "vsbar", x: 430, y: 40, scale: 0.9 },
+    { kitId: "minimap", x: 1540, y: 130, scale: 0.9 },
+    { kitId: "badge", x: 60, y: 300, scale: 0.9 },
+    { kitId: "joystick", x: 110, y: 600 },
+    { kitId: "hotbar", x: 510, y: 890, scale: 0.9 },
     { kitId: "iconbtn", x: 1720, y: 620, scale: 0.85 },
   ],
-  "Settings": [
-    { kitId: "header", x: 620, y: 80 },
-    { kitId: "slider", x: 640, y: 350 },
-    { kitId: "slider", x: 640, y: 500 },
-    { kitId: "toggle", x: 700, y: 650 },
-    { kitId: "toggle", x: 1000, y: 650 },
-    { kitId: "small", x: 820, y: 830 },
-  ],
   "Racing HUD": [
-    { kitId: "speedo", x: 760, y: 620, scale: 1.1 },
+    { kitId: "startlights", x: 810, y: 50, scale: 0.8 },
     { kitId: "circuit", x: 60, y: 80 },
-    { kitId: "leaderboard", x: 1450, y: 70 },
-    { kitId: "telemetry", x: 1440, y: 640, scale: 0.9 },
-    { kitId: "progress", x: 640, y: 60, scale: 1.05 },
+    { kitId: "leaderboard", x: 1460, y: 30, scale: 0.8 },
+    { kitId: "telemetry", x: 1450, y: 330, scale: 0.85 },
+    { kitId: "laptimes", x: 60, y: 620, scale: 0.9 },
+    { kitId: "tacho", x: 1290, y: 620, scale: 1.05 },
+  ],
+  "Versus": [
+    { kitId: "vsbar", x: 460, y: 60 },
+    { kitId: "badge", x: 480, y: 300, scale: 0.9 },
+    { kitId: "badge", x: 1260, y: 300, scale: 0.9 },
+    { kitId: "bignum", x: 770, y: 420, scale: 1.1 },
+    { kitId: "primary", x: 700, y: 790, scale: 1.05 },
   ],
   "Match-3 round": [
     { kitId: "resource", x: 70, y: 55 },
-    { kitId: "flipclock", x: 1480, y: 55, scale: 0.75 },
+    { kitId: "stopwatch", x: 1500, y: 55, scale: 0.7 },
+    { kitId: "orb", x: 1540, y: 330, scale: 0.8 },
     ...([0, 1, 2] as const).flatMap((r) => ([0, 1, 2] as const).map((c) => (
-      { kitId: "slot" as KitComponentId, x: 730 + c * 160, y: 300 + r * 160, scale: 0.9 }
+      { kitId: "slot" as KitComponentId, x: 730 + c * 160, y: 290 + r * 160, scale: 0.9 }
     ))),
-    { kitId: "progress", x: 660, y: 890, scale: 1.05 },
+    { kitId: "segbar", x: 660, y: 890 },
+  ],
+  "RPG party": [
+    { kitId: "header", x: 560, y: 30 },
+    { kitId: "datarow", x: 120, y: 350, scale: 0.9 },
+    { kitId: "datarow", x: 120, y: 515, scale: 0.9 },
+    { kitId: "datarow", x: 120, y: 680, scale: 0.9 },
+    { kitId: "panel", x: 1220, y: 340, scale: 0.75 },
+    ...[0, 1, 2, 3].map((i) => ({ kitId: "slot" as KitComponentId, x: 1220 + i * 165, y: 810, scale: 0.8 })),
+    { kitId: "small", x: 70, y: 60 },
+  ],
+  "Inventory": [
+    { kitId: "resource", x: 70, y: 55 },
+    { kitId: "chip", x: 640, y: 70, scale: 0.85 },
+    { kitId: "chip", x: 870, y: 70, scale: 0.85 },
+    { kitId: "chip", x: 1100, y: 70, scale: 0.85 },
+    ...([0, 1, 2] as const).flatMap((r) => [0, 1, 2, 3].map((c) => (
+      { kitId: "slot" as KitComponentId, x: 640 + c * 180, y: 240 + r * 180, scale: 0.9 }
+    ))),
+    { kitId: "panel", x: 1410, y: 240, scale: 0.6 },
+    { kitId: "small", x: 1450, y: 700 },
+  ],
+  "Level select": [
+    { kitId: "header", x: 560, y: 60 },
+    { kitId: "ring", x: 60, y: 55, scale: 0.8 },
+    { kitId: "iconbtn", x: 1680, y: 60, scale: 0.9 },
+    ...[0, 1, 2, 3, 4].map((i) => ({ kitId: "slot" as KitComponentId, x: 460 + i * 210, y: 380, scale: 0.95 })),
+    { kitId: "segbar", x: 640, y: 640 },
+    { kitId: "primary", x: 700, y: 800 },
+  ],
+  "Victory": [
+    { kitId: "header", x: 520, y: 110, scale: 1.1 },
+    { kitId: "orb", x: 600, y: 450, scale: 0.9 },
+    { kitId: "bignum", x: 770, y: 440 },
+    { kitId: "orb", x: 1230, y: 450, scale: 0.9 },
+    { kitId: "progress", x: 660, y: 700 },
+    { kitId: "primary", x: 700, y: 760, scale: 1.05 },
+  ],
+  "Settings": [
+    { kitId: "header", x: 620, y: 30, scale: 0.9 },
+    { kitId: "slider", x: 640, y: 360 },
+    { kitId: "slider", x: 640, y: 500 },
+    { kitId: "segment", x: 640, y: 640, scale: 0.9 },
+    { kitId: "dropdown", x: 1240, y: 360, scale: 0.8 },
+    { kitId: "checkbox", x: 1310, y: 530 },
+    { kitId: "toggle", x: 700, y: 790 },
+    { kitId: "toggle", x: 1000, y: 790 },
+    { kitId: "small", x: 1330, y: 700 },
   ],
 };
 
