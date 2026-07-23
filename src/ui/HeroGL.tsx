@@ -126,8 +126,8 @@ interface Rig {
 
 // The schematic's resting viewing angle (radians). It loads here and holds
 // still — the reference exploded-diagram view — until the user drags it.
-const BASE_YAW = 0.52;   // horizontal rotation (y)
-const BASE_PITCH = 0.07; // vertical tilt (x)
+const BASE_YAW = 0.48;    // horizontal rotation (y) — a touch more face-on
+const BASE_PITCH = 0.035; // vertical tilt (x) — flatter, matches the reference
 
 export function HeroGL() {
   const { cfg } = useGen();
@@ -286,8 +286,17 @@ export function HeroGL() {
       overlay.setAttribute("viewBox", `0 0 ${W} ${H}`);
     };
     fit();
-    const ro = new ResizeObserver(() => { fit(); alignSats(); });
+    // below this width the right-side satellites (icon token / progress / panel)
+    // clip against the edge — hide them so the diagram stays clean
+    const SAT_MIN_W = 760;
+    const updateSats = () => {
+      const show = wrap.clientWidth >= SAT_MIN_W;
+      satGroup.visible = show;
+      satLabelRefs.current.forEach((lab) => { if (lab) lab.style.display = show ? "" : "none"; });
+    };
+    const ro = new ResizeObserver(() => { fit(); alignSats(); updateSats(); });
     ro.observe(wrap);
+    updateSats();
 
     const v = new THREE.Vector3();
     const proj = (local: THREE.Vector3, host: THREE.Object3D) => {
@@ -408,6 +417,16 @@ export function HeroGL() {
     let dragging = false, lastX = 0, lastY = 0, velX = 0, velY = 0;
     let userYaw = 0, userPitch = 0;
     const clampP = (p2: number) => Math.max(-0.55, Math.min(0.7, p2));
+    // the last angle you drag the schematic to persists as its default
+    const ANGLE_KEY = "ui-generator-schematic-angle";
+    let savedSig = "";
+    try {
+      const a = JSON.parse(localStorage.getItem(ANGLE_KEY) || "null");
+      if (a && typeof a.yaw === "number" && typeof a.pitch === "number") {
+        userYaw = a.yaw; userPitch = clampP(a.pitch);
+        savedSig = userYaw.toFixed(3) + "," + userPitch.toFixed(3);
+      }
+    } catch { /* ignore */ }
     const onDown = (e: PointerEvent) => {
       dragging = true; lastX = e.clientX; lastY = e.clientY; velX = 0; velY = 0;
       wrap.classList.add("kp-gldrag");
@@ -441,6 +460,14 @@ export function HeroGL() {
         userYaw += velX;
         userPitch = clampP(userPitch + velY);
         velX *= 0.94; velY *= 0.94;
+        // once it settles, remember this angle as the new default
+        if (Math.abs(velX) < 0.0002 && Math.abs(velY) < 0.0002) {
+          const sig = userYaw.toFixed(3) + "," + userPitch.toFixed(3);
+          if (sig !== savedSig) {
+            savedSig = sig;
+            try { localStorage.setItem(ANGLE_KEY, JSON.stringify({ yaw: userYaw, pitch: userPitch })); } catch { /* ignore */ }
+          }
+        }
       }
       // rests at a fixed viewing angle on load (no auto-wobble) — the schematic
       // loads square to the reference view; user drag still rotates it freely
