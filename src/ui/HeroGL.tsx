@@ -273,9 +273,9 @@ export function HeroGL() {
     const railBot = mk("line", { stroke: "currentColor", "stroke-width": "1", opacity: "0.5" });
     const railTicks = [0, 1, 2, 3].map(() => mk("line", { stroke: "currentColor", "stroke-width": "1", opacity: "0.5" }));
     const railTopText = mk("text", { fill: "currentColor", "font-size": "12", "letter-spacing": "0.08em", "text-anchor": "middle", opacity: "0.75" });
-    railTopText.textContent = "128.00";
+    railTopText.textContent = "128.0";
     const railBotText = mk("text", { fill: "currentColor", "font-size": "12", "letter-spacing": "0.08em", "text-anchor": "middle", opacity: "0.75" });
-    railBotText.textContent = "96.00";
+    railBotText.textContent = "96.0";
 
     let W = 10, H = 10;
     const fit = () => {
