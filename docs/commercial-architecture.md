@@ -104,8 +104,11 @@ Supabase (managed auth + Postgres, RLS everywhere)
   moving shares to `projects.share_slug` is a natural Phase-5 upgrade.
 - The repo is public and the frontend is on GitHub Pages. Appendix A's
   end-state wants a private repo + Vercel (for server functions and bundle
-  privacy). That migration belongs to the Stripe/protected-export phase —
-  decision owner: product owner.
+  privacy). The repo is now Vercel-ready (`vercel.json`, source maps off);
+  the click-path — import into Vercel first, then flip the repo private —
+  is documented in docs/CLOUD-SETUP.md ("Hide the code"). The bundle the
+  browser runs remains inspectable until exports move server-side; that is
+  Appendix A's documented limitation, not a regression.
 - Terms/Privacy documents are drafts; counsel review is a launch gate
   (plan §10). The consent record stores the accepted version string.
 
