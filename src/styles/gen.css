@@ -540,6 +540,8 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 }
 .presetcard:hover { border-color: #c3c8d0; }
 .presetcard.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.presetcard.shared { border-color: color-mix(in srgb, var(--accent, #6366f1) 45%, var(--line2)); }
+.presetcard.shared .presetname { color: var(--accent, #6366f1); }
 .presetcard .presetart { width: 100%; display: grid; place-items: center; overflow: hidden; }
 .presetcard .presetart svg { width: 100%; height: auto; max-height: 74px; display: block; }
 .presetcard .presetname { font-size: 12px; font-weight: 600; color: var(--ink2); }

@@ -254,7 +254,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update: updateParent, setPreset: setPresetParent, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
+  const { cfg: cfgMaster, update: updateParent, setPreset: setPresetParent, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, cloudPresets, isAdmin, applyCloudPreset, publishPreset, removeCloudPresetById, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
   const actBd = boards.find((b) => b.id === activeBoard);
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const { parentId, setParent } = useGen();
@@ -525,6 +525,17 @@ export function Panel() {
                 onClick={(e) => { e.stopPropagation(); removeUserPreset(u.id); }}>×</span>
             </button>
           ))}
+          {cloudPresets.map((p) => (
+            <button key={p.id} className={`presetcard shared${kitName === p.name ? " on" : ""}`} title={`${p.name} — shared preset`}
+              onClick={() => applyCloudPreset(p.id)}>
+              {p.thumb ? <span className="presetart" dangerouslySetInnerHTML={{ __html: p.thumb }} /> : <span className="presetart" />}
+              <span className="presetname">{p.name}</span>
+              {isAdmin && (
+                <span className="shapedel" role="button" aria-label={`Delete shared preset ${p.name}`} title="Delete for everyone (admin)"
+                  onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete the shared preset “${p.name}” for everyone?`)) void removeCloudPresetById(p.id); }}>×</span>
+              )}
+            </button>
+          ))}
           {presetArt().map((p) => (
             <button key={p.id} className={`presetcard${cfg.presetId === p.id ? " on" : ""}`} title={p.name}
               onClick={() => setPreset(p.id)}>
@@ -534,6 +545,14 @@ export function Panel() {
           ))}
         </div>
         <div className="helper">Each style is a different candy construction — shell, gloss and depth, not just a palette.</div>
+        {isAdmin && (
+          <button className="resetstate" onClick={() => {
+            const name = window.prompt("Publish the current style as a shared preset — every user will see it. Name:");
+            if (name && name.trim()) void publishPreset(name.trim()).then((err) => { if (err) window.alert(err); });
+          }}>
+            <Globe size={14} strokeWidth={2} /> Publish current as shared preset
+          </button>
+        )}
         <button className="resetstate" onClick={randomize}>
           <Dices size={14} strokeWidth={2} /> Randomize everything
         </button>

@@ -4,6 +4,7 @@ import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetB
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
+import { listCloudPresets, amIAdmin, publishCloudPreset, deleteCloudPreset, type CloudPreset } from "./cloud";
 import siteDefaultJson from "./site-default.json";
 import bubblePopJson from "./preset-bubble-pop.json";
 import neonVersusJson from "./preset-neon-versus.json";
@@ -286,6 +287,14 @@ interface GenStore {
   saveUserPreset: (name: string) => void;
   applyUserPreset: (id: string) => void;
   removeUserPreset: (id: string) => void;
+  /** Admin-curated shared presets loaded from the cloud (visible to everyone). */
+  cloudPresets: CloudPreset[];
+  /** Whether the signed-in user may publish/edit shared presets. */
+  isAdmin: boolean;
+  loadCloudPresets: () => Promise<void>;
+  applyCloudPreset: (id: string) => void;
+  publishPreset: (name: string) => Promise<string | null>;
+  removeCloudPresetById: (id: string) => Promise<void>;
   /** Imported flat-vector silhouettes — see the spec in the Silhouette panel. */
   userShapes: UserShape[];
   addUserShape: (u: UserShape) => void;
@@ -784,6 +793,38 @@ export const useGen = create<GenStore>((set, get) => ({
     const userPresets = get().userPresets.filter((x) => x.id !== id);
     saveJson("ui-generator-userpresets", userPresets);
     set({ userPresets });
+  },
+  cloudPresets: [],
+  isAdmin: false,
+  loadCloudPresets: async () => {
+    const [presets, admin] = await Promise.all([listCloudPresets(), amIAdmin()]);
+    set({ cloudPresets: presets, isAdmin: admin });
+  },
+  applyCloudPreset: (id) => {
+    const p = get().cloudPresets.find((x) => x.id === id);
+    if (!p) return;
+    const clone = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)));
+    const next = clone(p.cfg) as GenConfig;
+    next.canvas = get().cfg.canvas; // shared presets restyle the component, never the stage
+    get().replaceConfig(next);
+    get().setKitName(p.name);
+  },
+  publishPreset: async (name) => {
+    // same thumbnail recipe as a local user preset, so shared presets read the same
+    const clone = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)));
+    const cfg = clone(get().cfg) as GenConfig;
+    const tc = clone(cfg) as GenConfig;
+    for (const st of Object.values(tc.states)) st.glow = 0;
+    tc.content.label = "PLAY"; tc.icon.show = false;
+    const thumb = renderBevel(tc, "default");
+    const { error } = await publishCloudPreset(name, cfg, thumb);
+    if (error) return error;
+    await get().loadCloudPresets();
+    return null;
+  },
+  removeCloudPresetById: async (id) => {
+    await deleteCloudPreset(id);
+    await get().loadCloudPresets();
   },
   kitName: loadJson<string | null>("ui-generator-kitname", null),
   setKitName: (v) => { markTouched(); saveJson("ui-generator-kitname", v); set({ kitName: v }); },
