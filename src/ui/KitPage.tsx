@@ -2010,8 +2010,8 @@ const exportActions = [
                 <div className="kp-node"><PPiece id="badge" baseState="pressed" icon={STOCK_ICONS.lock} scale={0.5} /><span>Locked</span></div>
               </div>
               <div className="gp-row center">
-                <PPiece id="iconbtn" icon={STOCK_ICONS.search} scale={0.4} />
-                <PPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.4} />
+                <PPiece id="iconbtn" icon={STOCK_ICONS.search} scale={0.4} trim />
+                <PPiece id="iconbtn" icon={STOCK_ICONS.home} scale={0.4} trim />
               </div>
             </div>
           </div>

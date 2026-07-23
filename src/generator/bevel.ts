@@ -1896,43 +1896,19 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const gid = "vs" + UID++;
       const wellP = wellOf(w, h, inset);
       const rC = hexMix("#FF4D5A", glow, 0.25);
-      /* v72 · opposing fists ride each fighter's fill edge, knuckles at the
-         drain point, speed lines trailing — drawn facing right with the
-         knuckle front at local x=0, so a scale(-1) mirrors the rival's */
-      /* one solid silhouette — back-top corner, four knuckle bumps down the
-         leading edge, a softer thumb lobe under them, rounded heel. No
-         separate parts: outlined sub-shapes read as machinery at bar size. */
-      /* built from parts like a comic fist actually reads: wrist stub, palm
-         mass, FOUR stacked finger capsules (the seams between them are what
-         say "fist" at bar size), thumb capsule tilted across the bottom.
-         Knuckle front sits at local x=0 so a scale(-1) mirrors the rival. */
-      const fist = (fx: number, dir: 1 | -1, tone: string) => {
-        const sF = (bh * 1.15) / 64;
-        const dk = darken(tone, 0.45);
-        const lines = [-20, 0, 18].map((ly, i) => `<rect x="${-260 + i * 16}" y="${ly - 4.5}" width="${170 - i * 24}" height="9" rx="4.5" fill="${tone}" opacity="${(0.4 - i * 0.1).toFixed(2)}"/>`).join("");
-        return `<g transform="translate(${fx.toFixed(1)} ${(30 + h / 2).toFixed(1)}) scale(${(dir * sF).toFixed(3)} ${sF.toFixed(3)})">${lines}
-          <g transform="translate(-14 0)" fill="${tone}" stroke="${dk}" stroke-width="3" stroke-linejoin="round">
-            <rect x="-84" y="-15" width="26" height="30" rx="8"/>
-            <rect x="-62" y="-30" width="50" height="60" rx="13"/>
-            <rect x="-34" y="-31" width="44" height="14.5" rx="7.2"/>
-            <rect x="-32" y="-15.5" width="46" height="14.5" rx="7.2"/>
-            <rect x="-32" y="0" width="46" height="14.5" rx="7.2"/>
-            <rect x="-34" y="15.5" width="42" height="14.5" rx="7.2"/>
-            <g transform="rotate(-6)"><rect x="-36" y="16" width="40" height="15.5" rx="7.7"/></g>
-          </g>
-        </g>`;
-      };
+      /* v73 · the fills wear FULL rounded caps — the outer end's rounding
+         is consumed by the well clip (the rect overhangs it), so only the
+         drain edge shows the cap: no more flat corners mid-bar */
+      const capR = (bh + gapPad * 2) / 2;
       const parts = `<path d="${wellP}" fill="${wellFill}" opacity="0.92"/>
         <defs><clipPath id="${gid}w"><path d="${wellP}"/></clipPath>
         <linearGradient id="${gid}l" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>
         <linearGradient id="${gid}r" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="${darken(rC, 0.25)}"/><stop offset="1" stop-color="${rC}"/></linearGradient></defs>
         <g clip-path="url(#${gid}w)" data-vs="1">
-          ${vL > 0.01 ? `<rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(gapPad + inset + halfW * vL).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" fill="url(#${gid}l)" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
-          <rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(gapPad + inset + halfW * vL).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
-          ${vR > 0.01 ? `<rect x="${(bx + trackW - halfW * vR).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(halfW * vR + gapPad + inset).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" fill="url(#${gid}r)" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
-          <rect x="${(bx + trackW - halfW * vR).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(halfW * vR + gapPad + inset).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
-          ${vL > 0.05 ? fist(bx + halfW * vL, 1, hexMix(glow, "#FFFFFF", 0.45)) : ""}
-          ${vR > 0.05 ? fist(bx + trackW - halfW * vR, -1, hexMix(rC, "#FFFFFF", 0.2)) : ""}
+          ${vL > 0.01 ? `<rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(gapPad + inset + halfW * vL).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" rx="${capR.toFixed(1)}" fill="url(#${gid}l)" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
+          <rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(gapPad + inset + halfW * vL - bh * 0.2).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
+          ${vR > 0.01 ? `<rect x="${(bx + trackW - halfW * vR).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(halfW * vR + gapPad + inset).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" rx="${capR.toFixed(1)}" fill="url(#${gid}r)" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
+          <rect x="${(bx + trackW - halfW * vR + bh * 0.2).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(halfW * vR + gapPad + inset - bh * 0.2).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
         </g>` +
         candyKnob(cxV, 30 + h / 2, h * 0.46, knobC) +
         `<text x="${cxV.toFixed(1)}" y="${(30 + h / 2 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(30 * k * typeK).toFixed(1)}" font-weight="800" font-style="italic" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">VS</text>`;
