@@ -659,7 +659,7 @@ export function Panel() {
           </>)}
           {iconSwappable && (<>
           <div className="sublabel">Icon</div>
-          <div className="helper">Swap the glyph on <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and every export follow. Remove it and the text recenters. Weight lives under <b>Typography → Icon weight</b>.</div>
+          <div className="helper">Swap the glyph on <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and every export follow. Remove it and the text recenters. Size, color, weight & effects live under <b>Typography → Icons</b>.</div>
           <button className={`resetstate${kitIcons[focus] === "none" ? " on" : ""}`} onClick={() => setKitIcon(focus, kitIcons[focus] === "none" ? null : "none")}>
             <Trash2 size={13} strokeWidth={2} /> {kitIcons[focus] === "none" ? "Icon removed — bring it back" : "Remove the icon"}
           </button>
@@ -1289,8 +1289,23 @@ export function Panel() {
           <div className="helper">Crisp vector highlights riding the letterforms — a specular slab clipped to the glyphs plus star glints. They follow the master Lighting angle; the nudges shift the whole treatment in % of the letter height.</div>
         </FxToggle>
         <div className="sublabel">Icons</div>
-        <Slider label="Icon weight" value={cfg.icon.strokeWidth} min={8} max={40} unit="" onChange={(v) => update((c) => { c.icon.strokeWidth = v; })} />
-        <div className="helper">Icons inherit the type voice — this weight drives every stroked glyph across the kit (buttons, counters, slots, rows). 24 is the neutral middle.</div>
+        <div className="helper">The kit-wide icon treatment — every glyph (buttons, counters, slots, rows) follows this. Swap a specific component's glyph in <b>Component content</b>.</div>
+        <Slider label="Size" value={cfg.icon.size} min={40} max={170} unit="%" onChange={(v) => update((c) => { c.icon.size = v; })} />
+        <Slider label="Weight" value={cfg.icon.strokeWidth} min={5} max={40} unit="/10" onChange={(v) => update((c) => { c.icon.strokeWidth = v; })} />
+        <label className="check"><input type="checkbox" checked={cfg.icon.color === null}
+          onChange={(e) => update((c) => { c.icon.color = e.target.checked ? null : "#FFFFFF"; })} /> Inherit type color</label>
+        {cfg.icon.color !== null && <Well label="Custom color" value={cfg.icon.color} onChange={(v) => update((c) => { c.icon.color = v; })} />}
+        <Slider label="Opacity" value={cfg.icon.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.icon.opacity = v; })} />
+        <Slider label="Rotation" value={cfg.icon.rotation} min={0} max={360} unit="°" onChange={(v) => update((c) => { c.icon.rotation = v; })} />
+        <div className="sublabel">Icon effects</div>
+        <div className="fxrow">
+          {(["shadow", "glow", "emboss"] as const).map((f) => (
+            <button key={f} className={`fxchip${cfg.icon.fx[f] ? " on" : ""}`} aria-pressed={cfg.icon.fx[f]}
+              onClick={() => update((c) => { c.icon.fx[f] = !c.icon.fx[f]; })}>
+              {f[0].toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
       </Section>
 
 
