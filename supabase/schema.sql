@@ -222,6 +222,29 @@ drop policy if exists "presets_admin_delete" on public.presets;
 create policy "presets_admin_delete" on public.presets for delete
   using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
 
+-- App settings: world-readable, admin-writable key/value store for the few
+-- pieces of app curation that must apply to every visitor — first use is
+-- `hidden_starter_presets`, the list of starter-preset ids an admin retired.
+create table if not exists public.app_settings (
+  key        text primary key,
+  value      jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.app_settings enable row level security;
+
+drop policy if exists "app_settings_read_all" on public.app_settings;
+create policy "app_settings_read_all" on public.app_settings for select using (true);
+
+drop policy if exists "app_settings_admin_insert" on public.app_settings;
+create policy "app_settings_admin_insert" on public.app_settings for insert
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+drop policy if exists "app_settings_admin_update" on public.app_settings;
+create policy "app_settings_admin_update" on public.app_settings for update
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+drop policy if exists "app_settings_admin_delete" on public.app_settings;
+create policy "app_settings_admin_delete" on public.app_settings for delete
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+
 -- Make yourself an admin (run once, AFTER that account has signed up so its
 -- profile row exists):
 --   update public.profiles set is_admin = true where email = 'chevon@me.com';

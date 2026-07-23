@@ -761,6 +761,28 @@ export async function deleteCloudPreset(id: string): Promise<string | null> {
   return error?.message ?? null;
 }
 
+/* Starter presets ship in the bundle, but an admin can retire them for every
+   visitor: the retired ids live in app_settings (world-readable, admin-
+   writable — same RLS shape as presets). Cloud off → empty list → all show. */
+const HIDDEN_STARTERS_KEY = "hidden_starter_presets";
+
+export async function listHiddenStarters(): Promise<string[]> {
+  const client = await getClient();
+  if (!client) return [];
+  const { data, error } = await client.from("app_settings")
+    .select("value").eq("key", HIDDEN_STARTERS_KEY).maybeSingle();
+  if (error || !Array.isArray(data?.value)) return [];
+  return (data.value as unknown[]).filter((x): x is string => typeof x === "string");
+}
+
+export async function setHiddenStarters(ids: string[]): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in as an admin to curate starter presets.";
+  const { error } = await client.from("app_settings")
+    .upsert({ key: HIDDEN_STARTERS_KEY, value: ids, updated_at: new Date().toISOString() });
+  return error?.message ?? null;
+}
+
 /** Data rights: hand the user their complete saved document as JSON. */
 export function downloadMyData() {
   const blob = new Blob([JSON.stringify(collectDoc(), null, 2)], { type: "application/json" });

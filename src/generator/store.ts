@@ -4,7 +4,7 @@ import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetB
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
-import { listCloudPresets, amIAdmin, publishCloudPreset, deleteCloudPreset, type CloudPreset } from "./cloud";
+import { listCloudPresets, amIAdmin, publishCloudPreset, deleteCloudPreset, listHiddenStarters, setHiddenStarters, type CloudPreset } from "./cloud";
 import siteDefaultJson from "./site-default.json";
 import bubblePopJson from "./preset-bubble-pop.json";
 import neonVersusJson from "./preset-neon-versus.json";
@@ -295,6 +295,10 @@ interface GenStore {
   applyCloudPreset: (id: string) => void;
   publishPreset: (name: string) => Promise<string | null>;
   removeCloudPresetById: (id: string) => Promise<void>;
+  /** Starter-preset ids an admin retired for every visitor (cloud-stored). */
+  hiddenStarters: string[];
+  hideStarterPreset: (id: string) => Promise<string | null>;
+  restoreStarterPresets: () => Promise<string | null>;
   /** Imported flat-vector silhouettes — see the spec in the Silhouette panel. */
   userShapes: UserShape[];
   addUserShape: (u: UserShape) => void;
@@ -797,8 +801,8 @@ export const useGen = create<GenStore>((set, get) => ({
   cloudPresets: [],
   isAdmin: false,
   loadCloudPresets: async () => {
-    const [presets, admin] = await Promise.all([listCloudPresets(), amIAdmin()]);
-    set({ cloudPresets: presets, isAdmin: admin });
+    const [presets, admin, hidden] = await Promise.all([listCloudPresets(), amIAdmin(), listHiddenStarters()]);
+    set({ cloudPresets: presets, isAdmin: admin, hiddenStarters: hidden });
   },
   applyCloudPreset: (id) => {
     const p = get().cloudPresets.find((x) => x.id === id);
@@ -825,6 +829,18 @@ export const useGen = create<GenStore>((set, get) => ({
   removeCloudPresetById: async (id) => {
     await deleteCloudPreset(id);
     await get().loadCloudPresets();
+  },
+  hiddenStarters: [],
+  hideStarterPreset: async (id) => {
+    const next = [...new Set([...get().hiddenStarters, id])];
+    const err = await setHiddenStarters(next);
+    if (!err) set({ hiddenStarters: next });
+    return err;
+  },
+  restoreStarterPresets: async () => {
+    const err = await setHiddenStarters([]);
+    if (!err) set({ hiddenStarters: [] });
+    return err;
   },
   kitName: loadJson<string | null>("ui-generator-kitname", null),
   setKitName: (v) => { markTouched(); saveJson("ui-generator-kitname", v); set({ kitName: v }); },
@@ -1033,7 +1049,7 @@ export const useGen = create<GenStore>((set, get) => ({
     });
   },
   randomize: () => {
-    const next = randomizeConfig(get().cfg);
+    const next = randomizeConfig(get().cfg, get().hiddenStarters);
     const roll = (n: number) => Math.floor(Math.random() * n);
     get().update((c) => {
       c.effects = next.effects; // lighting stays put — rolled light angles tilted the speculars askew
@@ -1041,7 +1057,9 @@ export const useGen = create<GenStore>((set, get) => ({
       // and candy build from a random preset — so randomize explores the
       // whole wardrobe instead of recoloring one outfit
       if (Math.random() < 0.34) {
-        const pr = PRESETS[roll(PRESETS.length)];
+        // retired starters stay retired — rolls draw from the visible wardrobe
+        const pool = PRESETS.filter((p) => !get().hiddenStarters.includes(p.id));
+        const pr = pool.length ? pool[roll(pool.length)] : PRESETS[roll(PRESETS.length)];
         c.shape = pr.shape;
         c.bevel = { ...pr.bevel };
         applyPresetCandy(c.candy, pr);
@@ -1072,7 +1090,7 @@ export const useGen = create<GenStore>((set, get) => ({
   setGridStyle: (v) => set({ gridStyle: v }),
   setSectionFilter: (v) => set({ sectionFilter: v }),
   randomizeColors: () => {
-    const next = randomizeConfig(get().cfg);
+    const next = randomizeConfig(get().cfg, get().hiddenStarters);
     get().update((c) => { c.effects = next.effects; retintText(c); });
   },
   toggle: (s) => set((st) => ({ open: { ...st.open, [s]: !st.open[s] } })),

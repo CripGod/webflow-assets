@@ -122,6 +122,13 @@ may edit their own profile row. The client's admin check is UI gating only.
 This is the exact shape the paid-entitlement phase will follow: the capability
 lives in the database, the server enforces it, the client only reflects it.
 
+Starter presets (the styles that ship in the bundle — formerly "built-in")
+are admin-curatable too: `public.app_settings` (world-readable, admin-writable
+key/value, same RLS shape as presets) holds `hidden_starter_presets`, the ids
+an admin retired. Retired starters disappear from the Presets panel for every
+visitor and are excluded from randomize rolls; an admin-only "Restore removed
+starters" button clears the list. Cloud off → empty list → all starters show.
+
 ## Security posture (what is and is not protected)
 
 - The anon key is public by design; **all** access control is row-level
