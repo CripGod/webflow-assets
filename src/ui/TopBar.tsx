@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { CheckCircle2, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Star, LogIn, Moon, Sun, Gamepad2, Sparkles } from "lucide-react";
+import { CheckCircle2, CloudOff, CloudUpload, MoreHorizontal, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Moon, Sun, Gamepad2, Sparkles } from "lucide-react";
 import { useGen, hydrate, getDefault } from "@/generator/store";
+import { AccountMenu, useCloudStatus } from "./AccountMenu";
 import { renderBevel } from "@/generator/bevel";
 import { downloadSvg, downloadPng, downloadHtml, downloadSettings, downloadGameKit, copyText } from "@/generator/exportUtils";
 
@@ -112,6 +113,7 @@ function HelpHint() {
 
 export function TopBar() {
   const { cfg, saveStatus, selectedState, theme, setTheme, replaceConfig, shine, setShine } = useGen();
+  const cloud = useCloudStatus();
   const [menuOpen, setMenuOpen] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
   const [, setCopied] = useState(false);
@@ -161,8 +163,22 @@ export function TopBar() {
       <div className="top-spacer" />
 
       <div className="saved">
-        <span className="ok"><CheckCircle2 size={19} strokeWidth={1.9} color={saveStatus === "saved" ? "#16a34a" : "#9aa1ac"} /></span>
-        {saveStatus === "saved" ? "All changes saved" : "Saving…"}
+        {cloud.state === "error" ? (
+          <>
+            <span className="ok"><CloudOff size={19} strokeWidth={1.9} color="#d97706" /></span>
+            Cloud paused — saved locally
+          </>
+        ) : cloud.state === "synced" || cloud.state === "syncing" ? (
+          <>
+            <span className="ok"><CloudUpload size={19} strokeWidth={1.9} color={cloud.state === "synced" && saveStatus === "saved" ? "#16a34a" : "#9aa1ac"} /></span>
+            {cloud.state === "synced" && saveStatus === "saved" ? "Saved to your account" : "Syncing…"}
+          </>
+        ) : (
+          <>
+            <span className="ok"><CheckCircle2 size={19} strokeWidth={1.9} color={saveStatus === "saved" ? "#16a34a" : "#9aa1ac"} /></span>
+            {saveStatus === "saved" ? "All changes saved" : "Saving…"}
+          </>
+        )}
       </div>
 
       <button className={`acct${shine ? " on" : ""}`} onClick={() => setShine(!shine)}
@@ -177,18 +193,12 @@ export function TopBar() {
         {theme === "dark" ? <Sun size={17} strokeWidth={1.9} /> : <Moon size={17} strokeWidth={1.9} />}
       </button>
 
-      {/* account placeholder — carves out the spot; real auth comes later */}
       <div ref={acctRef} style={{ position: "relative" }}>
-        <button className="acct" onClick={() => setAcctOpen(!acctOpen)} aria-label="Account" title="Account">
+        <button className={`acct${cloud.state === "synced" ? " on" : ""}`} onClick={() => setAcctOpen(!acctOpen)}
+          aria-label="Account" title={cloud.email ? `Account — ${cloud.email}` : "Account"}>
           <User size={17} strokeWidth={1.9} />
         </button>
-        {acctOpen && (
-          <div className="menu-pop">
-            <div className="menu-note">Guest session</div>
-            <button disabled><LogIn size={15} strokeWidth={1.8} /> Sign in — coming soon</button>
-            <button disabled><Star size={15} strokeWidth={1.8} /> My presets — coming soon</button>
-          </div>
-        )}
+        {acctOpen && <AccountMenu onClose={() => setAcctOpen(false)} />}
       </div>
 
       <div ref={menuRef} style={{ position: "relative" }}>
