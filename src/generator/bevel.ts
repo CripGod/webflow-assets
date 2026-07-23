@@ -2,6 +2,7 @@ import type { GenConfig, GenStateName, EffectRole, Shape, KitComponentId, KitSiz
 import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEFAULT_ICON, ICONS_ENABLED, STOCK_ICONS, KIT_SHAPE , isDarkBg, userShapes } from "./model";
 import { iconGroup } from "./icons";
 import { silhouetteMeta } from "./silhouettes";
+import { importedShape, flattenPath, pointInPoly, selfIntersections, type Pt } from "./importedShapes";
 import rough from "roughjs";
 
 /* Rough.js draws the hand-drawn *line character* over the approved outline —
@@ -110,7 +111,284 @@ export function transformPath(d: string, vb: [number, number, number, number], x
   return out.join(" ");
 }
 
+/** Cap-preserving vector three-slice: the outer `capSrc` source units at each
+ *  end scale uniformly with height; only the center band stretches. One
+ *  continuous outline — control points are remapped through a piecewise
+ *  monotonic x-map, so there are no seams to hide. Falls back to uniform
+ *  scaling when the frame is too narrow to hold both rigid caps. */
+export function transformPathCapAware(d: string, vb: [number, number, number, number], x: number, y: number, w: number, h: number, capSrc: number): string {
+  const [vx, vy, vw, vh] = vb;
+  const sy = h / (vh || 1);
+  const capW = capSrc * sy;
+  const midSrc = vw - capSrc * 2;
+  const midW = w - capW * 2;
+  if (midSrc <= 4 || midW < midSrc * sy * 0.25) return transformPath(d, vb, x, y, w, h);
+  const mx = (X: number): number => {
+    const u = X - vx;
+    if (u <= capSrc) return x + u * sy;
+    if (u >= vw - capSrc) return x + w - (vw - u) * sy;
+    return x + capW + (u - capSrc) * (midW / midSrc);
+  };
+  const my = (Y: number): number => y + (Y - vy) * sy;
+  const toks = d.match(/[MLHVCSQTAZmlhvcsqtaz]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) ?? [];
+  const out: string[] = [];
+  let i = 0, cmd = "";
+  let cx = vx, cy = vy;
+  const num = () => parseFloat(toks[i++]);
+  while (i < toks.length) {
+    if (/^[a-z]$/i.test(toks[i])) cmd = toks[i++];
+    const rel = cmd === cmd.toLowerCase() && cmd.toUpperCase() !== "Z";
+    const C = cmd.toUpperCase();
+    if (C === "Z") { out.push("Z"); continue; }
+    if (C === "H") { const X = rel ? cx + num() : num(); out.push("L", mx(X).toFixed(2), my(cy).toFixed(2)); cx = X; continue; }
+    if (C === "V") { const Y = rel ? cy + num() : num(); out.push("L", mx(cx).toFixed(2), my(Y).toFixed(2)); cy = Y; continue; }
+    if (C === "A") {
+      const rxx = num(), ryy = num(), rot = num(), laf = num(), swf = num();
+      const X = rel ? cx + num() : num(), Y = rel ? cy + num() : num();
+      out.push("A", (rxx * sy).toFixed(2), (ryy * sy).toFixed(2), String(rot), String(laf), String(swf), mx(X).toFixed(2), my(Y).toFixed(2));
+      cx = X; cy = Y; continue;
+    }
+    const pairs = C === "C" ? 3 : C === "S" || C === "Q" ? 2 : 1; // M L T
+    out.push(C);
+    for (let p = 0; p < pairs; p++) {
+      const X = rel ? cx + num() : num(), Y = rel ? cy + num() : num();
+      out.push(mx(X).toFixed(2), my(Y).toFixed(2));
+      if (p === pairs - 1) { cx = X; cy = Y; }
+    }
+  }
+  return out.join(" ");
+}
+
+/* ── true inward offset (Illustrator "Offset Path") ────────────────────────
+   Scaling a silhouette into a smaller box is NOT a geometric offset: bumps
+   and notches drift, walls pinch, faces escape (measured in the lab). This
+   derives the inner shape the way Illustrator does — every boundary point
+   moves inward along its normal by exactly `delta`, pinched regions are
+   culled, and the result is simplified back to a light path.
+
+   Arc-command paths (pill/round rects) are declined by the caller and keep
+   the classic scaled inset — their convex geometry never suffered from it. */
+const OFFSET_CACHE = new Map<string, string>();
+function distToBoundary(p: Pt, poly: Pt[]): number {
+  let min = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2)) : 0;
+    const d = Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    if (d < min) min = d;
+  }
+  return min;
+}
+function simplifyDP(pts: Pt[], eps: number): Pt[] {
+  if (pts.length < 4) return pts;
+  const keep = new Array(pts.length).fill(false);
+  keep[0] = keep[pts.length - 1] = true;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let maxD = 0, maxI = -1;
+    for (let i = a + 1; i < b; i++) {
+      const dx = pts[b].x - pts[a].x, dy = pts[b].y - pts[a].y;
+      const L = Math.hypot(dx, dy) || 1;
+      const d = Math.abs((pts[i].x - pts[a].x) * dy - (pts[i].y - pts[a].y) * dx) / L;
+      if (d > maxD) { maxD = d; maxI = i; }
+    }
+    if (maxD > eps && maxI > 0) { keep[maxI] = true; stack.push([a, maxI], [maxI, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+export function offsetPathInward(d: string, delta: number): string {
+  if (delta <= 0.05) return d;
+  const key = `${delta.toFixed(2)}|${d}`;
+  const hit = OFFSET_CACHE.get(key);
+  if (hit !== undefined) return hit;
+  const raw = flattenPath(d, 14)[0] ?? [];
+  // dedupe — shared corner endpoints from L/Q handoffs make zero-length edges
+  const dd: Pt[] = [];
+  for (const p of raw) {
+    const last = dd[dd.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 0.25) dd.push(p);
+  }
+  if (dd.length > 2 && Math.hypot(dd[0].x - dd[dd.length - 1].x, dd[0].y - dd[dd.length - 1].y) < 0.25) dd.pop();
+  if (dd.length < 6) { OFFSET_CACHE.set(key, ""); return ""; }
+  /* rotate the ring so it starts mid-way along the LONGEST edge — the DP
+     simplifier pins its endpoints, and a start point sitting inside a
+     rounded corner would leave un-collapsible seam vertices there */
+  let rl = 0, ri = 0;
+  for (let i = 0; i < dd.length; i++) {
+    const L = Math.hypot(dd[(i + 1) % dd.length].x - dd[i].x, dd[(i + 1) % dd.length].y - dd[i].y);
+    if (L > rl) { rl = L; ri = i; }
+  }
+  const rot = dd.slice(ri + 1).concat(dd.slice(0, ri + 1));
+  const mid0 = { x: (rot[rot.length - 1].x + rot[0].x) / 2, y: (rot[rot.length - 1].y + rot[0].y) / 2 };
+  const ring = [mid0, ...rot];
+  /* attempt ladder: the strict tolerance keeps real curves curved. But when
+     soft corner roundings (r slightly above delta) sit right next to acute
+     tail tips, their surviving chords separate the two edges whose miter
+     must synthesize the receding tip — every corner candidate lands in the
+     thin wedge and gets culled, stranding the offset. Retrying with coarser
+     collapse turns those corners into sharp vertices, which is the correct
+     offset limit there: the wall consumes (r − delta ≈ 0) of rounding. */
+  let dOut = "";
+  for (const k of [0.3, 0.55, 0.85]) {
+    const eps = Math.min(k === 0.3 ? 4.5 : 8, delta * k);
+    /* retries also relax the pinch cull by eps: the chordified boundary sits
+       inside the true curve by up to eps, so a genuinely clear point can
+       measure up to eps short — the excision pass then resolves the tiny
+       tip crossings those borderline points create */
+    const cullT = k === 0.3 ? delta * 0.8 : Math.max(delta * 0.5, delta * 0.8 - eps);
+    dOut = offsetAttempt(ring, delta, eps, Math.max(1.5, delta * k), cullT);
+    if (dOut) break;
+  }
+  if (OFFSET_CACHE.size > 400) OFFSET_CACHE.clear();
+  OFFSET_CACHE.set(key, dOut);
+  return dOut;
+}
+function offsetAttempt(ring: Pt[], delta: number, eps: number, mergeR: number, cullT: number): string {
+  /* pre-simplify the SOURCE: micro-roundings (r « delta) collapse to sharp
+     vertices so their two straight neighbors become adjacent — that's what
+     lets the miter join synthesize the receding tip an offset demands.
+     Real curves deviate more than the tolerance and keep their samples. */
+  const dp = simplifyDP(ring, eps);
+  // merge residual near-corner duplets into single sharp vertices
+  // (clone — merging averages in place, and the ring is shared by retries)
+  const poly: Pt[] = [];
+  for (const q of dp) {
+    const p = { x: q.x, y: q.y };
+    const last = poly[poly.length - 1];
+    if (last && Math.hypot(p.x - last.x, p.y - last.y) < mergeR) {
+      last.x = (last.x + p.x) / 2; last.y = (last.y + p.y) / 2;
+    } else poly.push(p);
+  }
+  if (poly.length > 2 && Math.hypot(poly[0].x - poly[poly.length - 1].x, poly[0].y - poly[poly.length - 1].y) < mergeR) poly.pop();
+  // drop collinear leftovers (incl. the pinned ring-start) — they read as
+  // tiny seam kinks on stroked results
+  for (let i = poly.length - 1; i >= 0 && poly.length > 4; i--) {
+    const a = poly[(i + poly.length - 1) % poly.length], b = poly[i], c = poly[(i + 1) % poly.length];
+    const L = Math.hypot(c.x - a.x, c.y - a.y) || 1;
+    const dev = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / L;
+    if (dev < 0.2) poly.splice(i, 1);
+  }
+  const n = poly.length;
+  if (n < 5) return "";
+  // per-EDGE inward normals; side picked empirically on the longest edge
+  let li = 0, ll = 0;
+  for (let i = 0; i < n; i++) {
+    const L = Math.hypot(poly[(i + 1) % n].x - poly[i].x, poly[(i + 1) % n].y - poly[i].y);
+    if (L > ll) { ll = L; li = i; }
+  }
+  const A0 = poly[li], B0 = poly[(li + 1) % n];
+  const el = Math.hypot(B0.x - A0.x, B0.y - A0.y) || 1;
+  let pnx = (B0.y - A0.y) / el, pny = -(B0.x - A0.x) / el;
+  if (!pointInPoly({ x: (A0.x + B0.x) / 2 + pnx * Math.min(2, delta), y: (A0.y + B0.y) / 2 + pny * Math.min(2, delta) }, poly)) { pnx = -pnx; pny = -pny; }
+  const side = pnx * (B0.y - A0.y) - pny * (B0.x - A0.x) > 0 ? 1 : -1;
+  const dirs: Pt[] = [], nrm: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n];
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    dirs.push({ x: (b.x - a.x) / L, y: (b.y - a.y) / L });
+    nrm.push({ x: side * (b.y - a.y) / L, y: side * -(b.x - a.x) / L });
+  }
+  /* Illustrator-style miter joins: intersect each pair of adjacent offset
+     edge LINES. This is what synthesizes the NEW vertices an offset needs —
+     e.g. the receding tail tips of a swallowtail — which per-vertex normal
+     displacement can never produce. */
+  const cand: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const eP = (i + n - 1) % n;
+    const p = poly[i];
+    const ax = p.x + nrm[eP].x * delta, ay = p.y + nrm[eP].y * delta;
+    const bx = p.x + nrm[i].x * delta, by = p.y + nrm[i].y * delta;
+    const den = dirs[eP].x * dirs[i].y - dirs[eP].y * dirs[i].x;
+    let q: Pt;
+    if (Math.abs(den) < 1e-4) {
+      q = { x: (ax + bx) / 2, y: (ay + by) / 2 };
+    } else {
+      const t = ((bx - ax) * dirs[i].y - (by - ay) * dirs[i].x) / den;
+      q = { x: ax + dirs[eP].x * t, y: ay + dirs[eP].y * t };
+      if (Math.hypot(q.x - p.x, q.y - p.y) > delta * 8) q = { x: (ax + bx) / 2, y: (ay + by) / 2 };
+    }
+    cand.push(q);
+  }
+  // cull pinched regions: a true offset point sits ≥ delta from the boundary
+  let kept = cand.filter((p) => pointInPoly(p, poly) && distToBoundary(p, poly) >= cullT);
+  if (kept.length < 5) return "";
+  /* excise loop-backs: concave miters can cross nearby edges around tight
+     notches; cut each crossing at its intersection and drop the short loop
+     (the standard offset clean-up) */
+  for (let pass = 0; pass < 10; pass++) {
+    const m = kept.length;
+    let cut = false;
+    outer: for (let i = 0; i < m; i++) {
+      for (let j = i + 2; j < m; j++) {
+        if (i === 0 && j === m - 1) continue;
+        const a = kept[i], b = kept[(i + 1) % m], c2 = kept[j], d2 = kept[(j + 1) % m];
+        const den = (b.x - a.x) * (d2.y - c2.y) - (b.y - a.y) * (d2.x - c2.x);
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((c2.x - a.x) * (d2.y - c2.y) - (c2.y - a.y) * (d2.x - c2.x)) / den;
+        const u = ((c2.x - a.x) * (b.y - a.y) - (c2.y - a.y) * (b.x - a.x)) / den;
+        if (t <= 0.001 || t >= 0.999 || u <= 0.001 || u >= 0.999) continue;
+        const X = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        const innerLen = j - i;
+        // only ever excise SMALL loops — a crossing whose shorter arc is a
+        // big share of the ring is a seam artifact, and cutting it would
+        // chop a diagonal through the face (the "weird math" failure)
+        if (Math.min(innerLen, m - innerLen) > Math.max(8, m * 0.42)) continue;
+        kept = innerLen <= m - innerLen
+          ? kept.slice(0, i + 1).concat([X], kept.slice(j + 1))
+          : [X, ...kept.slice(i + 1, j + 1)];
+        cut = true;
+        break outer;
+      }
+    }
+    if (!cut) break;
+  }
+  if (kept.length < 5) return "";
+  // final sanity: a healthy inward offset keeps most of the source area —
+  // anything below that means the cull/excise reconnected across the shape,
+  // so fall back to the classic scaled inset instead of shipping a glitch
+  const shoelace = (ps: Pt[]) => { let s = 0; for (let i = 0; i < ps.length; i++) { const a2 = ps[i], b2 = ps[(i + 1) % ps.length]; s += a2.x * b2.y - b2.x * a2.y; } return Math.abs(s) / 2; };
+  if (shoelace(kept) < shoelace(poly) * 0.45) return "";
+  const out = simplifyDP(kept, 0.35).map((p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 }));
+  // absolute guarantee, checked on the EXACT rounded points that ship: if
+  // any crossing survives excision + simplify + rounding, this combo
+  // declines the true offset and takes the classic scaled inset — a
+  // glitched face never ships
+  if (selfIntersections(out) > 0) return "";
+  return "M " + out.map((p) => `${p.x} ${p.y}`).join(" L ") + " Z";
+}
+
+/** Effective wall width for a shape. The banner's tail geometry only reads
+ *  clean between 13 and 33 (review-measured), so the renderer clamps what
+ *  it consumes — stale or shared configs can't break the tails. `off` drops
+ *  the wall entirely: the face fills the whole silhouette. */
+export function effectiveWall(width: number, shape: Shape, off?: boolean): number {
+  if (off) return 0;
+  return shape === "banner" ? Math.min(33, Math.max(13, width)) : width;
+}
+
+/** Inner shape at true offset `delta` — falls back to the classic scaled
+ *  inset for arc-built paths (pill/round — convex, scaling was never wrong)
+ *  and for offsets too deep to survive. */
+export function insetShape(shape: Shape, outer: string, x: number, y: number, w: number, h: number, delta: number, softness: number): string {
+  if (!/[Aa]/.test(outer)) {
+    const off = offsetPathInward(outer, delta);
+    if (off) return off;
+  }
+  return shapePath(shape, x + delta, y + delta, w - delta * 2, h - delta * 2, softness);
+}
+
 export function shapePath(shape: Shape, x: number, y: number, w: number, h: number, softness: number): string {
+  const imp = importedShape(shape);
+  if (imp) {
+    // Feasibility-lab imports fill the frame exactly — the lab exists to
+    // observe stretch behavior, so no distortion cap applies here. The
+    // `:caps` suffix opts a render into the three-slice experiment.
+    if (shape.endsWith(":caps")) return transformPathCapAware(imp.path, imp.viewBox, x, y, w, h, imp.capSrc);
+    return transformPath(imp.path, imp.viewBox, x, y, w, h);
+  }
   if (shape.startsWith("user:")) {
     const us = userShapes().find((u) => u.id === shape);
     if (us) {
@@ -182,8 +460,10 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
     return polyRounded(v, 2 + softness * 0.2);
   }
   if (shape === "chunky") {
-    // toy capsule: big shoulders + soft inset breaks top and bottom center
-    const r = Math.min(h * 0.42, w * 0.3);
+    // toy capsule: big shoulders + soft inset breaks top and bottom center.
+    // Smoothness drives the shoulder radius (calibrated so the shipped
+    // Toy Box softness ≈ the original 0.42h look; low = chunky slab)
+    const r = Math.min(h * (0.1 + 0.33 * clamp(softness, 0, 100) / 100), w * 0.3);
     const nw = Math.min(w * 0.3, w - 2 * r - 10), nd = h * 0.05;
     const mid = x + w / 2;
     const dipTop = nw > 8 ? `H ${(mid - nw / 2).toFixed(1)} Q ${mid.toFixed(1)} ${(y + nd * 2).toFixed(1)} ${(mid + nw / 2).toFixed(1)} ${y} ` : "";
@@ -201,8 +481,9 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
       + `H ${R(x + capW)} Z`;
   }
   if (shape === "mazepill") {
-    // arcade capsule — elliptical ends flatter than a true pill
-    const rx = Math.min(h * 0.62, w * 0.24), ry = h / 2;
+    // arcade capsule — elliptical ends flatter than a true pill;
+    // smoothness flattens or plumps the end ellipses (0.62h at full)
+    const rx = Math.min(h * (0.18 + 0.44 * clamp(softness, 0, 100) / 100), w * 0.24), ry = h / 2;
     return `M ${x + rx} ${y} H ${x + w - rx} A ${rx} ${ry} 0 0 1 ${x + w} ${y + ry} A ${rx} ${ry} 0 0 1 ${x + w - rx} ${y + h} H ${x + rx} A ${rx} ${ry} 0 0 1 ${x} ${y + ry} A ${rx} ${ry} 0 0 1 ${x + rx} ${y} Z`;
   }
   if (shape === "blade") {
@@ -218,7 +499,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
   }
   if (shape === "tavern") {
     // carved plaque: gently bowed top/bottom, softly concave side walls
-    const bow = h * 0.06, side = Math.max(1.5, w * 0.012), r = Math.min(w, h) * 0.14;
+    const bow = h * 0.06, side = Math.max(1.5, w * 0.012), r = Math.min(w, h) * 0.14 * (0.4 + 0.6 * clamp(softness, 0, 100) / 100);
     return `M ${(x + r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} `
       + `Q ${(x + w / 2).toFixed(1)} ${(y - bow * 0.5).toFixed(1)} ${(x + w - r).toFixed(1)} ${(y + bow * 0.6).toFixed(1)} `
       + `Q ${(x + w).toFixed(1)} ${(y + bow * 0.8).toFixed(1)} ${(x + w - side).toFixed(1)} ${(y + h * 0.26).toFixed(1)} `
@@ -332,7 +613,7 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
   if (shape === "handdrawn") {
     // inked plaque: seeded wobble runs + deliberately uneven corner cuts
     const wob = Math.max(1, h * 0.015);
-    const r = Math.min(14, h * 0.14);
+    const r = Math.min(14, h * 0.14) * (0.4 + 0.6 * clamp(softness, 0, 100) / 100);
     const c = [r * 1.2, r * 0.8, r * 1.05, r * 0.9]; // authored, not random
     return `M ${(x + c[0]).toFixed(1)} ${y} `
       + inkRun(x + c[0], y, x + w - c[1], y, wob, 11)
@@ -434,6 +715,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   label?: string; iconDef?: IconDef | null; secondary?: boolean; shapeOverride?: Shape; fixedW?: number;
   /** Explicit per-component vertical text adjustment — overrides the theme's. */
   textOy?: number;
+  /** Explicit per-component horizontal text adjustment — overrides the theme's. */
+  textOx?: number;
   /** Anchor text at its left edge (type specimens) — estimate error then
    *  lands on the ragged right instead of staggering every line. */
   anchorLeft?: boolean;
@@ -449,6 +732,10 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const secondary = !!opts.secondary;
   const D = designFor(cfg, state);
   const shape = opts.shapeOverride ?? D.shape;
+  // Imported (feasibility-lab) silhouettes carry their own safe-area and
+  // inset metadata — generic fields, looked up once and applied like any
+  // registered silhouette's. Undefined for every production shape.
+  const impMeta = importedShape(shape);
   const C = D.candy;
   const K = (g0.tokenH ?? g0.h) / 168; // token px scale for kit sizes
 
@@ -502,7 +789,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   /* text-safe area — the silhouette's authored content insets keep labels out
      of caps, tails and bevels, with breathing room that scales with the label
      size. The old padding stands as a floor so compact shapes don't change. */
-  const met = silhouetteMeta(shape);
+  const met = silhouetteMeta(shape) ?? impMeta;
   const endRoom = shape === "pill" ? h * 0.16 : 0; // rounded ends eat width
   const basePad = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + endRoom;
   const safeGap = Math.max(12, fs * 0.35);
@@ -526,7 +813,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     const itX = Tx.italic ? fsx * 0.3 : 0;
     const twX = (showText ? casedX.length * fsx * fontByName(Tx.font).factor * wdX * (1 + Tx.spacing / 100) * wkX * (opts.anchorLeft ? 1.13 : 1.06) : 0) + itX;
     const cwX = twX + (iconDef ? iconSize : 0) + gap;
-    const metX = silhouetteMeta(shx);
+    const metX = silhouetteMeta(shx) ?? importedShape(shx);
     const erX = shx === "pill" ? h * 0.16 : 0;
     const bpX = (iconOnly ? Math.max(24, h * 0.2) : Math.max(64 * K, h * 0.42)) + erX;
     const sgX = Math.max(12, fsx * 0.35);
@@ -560,11 +847,18 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
      exports all stay aligned while the glow gets room to breathe. */
   const pad = glowPadOf(cfg);
 
-  const bw = (secondary ? Math.max(4, D.bevel.width * 0.7) : D.bevel.width) * K;
+  const wall = effectiveWall(D.bevel.width, shape, D.bevel.off);
+  const bw = (wall === 0 ? 0 : secondary ? Math.max(4, wall * 0.7) : wall) * K;
+  // Metadata-driven face inset (imported silhouettes only): maxBevelRatio
+  // caps the inset a shape can survive, faceInsetScale trims it further.
+  // For every production shape bwF === bw — behavior is unchanged.
+  const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
   const rimW = C.rim.width * K;
   const outer = shapePath(shape, x, y, w, h, D.bevel.softness);
-  const faceP = shapePath(shape, x + bw, y + bw, w - bw * 2, h - bw * 2, Math.max(0, D.bevel.softness - 8));
-  const rimP = shapePath(shape, x + rimW / 2 + 0.8, y + rimW / 2 + 0.8, w - rimW - 1.6, h - rimW - 1.6, D.bevel.softness);
+  // v67: TRUE inward offsets (Illustrator "Offset Path") — inner shapes
+  // follow the silhouette's actual contour instead of a rescaled clone
+  const faceP = insetShape(shape, outer, x, y, w, h, bwF, Math.max(0, D.bevel.softness - 8));
+  const rimP = insetShape(shape, outer, x, y, w, h, rimW / 2 + 0.8, D.bevel.softness);
 
   /* ── key light — global source of truth ──────────────────────── */
   const A = ((D.lighting.angle % 360) + 360) % 360;
@@ -630,8 +924,8 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     ? `<ellipse cx="${(x + w / 2 + sdx * 0.35).toFixed(1)}" cy="${(y + h + visDepth + Math.max(0, lift) + 1.5).toFixed(1)}" rx="${(w * 0.47).toFixed(1)}" ry="${(5.5 * K + visDepth * 0.22).toFixed(1)}" fill="url(#${id}ct)" opacity="${contactOp.toFixed(2)}"/>`
     : "";
 
-  /* face box (for screen-space layers) */
-  const fx0 = x + bw, fy0 = y + bw, fw = w - bw * 2, fh = h - bw * 2;
+  /* face box (for screen-space layers) — follows the actual face inset */
+  const fx0 = x + bwF, fy0 = y + bwF, fw = w - bwF * 2, fh = h - bwF * 2;
   const faceCx = fx0 + fw / 2, faceCy = fy0 + fh / 2;
 
   /* 7 ── inner glow (own color, or the Glow well; unlit side) */
@@ -713,7 +1007,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     } else if (SP.mode === "sweep") {
       // reflective event hugging the shell's edge curve on the lit side
       const swW = Math.max(2, spSize * 0.32);
-      const sweepP = shapePath(shape, x + bw * 0.55, y + bw * 0.55, w - bw * 1.1, h - bw * 1.1, Math.max(0, D.bevel.softness - 4));
+      const sweepP = insetShape(shape, outer, x, y, w, h, bwF * 0.55, Math.max(0, D.bevel.softness - 4));
       specular = `<path d="${sweepP}" fill="none" stroke="url(#${id}sw)" stroke-width="${swW.toFixed(1)}" opacity="${spOp.toFixed(2)}"/>`;
     } else {
       const main = `<ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spRx.toFixed(1)}" ry="${spRy.toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>`;
@@ -828,8 +1122,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const italicShift = T2.italic ? italicPad * 0.35 : 0; // rebalance the lean
   const textX = (placeLeft ? startX + (iconDef ? iconSize + gap : 0) + textW / 2 : startX + textW / 2) - italicShift;
   const tAnchor = opts.anchorLeft ? "start" : "middle";
-  const tTextX = opts.anchorLeft ? x + padL - italicShift : textX;
-  const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K;
+  // horizontal text nudge — folded into the anchor so the outline, stripes,
+  // glints and highlight slab all travel with the glyphs as one unit
+  const textOx = opts.textOx ?? T2.ox ?? 0;
+  const tTextX = (opts.anchorLeft ? x + padL - italicShift : textX) + textOx * K;
+  const iconX = (iconOnly ? cx - iconSize / 2 : placeLeft ? startX : startX + textW + gap) + cfg.icon.ox * K + (iconOnly ? textOx * K : 0);
   // icon-only pieces (awarded badges, icon buttons): the vertical nudge is
   // the icon's nudge — there is no text for it to move
   const iconY = cy - iconSize / 2 + cfg.icon.oy * K + (iconOnly ? (opts.textOy ?? T2.oy ?? 0) * K : 0);
@@ -867,8 +1164,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     const tx0 = opts.anchorLeft ? tTextX : tTextX - textW / 2;
     const gcx = tx0 + textW / 2;
     const bandW = textW * 1.18, bandH = fs * 0.28;
+    // user nudge — % of the letter height, applied to slab and stars alike
+    const gdx = clamp(GL2!.ox ?? 0, -100, 100) / 100 * fs;
+    const gdy = clamp(GL2!.oy ?? 0, -100, 100) / 100 * fs;
     // the slab drifts toward the light and tilts perpendicular to it
-    const bcx = gcx + lx * fs * 0.08, bcy = gy + ly * fs * 0.24;
+    const bcx = gcx + lx * fs * 0.08 + gdx, bcy = gy + ly * fs * 0.24 + gdy;
     const rot = Math.atan2(ly, lx) * 180 / Math.PI + 90;
     const star4 = (sx: number, sy: number, s: number, sr: number) =>
       `<path d="M0 ${(-s).toFixed(1)} L${(s * 0.22).toFixed(1)} ${(-s * 0.22).toFixed(1)} L${s.toFixed(1)} 0 L${(s * 0.22).toFixed(1)} ${(s * 0.22).toFixed(1)} L0 ${s.toFixed(1)} L${(-s * 0.22).toFixed(1)} ${(s * 0.22).toFixed(1)} L${(-s).toFixed(1)} 0 L${(-s * 0.22).toFixed(1)} ${(-s * 0.22).toFixed(1)} Z" transform="translate(${sx.toFixed(1)} ${sy.toFixed(1)}) rotate(${sr})" fill="#FFFFFF"/>`;
@@ -878,13 +1178,13 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
         <rect x="${(bcx - bandW * 0.19).toFixed(1)}" y="${(bcy + bandH * 0.75).toFixed(1)}" width="${(bandW * 0.38).toFixed(1)}" height="${(bandH * 0.42).toFixed(1)}" rx="${(bandH * 0.21).toFixed(1)}" fill="#FFFFFF" opacity="0.7" transform="rotate(${rot.toFixed(1)} ${bcx.toFixed(1)} ${bcy.toFixed(1)})"/>
       </g>
       <g opacity="${Math.min(1, gOp * 1.15).toFixed(2)}">
-        ${star4(tx0 + textW * 0.16 + lx * fs * 0.06, gy - fs * 0.24 + ly * fs * 0.06, fs * 0.16, 0)}
-        ${star4(tx0 + textW * 0.52 + lx * fs * 0.06, gy + fs * 0.16 + ly * fs * 0.06, fs * 0.09, 18)}
-        ${star4(tx0 + textW * 0.85 + lx * fs * 0.06, gy - fs * 0.1 + ly * fs * 0.06, fs * 0.125, -14)}
+        ${star4(tx0 + textW * 0.16 + lx * fs * 0.06 + gdx, gy - fs * 0.24 + ly * fs * 0.06 + gdy, fs * 0.16, 0)}
+        ${star4(tx0 + textW * 0.52 + lx * fs * 0.06 + gdx, gy + fs * 0.16 + ly * fs * 0.06 + gdy, fs * 0.09, 18)}
+        ${star4(tx0 + textW * 0.85 + lx * fs * 0.06 + gdx, gy - fs * 0.1 + ly * fs * 0.06 + gdy, fs * 0.125, -14)}
       </g>`;
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw + pad * 2}" height="${vh + pad * 2}" viewBox="${-pad} ${-pad} ${vw + pad * 2} ${vh + pad * 2}" font-family="'${T2.font}', Inter, sans-serif" role="img" aria-label="${label || "component"}, ${state} state">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vw + pad * 2}" height="${vh + pad * 2}" viewBox="${-pad} ${-pad} ${vw + pad * 2} ${vh + pad * 2}" font-family="'${T2.font}', Inter, sans-serif" data-shell="${x.toFixed(1)} ${(y + riseDy + lift).toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" role="img" aria-label="${label || "component"}, ${state} state">
 <defs>
   <linearGradient id="${id}band" ${axis}>
     <stop offset="0" stop-color="${darken(bevelC, clamp(0.3 * lowK, 0, 0.7))}"/>
@@ -957,6 +1257,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   ${glintsDefs}
   ${textFxDef}
   <clipPath id="${id}fc"><path d="${faceP}"/></clipPath>
+  <clipPath id="${id}oc"><path d="${outer}"/></clipPath>
   ${castShadow ? `<filter id="${id}sb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${sBlur.toFixed(1)}"/></filter>` : ""}
   ${aura ? `<filter id="${id}gb" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="14"/></filter>
   <filter id="${id}gb2" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="30"/></filter>` : ""}
@@ -973,6 +1274,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${rimW > 0.2 ? `<path d="${rimP}" fill="none" stroke="url(#${id}rim)" stroke-width="${rimW.toFixed(1)}" opacity="${((C.rim.brightness / 100) * (disabled ? 0.5 : 1)).toFixed(2)}"/>` : ""}
       ${shape === "handdrawn" && !disabled ? roughInk(outer, darken(bevelC, 0.58), 1.4 * K) : ""}
     </g>
+    <g data-oclip="1" clip-path="url(#${id}oc)">
     <g id="${id}_face" opacity="${(T.interior / 100).toFixed(2)}">
       <path d="${faceP}" fill="url(#${id}face)"/>
       <g clip-path="url(#${id}fc)">
@@ -1004,6 +1306,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     </g>
     ${C.gloss.layer === "above" ? `<g id="${id}_gloss" opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${C.gloss.blend && C.gloss.blend !== "normal" ? ` style="mix-blend-mode:${C.gloss.blend}"` : ""}>${gloss}</g>` : ""}
     ${specular ? `<g id="${id}_specular" opacity="${(T.interior / 100).toFixed(2)}" clip-path="url(#${id}fc)"${SP.blend && SP.blend !== "normal" ? ` style="mix-blend-mode:${SP.blend}"` : ""}>${specular}</g>` : ""}
+    </g>
   </g>
 </g>
 </svg>`;
@@ -1020,10 +1323,39 @@ export function glowPadOf(cfg: GenConfig): number {
   return maxGlow > 0.5 ? 90 : 0;
 }
 
+/** The exact outer / rim / face geometry build() derives for a shell —
+ *  exported so the feasibility lab's diagnostic overlays audit the REAL
+ *  inset math, not a copy of it. Mirrors build()'s derivation (bw, bwF,
+ *  rimW, softness offsets); keep the two in lockstep. */
+export function shellPaths(cfg: GenConfig, shape: Shape, x: number, y: number, w: number, h: number): { outer: string; rim: string; face: string; bw: number; bwF: number; rimW: number } {
+  const D = designFor(cfg, "default");
+  const K = h / 168;
+  const bw = effectiveWall(D.bevel.width, shape, D.bevel.off) * K;
+  const impMeta = importedShape(shape);
+  const bwF = (impMeta?.maxBevelRatio !== undefined ? Math.min(bw, h * impMeta.maxBevelRatio) : bw) * (impMeta?.faceInsetScale ?? 1);
+  const rimW = D.candy.rim.width * K;
+  const outer = shapePath(shape, x, y, w, h, D.bevel.softness);
+  return {
+    outer,
+    face: insetShape(shape, outer, x, y, w, h, bwF, Math.max(0, D.bevel.softness - 8)),
+    rim: insetShape(shape, outer, x, y, w, h, rimW / 2 + 0.8, D.bevel.softness),
+    bw, bwF, rimW,
+  };
+}
+
 /** Master component — width follows the label. Margins are 1.5× so large
  *  shadow distances never clip against the invisible canvas bounds. */
 export function renderBevel(cfg: GenConfig, state: GenStateName): string {
   return build(cfg, state, { x: 52, y: 36, h: 168, fs: 52, iconSize: 46 });
+}
+
+/** Feasibility-lab entry: one shell at an exact frame size. Same build()
+ *  pipeline as every production render — nothing here is shape-specific.
+ *  `fs` is the pre-scale type size (build multiplies by type.size/52). */
+export function renderShell(cfg: GenConfig, state: GenStateName, w: number, h: number, opts: { label?: string; iconDef?: IconDef | null; fs?: number } = {}): string {
+  return build(cfg, state, { x: 40, y: 32, h, fs: opts.fs ?? h * 0.31, iconSize: h * 0.3 }, {
+    label: opts.label, iconDef: opts.iconDef === undefined ? null : opts.iconDef, fixedW: w,
+  });
 }
 
 /** Just the typography — the complete text treatment rendered by the same
@@ -1063,6 +1395,7 @@ export function renderTypeSpecimen(cfg: GenConfig, text: string, opts: SpecimenO
 
 /* ── kit components ────────────────────────────────────────────── */
 const SIZE_K: Record<KitSize, number> = { s: 0.72, m: 1, l: 1.22 };
+const cxOf = (w: number) => w / 2;
 
 /** Dimensional candy ball — knobs for toggles, switches and sliders. */
 function candyKnob(cx: number, cy: number, r: number, base: string, dot?: string): string {
@@ -1079,7 +1412,29 @@ function candyKnob(cx: number, cy: number, r: number, base: string, dot?: string
 }
 
 function inject(track: string, extra: string): string {
+  /* v72: injected content lands INSIDE the lift group — a hover lift must
+     carry wells, fills, dials and emblems with the shell, not leave them
+     floating at rest (the "only the frame lifts" bug). The lift group is
+     the second-to-last close in every build() render. */
+  const tail = "  </g>\n</g>\n</svg>";
+  if (track.endsWith(tail)) return track.slice(0, -tail.length) + extra + tail;
   return track.replace("</g>\n</svg>", extra + "</g>\n</svg>");
+}
+
+/** Overlay a specular shine band, clipped to the component's face (the
+ *  `…fc` clipPath every shell render carries). The band itself is static —
+ *  gen.css sweeps `.kit-shine` across the viewBox and reduced-motion turns
+ *  it off. Components without a face clip come back unchanged. */
+export function addShine(svg: string): string {
+  const fc = /clip-path="url\(#([A-Za-z0-9]+)fc\)"/.exec(svg);
+  const vb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(svg);
+  if (!fc || !vb) return svg;
+  const id = fc[1];
+  const [, vx, vy, vw, vh] = vb.map(Number);
+  const bw = vw * 0.3;
+  const grad = `<linearGradient id="${id}shn" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.4"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>`;
+  const band = `<g clip-path="url(#${id}fc)"><g transform="skewX(-14)"><rect class="kit-shine" x="${(vx - bw).toFixed(1)}" y="${(vy - vh).toFixed(1)}" width="${bw.toFixed(1)}" height="${(vh * 3).toFixed(1)}" fill="url(#${id}shn)"/></g></g>`;
+  return inject(svg.replace("</defs>", grad + "</defs>"), band);
 }
 
 /* Stamp the draggable run of a control (slider, progress, segment) onto the
@@ -1105,15 +1460,24 @@ export interface KitOpts {
   tone?: "alt";
   /** Joystick deflection, each axis −1..1. */
   stick?: [number, number];
-  label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number;
+  label?: string; segments?: string[]; icon?: IconDef | null; expand?: boolean; textOy?: number; textOx?: number;
+  /** Docked emblem socket — a silhouette-aware mini shell riding a bar's
+   *  end, hosting any glyph (timer, coin, avatar placeholder). The dock
+   *  system is one mechanism shared by every bar-family component. */
+  dock?: { icon?: IconDef | null; side?: "left" | "right" } | null;
+  /** Bar-family config — segment count/gap and snap mode (segbar). */
+  bar?: { segments?: number; gap?: number; snap?: boolean };
   /** Slot icon emphasis — >1 makes the icon the star of the tile. */
   iconScale?: number;
+  /** Atomic-part render for the engine export: "face" | "needle" |
+   *  "segment" | "track" — draws only that layer of a gauge/circuit. */
+  part?: string;
   sub?: string; max?: string; addBtn?: boolean; overlay?: string;
   /** Data-row content model — independent size/tracking/placement per text
    *  group and slot toggles. Explicit label/sub/value still win per instance. */
   row?: {
-    title?: string; sub?: string;
-    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number; lineGap?: number; blockDy?: number;
+    title?: string; sub?: string; subOn?: boolean;
+    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number; lineGap?: number; blockDy?: number; subColor?: string | null;
     titleTrack?: number; subTrack?: number;
     avatar?: boolean; progress?: boolean; action?: boolean; value?: number;
   };
@@ -1130,11 +1494,14 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     for (const st of Object.values(cfg.states)) { st.glow = Math.min(st.glow, 8); }
   }
   const k = SIZE_K[size];
-  const bw = cfg.bevel.width;
+  const bw = cfg.bevel.off ? 0 : cfg.bevel.width;
   // content text on kit pieces (counters, rows, segments) follows the global
   // type Size and vertical nudge exactly like built labels do
   const typeK = clamp(cfg.type.size / 52, 0.5, 2.2);
+  // icon stroke weight rides the type controls — 1.0 at the default 24
+  const iconWK = clamp((cfg.icon.strokeWidth ?? 24) / 24, 0.35, 1.8);
   const typeOyK = (opts.textOy ?? cfg.type.oy ?? 0);
+  const typeOxK = (opts.textOx ?? cfg.type.ox ?? 0);
   const bevel = effect(cfg.effects, "Bevel"), glow = effect(cfg.effects, "Glow");
   // the dragger ball can carry its own color; null follows the Bevel role
   const knobC = cfg.knob?.color ?? bevel;
@@ -1169,13 +1536,17 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     const outline4 = T4.outline.on && state !== "disabled"
       ? ` stroke="${T4.outline.color}" stroke-width="${(T4.outline.width * (fs2 / 52)).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"`
       : "";
+    // the horizontal nudge rides inside the helper so every self-drawn text
+    // (counters, rows, segments) shifts with the same control as built labels
     return (defs4 ? `<defs>${defs4}</defs>` : "") +
-      `<text x="${x2.toFixed(1)}" y="${y2.toFixed(1)}" font-family="'${T4.font}', Inter, sans-serif" font-size="${fs2.toFixed(1)}" font-weight="${Math.max(700, T4.weight)}"${T4.italic ? ' font-style="italic"' : ""} letter-spacing="${(((o2.track ?? 0) + T4.spacing) / 100).toFixed(3)}em" fill="${fill4}"${(T4.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T4.fillOpacity / 100).toFixed(2)}"` : ""}${outline4}${prims4.length ? ` filter="url(#${gid4}f)"` : ""}${o2.anchor ? ` text-anchor="${o2.anchor}"` : ""} dominant-baseline="central" opacity="${(o2.opacity ?? 1).toFixed(2)}">${esc(cased4)}</text>`;
+      `<text x="${(x2 + typeOxK * k).toFixed(1)}" y="${y2.toFixed(1)}" font-family="'${T4.font}', Inter, sans-serif" font-size="${fs2.toFixed(1)}" font-weight="${Math.max(700, T4.weight)}"${T4.italic ? ' font-style="italic"' : ""} letter-spacing="${(((o2.track ?? 0) + T4.spacing) / 100).toFixed(3)}em" fill="${fill4}"${(T4.fillOpacity ?? 100) < 100 ? ` fill-opacity="${(T4.fillOpacity / 100).toFixed(2)}"` : ""}${outline4}${prims4.length ? ` filter="url(#${gid4}f)"` : ""}${o2.anchor ? ` text-anchor="${o2.anchor}"` : ""} dominant-baseline="central" opacity="${(o2.opacity ?? 1).toFixed(2)}">${esc(cased4)}</text>`;
   };
   const wellFill = darken(effect(cfg.effects, "Inner Fill"), 0.72);
   const font = cfg.type.font;
   const wellOf = (w: number, h: number, inset: number) =>
-    shapePath(cfg.shape, 39 + inset, 30 + inset, w - inset * 2, h - inset * 2, Math.max(0, cfg.bevel.softness - 10));
+    // the well follows the same silhouette resolution as the shell: the
+    // per-component override wins, then the curated default, then the master
+    shapePath(shapeOv ?? KIT_SHAPE[id] ?? cfg.shape, 39 + inset, 30 + inset, w - inset * 2, h - inset * 2, Math.max(0, cfg.bevel.softness - 10));
   /* bar-fill styling layers (BarFx): second gradient with a blend mode,
      outer glow, inner shadow — identical on progress, sliders and rows */
   const BFX = cfg.barFx;
@@ -1199,29 +1570,87 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   // wins, then the curated default, then the master's shape)
   const sov: Shape | undefined = shapeOv ?? KIT_SHAPE[id];
 
+  /* v67: icons inherit the SAME treatment as type, in every self-drawn
+     site — gradient/solid fill, outline pass, disabled dimming. */
+  const themedIcon = (defI: IconDef, xI: number, yI: number, sI: number, tone: string, swI = 2.2): string => {
+    const T4 = cfg.type;
+    if (state === "disabled") return iconGroup(defI, xI, yI, sI, "#A7AAB4", { strokeWidth: swI * iconWK });
+    const gidI = "ti" + UID++;
+    const grad = T4.fillMode === "gradient" ? `<defs><linearGradient id="${gidI}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${T4.fill}"/><stop offset="1" stop-color="${T4.fill2}"/></linearGradient></defs>` : "";
+    const fillI = T4.fillMode === "gradient" ? `url(#${gidI})` : T4.fillMode === "solid" ? T4.fill : tone;
+    const outl = T4.outline.on ? iconGroup(defI, xI, yI, sI, T4.outline.color, { strokeWidth: swI * iconWK + T4.outline.width * 0.8 }) : "";
+    return grad + outl + iconGroup(defI, xI, yI, sI, fillI, { strokeWidth: swI * iconWK });
+  };
+
+  /* ── dock system ────────────────────────────────────────────────
+     Renders the emblem SOCKET as a full mini shell (the complete candy
+     stack, silhouette-aware) and embeds it over the host bar, centered on
+     the track axis. The host canvas grows symmetrically so the socket and
+     its glow never clip — in the live app, on the Board or in a PNG. */
+  const applyDock = (host: string, dock: NonNullable<KitOpts["dock"]>, shellX: number, shellW: number, cy: number, D: number): string => {
+    const dIcon = dock.icon === null ? null : (dock.icon ?? STOCK_ICONS.clock ?? null);
+    const piece = build(cfg, state === "disabled" ? "disabled" : "default",
+      { x: 33, y: 27, h: D, fs: 0, iconSize: D * 0.5 }, { iconDef: dIcon, label: "", fixedW: D, shapeOverride: sov });
+    const pvb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(piece);
+    const psh = /data-shell="([-\d. ]+)"/.exec(piece);
+    const pw = /width="([\d.]+)"/.exec(piece);
+    const ph = /height="([\d.]+)"/.exec(piece);
+    if (!pvb || !psh || !pw || !ph) return host;
+    const [sx, sy, sw2, sh2] = psh[1].split(" ").map(Number);
+    const cx = dock.side === "right" ? shellX + shellW - D * 0.46 : shellX + D * 0.46;
+    // inline the piece's CONTENT in a translated group — plain user-space
+    // coordinates, no nested-viewport semantics to trip over
+    const tx = cx - (sx + sw2 / 2), ty = cy - (sy + sh2 / 2);
+    const innerSvg = piece.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+    // the piece's canvas box, mapped into host coordinates
+    const bxL = +pvb[1] + tx, bxT = +pvb[2] + ty;
+    const bxR = bxL + +pvb[3], bxB = bxT + +pvb[4];
+    // grow the host canvas symmetrically so the anchor math (glow-pad
+    // reclaim reads viewBox.x for both axes) stays true everywhere
+    const hvb = /viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/.exec(host);
+    if (!hvb) return host;
+    const [, hx, hy, hw, hh] = hvb.map(Number);
+    const need = Math.max(0,
+      hx - (bxL - 4),          // left overflow
+      hy - (bxT - 4),          // top overflow
+      (bxR + 4) - (hx + hw),   // right overflow
+      (bxB + 4) - (hy + hh));  // bottom overflow
+    const ex = Math.ceil(need);
+    let out = host;
+    if (ex > 0) {
+      out = out
+        .replace(/ width="([\d.]+)"/, (_m, w0) => ` width="${(+w0 + ex * 2).toFixed(0)}"`)
+        .replace(/ height="([\d.]+)"/, (_m, h0) => ` height="${(+h0 + ex * 2).toFixed(0)}"`)
+        .replace(/viewBox="(-?[\d.]+) (-?[\d.]+) ([\d.]+) ([\d.]+)"/, (_m, a, b, c2, d2) =>
+          `viewBox="${(+a - ex).toFixed(1)} ${(+b - ex).toFixed(1)} ${(+c2 + ex * 2).toFixed(1)} ${(+d2 + ex * 2).toFixed(1)}"`);
+    }
+    const shadow = `<ellipse cx="${cx.toFixed(1)}" cy="${(cy + D * 0.46).toFixed(1)}" rx="${(D * 0.44).toFixed(1)}" ry="${(D * 0.1).toFixed(1)}" fill="rgba(0,0,0,0.35)"/>`;
+    return inject(out, `<g data-dock="${dock.side ?? "left"}">${shadow}<g transform="translate(${tx.toFixed(1)} ${ty.toFixed(1)})">${innerSvg}</g></g>`);
+  };
+
   switch (id) {
     case "primary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { label: opts.label, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { label: opts.label, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "secondary":
-      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: opts.label ?? "Secondary", shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 136 * k, fs: 42 * k, iconSize: 38 * k }, { secondary: true, label: opts.label ?? "Secondary", shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "small":
-      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: opts.label ?? "GO", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 100 * k, fs: 32 * k, iconSize: 26 * k }, { label: opts.label ?? "GO", iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "ghost":
-      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: opts.label ?? "Ghost", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 34 * k, iconSize: 28 * k }, { secondary: true, label: opts.label ?? "Ghost", iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "iconbtn":
-      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: opts.icon ?? cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 33, y: 27, h: 132 * k, fs: 0, iconSize: 56 * k }, { iconDef: opts.icon ?? cfg.icon.def ?? DEFAULT_ICON, label: "", fixedW: 132 * k, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "chip":
-      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: opts.label ?? "NEW", iconDef: opts.icon === undefined ? STOCK_ICONS.star : opts.icon, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 86 * k, fs: 28 * k, iconSize: 24 * k }, { label: opts.label ?? "NEW", iconDef: opts.icon === undefined ? STOCK_ICONS.star : opts.icon, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "badge":
       // presented (count) → awarded (star) → disabled
       return state === "pressed"
-        ? build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 0, iconSize: 52 * k }, { label: "", iconDef: opts.icon ?? STOCK_ICONS.star, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy })
-        : build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: opts.label ?? "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy });
+        ? build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 0, iconSize: 52 * k }, { label: "", iconDef: opts.icon ?? STOCK_ICONS.star, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx })
+        : build(cfg, state, { x: 33, y: 27, h: 112 * k, fs: 40 * k, iconSize: 0 }, { label: opts.label ?? "12", iconDef: null, fixedW: 118 * k, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "tab":
-      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: opts.label ?? "TAB", iconDef: null, shapeOverride: sov, textOy: opts.textOy });
+      return build(cfg, state, { x: 39, y: 30, h: 94 * k, fs: 30 * k, iconSize: 0 }, { label: opts.label ?? "TAB", iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
     case "segment": {
       const w = 560 * k, h = 106 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const cy = 30 + h / 2 + 1;
       const segW = (w - bw * 2) / 3;
       // value picks the active segment (0..2) — play mode drives it live;
@@ -1243,18 +1672,30 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const inset3 = bw + 4;
       const wellP = shapePath(sov ?? cfg.shape, 33 + inset3, 27 + inset3, ch - inset3 * 2, ch - inset3 * 2, Math.max(0, cfg.bevel.softness - 10));
       const ck = lit
-        ? iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, glow, { strokeWidth: 3, filter: `drop-shadow(0 0 6px ${glow})` })
-        : iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, "rgba(255,255,255,0.22)", { strokeWidth: 3 });
+        ? iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, glow, { strokeWidth: 3 * iconWK, filter: `drop-shadow(0 0 6px ${glow})` })
+        : iconGroup(STOCK_ICONS.check, 33 + ch * 0.24, 27 + ch * 0.24, ch * 0.52, "rgba(255,255,255,0.22)", { strokeWidth: 3 * iconWK });
       return inject(track, `<path d="${wellP}" fill="${wellFill}" opacity="0.9"/>` + ck);
     }
-    case "radio":
-      return build(cfg, state, { x: 33, y: 27, h: 118 * k, fs: 0, iconSize: 46 * k }, { iconDef: STOCK_ICONS.dot, label: "", fixedW: 118 * k, shapeOverride: sov });
+    case "radio": {
+      // stateful like the checkbox: a dim hollow pip waits in the well and
+      // lights solid when selected — resting state only, marks never grow
+      const lit2 = (value ?? 1) > 0.5;
+      const ch2 = 118 * k;
+      const track2 = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: ch2, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: ch2, shapeOverride: sov });
+      const insetR = bw + 4;
+      const wellR = shapePath(sov ?? cfg.shape, 33 + insetR, 27 + insetR, ch2 - insetR * 2, ch2 - insetR * 2, Math.max(0, cfg.bevel.softness - 10));
+      const rcx = 33 + ch2 / 2, rcy = 27 + ch2 / 2, rr = ch2 * 0.17;
+      const pip = lit2
+        ? `<circle cx="${rcx.toFixed(1)}" cy="${rcy.toFixed(1)}" r="${rr.toFixed(1)}" fill="${glow}" style="filter: drop-shadow(0 0 6px ${glow})"/>`
+        : `<circle cx="${rcx.toFixed(1)}" cy="${rcy.toFixed(1)}" r="${rr.toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="${(2.5 * iconWK).toFixed(2)}"/>`;
+      return inject(track2, `<path d="${wellR}" fill="${wellFill}" opacity="0.9"/>` + pip);
+    }
     case "toggle": {
       const on = (value ?? 1) > 0.5;
       // compact premium proportion: shell ≈ 2–2.5× the knob diameter, with the
       // knob filling most of the inner height like a hardware switch
       const w = 148 * k, h = 102 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw + 4;
       const knobR = (h - bw * 2) / 2 - 8;
       const kx = on ? 39 + w - inset - 5 - knobR : 39 + inset + 5 + knobR;
@@ -1264,7 +1705,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
     }
     case "slider": {
       const w = 460 * k, h = 64 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw * 0.7 + 3;
       const gapPad = 5 * k;
       const bh = h - inset * 2 - gapPad * 2;
@@ -1280,33 +1721,117 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const fillW = Math.max(0, knobX - bx);
       const knobY = 30 + h / 2;
       const sfx = barFx(gid, bx, by, fillW, bh, Math.min(bh / 2, fillW / 2));
+      // slider mercury follows the silhouette too — the left cap clips to a
+      // silhouette-shaped region; the knob owns the leading edge
+      const mercS = shapePath(shapeOv ?? KIT_SHAPE[id] ?? cfg.shape, bx, by, trackW, bh, Math.max(0, cfg.bevel.softness - 12));
       return stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
-         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${sfx.defs}</defs>
-         ${fillW > 1 ? `${sfx.open}<path d="${roundRect(bx, by, fillW, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${sfx.close}
-         <path d="${roundRect(bx, by + bh * 0.08, fillW, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${sfx.over}` : ""}` +
+         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${sfx.defs}<clipPath id="${gid}w"><path d="${mercS}"/></clipPath></defs>
+         ${fillW > 1 ? `<g clip-path="url(#${gid}w)">${sfx.open}<path d="${roundRect(bx - 2, by, fillW + 2, bh, Math.min(bh / 2, fillW / 2))}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${sfx.close}
+         <path d="${roundRect(bx - 2, by + bh * 0.08, fillW + 2, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${sfx.over}</g>` : ""}` +
         candyKnob(knobX, knobY, kr, knobC)), bx, trackW);
     }
+    case "emblembar": // first-class docked bar — progress with the socket built in
     case "progress": {
       const w = 520 * k, h = 64 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw + 3;
       const gapPad = 6 * k;
       const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
       const bh = h - inset * 2 - gapPad * 2;
       const trackW = w - inset * 2 - gapPad * 2;
-      const fw = trackW * clamp(value ?? 0.62, 0, 1);
+      const v01p = clamp(value ?? 0.62, 0, 1);
+      const fw = trackW * v01p;
       const gid = "pg" + UID++;
       const pfx = barFx(gid, bx, by, fw, bh, bh / 2);
-      return stampTrack(inject(track,
+      /* the mercury follows the silhouette (design canon): the fill clips to
+         its own silhouette-shaped region, so the left cap always inherits the
+         component's contour and a full bar IS the contour. Partial fills keep
+         a rounded leading bead on the right. */
+      const mercP = shapePath(shapeOv ?? KIT_SHAPE[id] ?? cfg.shape, bx, by, trackW, bh, Math.max(0, cfg.bevel.softness - 12));
+      const full = v01p >= 0.995;
+      const fx1 = bx + fw;
+      const r5 = Math.min(bh / 2, Math.max(2, fw / 2));
+      const dimP = state === "disabled" ? 0.35 : 0.95;
+      const mercFill = full
+        ? `<path d="${mercP}" fill="url(#${gid})" opacity="${dimP}"/>`
+        : `<path d="M ${(bx - 2).toFixed(1)} ${by.toFixed(1)} H ${(fx1 - r5).toFixed(1)} Q ${fx1.toFixed(1)} ${by.toFixed(1)} ${fx1.toFixed(1)} ${(by + r5).toFixed(1)} V ${(by + bh - r5).toFixed(1)} Q ${fx1.toFixed(1)} ${(by + bh).toFixed(1)} ${(fx1 - r5).toFixed(1)} ${(by + bh).toFixed(1)} H ${(bx - 2).toFixed(1)} Z" fill="url(#${gid})" opacity="${dimP}"/>`;
+      const mercGloss = `<path d="${roundRect(bx - 2, by + bh * 0.08, Math.max(0, fw + 2 - bh * 0.1), bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>`;
+      let out = stampTrack(inject(track,
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.92"/>
-         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${pfx.defs}</defs>
-         ${fw > 1 ? `${pfx.open}<path d="${roundRect(bx, by, fw, bh, bh / 2)}" fill="url(#${gid})" opacity="${state === "disabled" ? 0.35 : 0.95}"/>${pfx.close}
-         <path d="${roundRect(bx, by + bh * 0.08, fw, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${pfx.over}` : ""}`), bx, trackW);
+         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${pfx.defs}<clipPath id="${gid}w"><path d="${mercP}"/></clipPath></defs>
+         ${fw > 1 ? `<g clip-path="url(#${gid}w)">${pfx.open}${mercFill}${pfx.close}
+         ${mercGloss}${pfx.over}</g>` : ""}`), bx, trackW);
+      // emblem bar: the docked socket rides the track end, over the fill —
+      // always on for the first-class component (its icon override drives
+      // the emblem), opt-in via bar settings for a plain progress bar
+      const dockO = opts.dock ?? (id === "emblembar" ? { icon: opts.icon, side: "left" as const } : undefined);
+      if (dockO) out = applyDock(out, dockO, 39, w, 30 + h / 2, h * 1.9);
+      return out;
+    }
+    case "segbar": {
+      /* Segmented meter — stamina pips, charge cells, boss phases. The well
+         and both END cells inherit the theme silhouette (cells clip to the
+         well path); middle cells stay squared. Snap mode lights whole
+         cells; smooth mode slides one fill under the notches. */
+      const w = 520 * k, h = 72 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const inset = bw + 3;
+      const gapPad = 6 * k;
+      const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
+      const bh = h - inset * 2 - gapPad * 2;
+      const trackW = w - inset * 2 - gapPad * 2;
+      const n = clamp(Math.round(opts.bar?.segments ?? 5), 2, 12);
+      const gap = clamp(opts.bar?.gap ?? 6, 2, 14) * k;
+      const snap = opts.bar?.snap ?? true;
+      const v = clamp(value ?? 0.62, 0, 1);
+      const cellW = (trackW - gap * (n - 1)) / n;
+      const gid = "sg" + UID++;
+      // cells clip to the well silhouette so the first and last inherit the
+      // theme's corners while middle cells stay squared
+      const wellP = wellOf(w, h, inset);
+      const clip = `<clipPath id="${gid}c"><path d="${wellP}"/></clipPath>`;
+      // cells shade top-to-bottom (candy lighting), never along the bar
+      const grad = `<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>`;
+      const dim = state === "disabled" ? 0.35 : 0.95;
+      let litCells = "", offCells = "";
+      if (snap) {
+        const lit = Math.round(v * n);
+        for (let i = 0; i < n; i++) {
+          const cx0 = bx + i * (cellW + gap);
+          // end cells overreach into the well's rounded zone — the clip
+          // shapes them to the silhouette
+          const x0 = i === 0 ? bx - gapPad - inset : cx0;
+          const x1 = i === n - 1 ? bx + trackW + gapPad + inset : cx0 + cellW;
+          const grow = i === 0 || i === n - 1 ? gapPad : 0;
+          const on = i < lit;
+          const body = `<rect x="${x0.toFixed(1)}" y="${(by - grow).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${(bh + grow * 2).toFixed(1)}" rx="${Math.min((2 + cfg.bevel.softness * 0.16) * k, cellW * 0.3, bh / 2).toFixed(1)}" fill="${on ? `url(#${gid})` : "rgba(255,255,255,0.07)"}"${on ? ` opacity="${dim}"` : ""}/>`;
+          if (on) litCells += body + `<rect x="${x0.toFixed(1)}" y="${(by + bh * 0.08).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>`;
+          else offCells += body;
+        }
+      } else {
+        const fw2 = trackW * v;
+        if (fw2 > 1) {
+          litCells += `<rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(fw2 + gapPad + inset).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" fill="url(#${gid})" opacity="${dim}"/>
+            <rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by + bh * 0.08).toFixed(1)}" width="${(fw2 + gapPad + inset).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>`;
+        }
+        // the gap notches carve the fill into segments
+        for (let i = 1; i < n; i++) {
+          const gx = bx + i * (cellW + gap) - gap;
+          offCells += `<rect x="${gx.toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${gap.toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" fill="${wellFill}"/>`;
+        }
+      }
+      const pfx = barFx(gid + "f", bx, by, snap ? trackW * (Math.round(v * n) / n) : trackW * v, bh, bh / 2);
+      let out = stampTrack(inject(track,
+        `<path d="${wellP}" fill="${wellFill}" opacity="0.92"/>
+         <defs>${grad}${clip}${pfx.defs}</defs>
+         <g clip-path="url(#${gid}c)" data-seg="${n}">${pfx.open}${litCells}${pfx.close}${offCells}</g>${pfx.over}`), bx, trackW);
+      if (opts.dock) out = applyDock(out, opts.dock, 39, w, 30 + h / 2, h * 1.8);
+      return out;
     }
     case "input": {
       const w = 560 * k, h = 124 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w });
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const inset = bw + 4;
       const tyIn = 30 + h / 2 + 1 + (opts.textOy ?? cfg.type.oy ?? 0) * k;
       // the typeable area is the 9-slice text-safe zone: value and caret clip
@@ -1325,7 +1850,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       return inject(track.replace("<svg ", `<svg data-maxchars="${maxChars}" `),
         `<path d="${wellOf(w, h, inset)}" fill="${wellFill}" opacity="0.9"/>` +
         `<defs><clipPath id="${gidIn}"><rect x="${(39 + inset + 6 * k).toFixed(1)}" y="${30 + 2}" width="${(w - inset * 2 - 12 * k).toFixed(1)}" height="${h - 4}"/></clipPath></defs>` +
-        `<g clip-path="url(#${gidIn})">` + ph + caret + `</g>`);
+        `<g clip-path="url(#${gidIn})"><g data-value="1">` + ph + `</g>` + caret.replace("<rect ", '<rect data-caret="1" ') + `</g>`);
     }
     case "header": {
       // resolve the label explicitly: build() treats a missing label with an
@@ -1341,7 +1866,12 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const tw5 = lbl5.length * fs5 * fontByName(T5.font).factor * (1 + T5.spacing / 100) * 1.18 + (T5.italic ? fs5 * 0.35 : 0);
       const inset5 = met5 ? Math.max(met5.content.left, met5.capScale) * h5 + Math.max(12, fs5 * 0.3) : 90 * k;
       const w5 = Math.min(2600 * k, Math.max(430 * k, tw5 + inset5 * 2));
-      return build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy, fixedW: w5 });
+      /* v67: reverted to the classic construction — the label rides the face
+         directly (the type was never the problem). The wonky inner shapes are
+         fixed at the source now: build() derives face and rim through TRUE
+         inward offsets, so the swallowtail's inner contour parallels the
+         outer instead of drifting like a rescaled clone. */
+      return build(cfg, state, { x: 52, y: 34, h: h5, fs: 46 * k, iconSize: 0, maxW: 2600 * k }, { label: opts.label ?? cfg.content.label, iconDef: null, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx, fixedW: w5 });
     }
     case "panel": {
       // container shell — same recipe, bigger canvas. tokenH keeps walls,
@@ -1355,11 +1885,129 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const [pw, ph2] = dims[size];
       return build(cfg, state, { x: 42, y: 33, h: ph2, fs: 0, iconSize: 0, tokenH: 150 }, { iconDef: null, label: "", fixedW: pw, shapeOverride: opts.kind ? "pill" : sov });
     }
+    case "vsbar": {
+      /* Fighting · VS health bar — two mirrored wells drain toward center,
+         candy VS medallion on the axis. value drives the LEFT fighter. */
+      const w = 860 * k, h = 96 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 110 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const inset = bw + 3, gapPad = 6 * k;
+      const bx = 39 + inset + gapPad, by = 30 + inset + gapPad;
+      const bh = h - inset * 2 - gapPad * 2;
+      const trackW = w - inset * 2 - gapPad * 2;
+      const cxV = 39 + w / 2;
+      const halfW = trackW / 2 - 56 * k;
+      const vL = clamp(value ?? 0.72, 0, 1), vR = 0.58;
+      const gid = "vs" + UID++;
+      const wellP = wellOf(w, h, inset);
+      const rC = hexMix("#FF4D5A", glow, 0.25);
+      /* v73 · the fills wear FULL rounded caps — the outer end's rounding
+         is consumed by the well clip (the rect overhangs it), so only the
+         drain edge shows the cap: no more flat corners mid-bar */
+      const capR = (bh + gapPad * 2) / 2;
+      const parts = `<path d="${wellP}" fill="${wellFill}" opacity="0.92"/>
+        <defs><clipPath id="${gid}w"><path d="${wellP}"/></clipPath>
+        <linearGradient id="${gid}l" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>
+        <linearGradient id="${gid}r" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="${darken(rC, 0.25)}"/><stop offset="1" stop-color="${rC}"/></linearGradient></defs>
+        <g clip-path="url(#${gid}w)" data-vs="1">
+          ${vL > 0.01 ? `<rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(gapPad + inset + halfW * vL).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" rx="${capR.toFixed(1)}" fill="url(#${gid}l)" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
+          <rect x="${(bx - gapPad - inset).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(gapPad + inset + halfW * vL - bh * 0.2).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
+          ${vR > 0.01 ? `<rect x="${(bx + trackW - halfW * vR).toFixed(1)}" y="${(by - gapPad).toFixed(1)}" width="${(halfW * vR + gapPad + inset).toFixed(1)}" height="${(bh + gapPad * 2).toFixed(1)}" rx="${capR.toFixed(1)}" fill="url(#${gid}r)" opacity="${state === "disabled" ? 0.35 : 0.95}"/>
+          <rect x="${(bx + trackW - halfW * vR + bh * 0.2).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(halfW * vR + gapPad + inset - bh * 0.2).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
+        </g>` +
+        candyKnob(cxV, 30 + h / 2, h * 0.46, knobC) +
+        `<text x="${(cxV + typeOxK * k).toFixed(1)}" y="${(30 + h / 2 + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(30 * k * typeK).toFixed(1)}" font-weight="800" font-style="italic" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">VS</text>`;
+      return stampTrack(inject(track, parts), bx, trackW);
+    }
+    case "hotbar": {
+      /* Sandbox · hotbar — a slot strip in the kit material; the selected
+         cell carries the glow ring. value scrubs the selection. */
+      const n = 9, cell = 88 * k, gap = 8 * k;
+      const w = n * cell + (n - 1) * gap + 36 * k, h = cell + 26 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 118 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const selN = clamp(Math.round((value ?? 0.22) * (n - 1)), 0, n - 1);
+      const x0h = 39 + (w - (n * cell + (n - 1) * gap)) / 2;
+      const yh = 30 + (h - cell) / 2;
+      /* v71: cell corners RIDE the Smoothness slider — on a pill shell the
+         silhouette can't round any further, so the cells are where the
+         control must visibly live (board-launched hotbars start on pill) */
+      const cellR = Math.min(cell / 2, (3 + cfg.bevel.softness * 0.42) * k);
+      const icons = [STOCK_ICONS.sword ?? STOCK_ICONS.star, STOCK_ICONS.shield ?? STOCK_ICONS.star, STOCK_ICONS.heart, STOCK_ICONS.gem ?? STOCK_ICONS.star, STOCK_ICONS.star];
+      let cells = "";
+      for (let i = 0; i < n; i++) {
+        const cx0 = x0h + i * (cell + gap);
+        const on = i === selN;
+        cells += `<path d="${roundRect(cx0, yh, cell, cell, cellR)}" fill="${wellFill}" opacity="${on ? 0.98 : 0.85}"${on ? ` stroke="${glow}" stroke-width="${(3 * k).toFixed(1)}" style="filter: drop-shadow(0 0 ${6 * k}px ${glow})"` : ` stroke="${hexRgba(darken(bevel, 0.4), 0.6)}" stroke-width="1.2"`} data-cell="${i}"/>`;
+        const ic = icons[i];
+        if (i < icons.length && ic) cells += themedIcon(ic, cx0 + cell * 0.22, yh + cell * 0.22, cell * 0.56, hexMix(glow, "#FFFFFF", 0.3), 2);
+        if (i === 0 || i === 3) cells += `<text x="${(cx0 + cell - 8 * k).toFixed(1)}" y="${(yh + cell - 10 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(17 * k).toFixed(1)}" font-weight="800" fill="rgba(255,255,255,0.85)" text-anchor="end">64</text>`;
+        cells += `<text x="${(cx0 + 7 * k).toFixed(1)}" y="${(yh + 17 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(13 * k).toFixed(1)}" font-weight="700" fill="rgba(255,255,255,0.4)">${i + 1}</text>`;
+      }
+      return inject(track.replace("<svg ", '<svg data-hotbar="1" '), cells);
+    }
+    case "cardback": {
+      /* Card battler · the set's card back. The theme fills the portrait
+         shell, an inner frame line echoes the silhouette at a true offset,
+         and the set emblem floats on its own radial glow. opts.label turns
+         the back into a deck cover — the nameplate rides the bottom rail. */
+      const w = 300 * k, h = 420 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 430 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const gid = "cb" + UID++;
+      const frameP = wellOf(w, h, bw + 12 * k);
+      const cxC = 39 + w / 2, cyC = 30 + h * (opts.label ? 0.44 : 0.5);
+      const emb = opts.icon === null ? null : (opts.icon ?? STOCK_ICONS.gem ?? STOCK_ICONS.star);
+      const embS = w * 0.44;
+      const spark = (sx: number, sy: number, r: number) =>
+        `<path d="M ${sx.toFixed(1)} ${(sy - r).toFixed(1)} L ${(sx + r * 0.28).toFixed(1)} ${(sy - r * 0.28).toFixed(1)} L ${(sx + r).toFixed(1)} ${sy.toFixed(1)} L ${(sx + r * 0.28).toFixed(1)} ${(sy + r * 0.28).toFixed(1)} L ${sx.toFixed(1)} ${(sy + r).toFixed(1)} L ${(sx - r * 0.28).toFixed(1)} ${(sy + r * 0.28).toFixed(1)} L ${(sx - r).toFixed(1)} ${sy.toFixed(1)} L ${(sx - r * 0.28).toFixed(1)} ${(sy - r * 0.28).toFixed(1)} Z" fill="${hexRgba(hexMix(glow, "#FFFFFF", 0.55), 0.85)}"/>`;
+      let parts = `<defs><radialGradient id="${gid}g"><stop offset="0" stop-color="${glow}" stop-opacity="0.5"/><stop offset="0.6" stop-color="${glow}" stop-opacity="0.18"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient></defs>
+        <path d="${frameP}" fill="none" stroke="${hexRgba(hexMix(glow, "#FFFFFF", 0.25), 0.55)}" stroke-width="${(2.4 * k).toFixed(1)}"/>`;
+      if (emb) {
+        parts += `<circle cx="${cxC.toFixed(1)}" cy="${cyC.toFixed(1)}" r="${(embS * 0.85).toFixed(1)}" fill="url(#${gid}g)"/>` +
+          `<g style="filter: drop-shadow(0 0 ${(10 * k).toFixed(0)}px ${glow})">${themedIcon(emb, cxC - embS / 2, cyC - embS / 2, embS, hexMix(glow, "#FFFFFF", 0.35), 1.8)}</g>`;
+      }
+      const inX = 39 + bw + 34 * k, inY = 30 + bw + 34 * k;
+      parts += spark(inX, inY, 7 * k) + spark(39 + w - bw - 34 * k, inY, 7 * k) + spark(inX, 30 + h - bw - 34 * k, 5 * k) + spark(39 + w - bw - 34 * k, 30 + h - bw - 34 * k, 5 * k);
+      if (opts.label) {
+        const py = 30 + h - 76 * k;
+        parts += `<path d="${roundRect(39 + w * 0.12, py, w * 0.76, 46 * k, 12 * k)}" fill="${wellFill}" opacity="0.94" stroke="${hexRgba(darken(bevel, 0.35), 0.6)}" stroke-width="1"/>` +
+          `<text x="${cxC.toFixed(1)}" y="${(py + 23 * k + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(17 * k * typeK).toFixed(1)}" font-weight="800" letter-spacing="1.5" fill="${hexMix(glow, "#FFFFFF", 0.4)}" text-anchor="middle" dominant-baseline="central">${opts.label}</text>`;
+      }
+      return inject(track.replace("<svg ", '<svg data-cardback="1" '), parts);
+    }
+    case "pack": {
+      /* Card battler · booster pack — the engine body wears crimped foil
+         caps top and bottom; the set emblem glows at the heart. Clicking
+         it in play mode fires the white-hot ignition + themed burst. */
+      const w = 310 * k, h = 430 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 440 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const gid = "pk" + UID++;
+      const crimp = (yTop: number) => {
+        const chh = 34 * k, cx0 = 39 - 5 * k, cw = w + 10 * k;
+        let ridges = "";
+        for (let rx = cx0 + 8 * k; rx < cx0 + cw - 6 * k; rx += 9 * k)
+          ridges += `<line x1="${rx.toFixed(1)}" y1="${(yTop + 4 * k).toFixed(1)}" x2="${rx.toFixed(1)}" y2="${(yTop + chh - 4 * k).toFixed(1)}" stroke="rgba(255,255,255,0.16)" stroke-width="${(2.2 * k).toFixed(1)}"/>`;
+        return `<path d="${roundRect(cx0, yTop, cw, chh, 7 * k)}" fill="${darken(bevel, 0.22)}" stroke="${hexRgba(darken(bevel, 0.5), 0.8)}" stroke-width="1"/>
+          <path d="${roundRect(cx0, yTop, cw, chh * 0.45, 7 * k)}" fill="rgba(255,255,255,0.14)"/>${ridges}`;
+      };
+      const cxP = 39 + w / 2, cyP = 30 + h * 0.44;
+      const emb = opts.icon === null ? null : (opts.icon ?? STOCK_ICONS.gem ?? STOCK_ICONS.star);
+      const embS = w * 0.4;
+      const sparkP = (sx: number, sy: number, r: number) =>
+        `<path d="M ${sx.toFixed(1)} ${(sy - r).toFixed(1)} L ${(sx + r * 0.28).toFixed(1)} ${(sy - r * 0.28).toFixed(1)} L ${(sx + r).toFixed(1)} ${sy.toFixed(1)} L ${(sx + r * 0.28).toFixed(1)} ${(sy + r * 0.28).toFixed(1)} L ${sx.toFixed(1)} ${(sy + r).toFixed(1)} L ${(sx - r * 0.28).toFixed(1)} ${(sy + r * 0.28).toFixed(1)} L ${(sx - r).toFixed(1)} ${sy.toFixed(1)} L ${(sx - r * 0.28).toFixed(1)} ${(sy - r * 0.28).toFixed(1)} Z" fill="${hexRgba(hexMix(glow, "#FFFFFF", 0.55), 0.85)}"/>`;
+      let parts = `<defs><radialGradient id="${gid}g"><stop offset="0" stop-color="${glow}" stop-opacity="0.5"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient></defs>`;
+      if (emb) {
+        parts += `<circle cx="${cxP.toFixed(1)}" cy="${cyP.toFixed(1)}" r="${(embS * 0.8).toFixed(1)}" fill="url(#${gid}g)"/>` +
+          `<g style="filter: drop-shadow(0 0 ${(9 * k).toFixed(0)}px ${glow})">${themedIcon(emb, cxP - embS / 2, cyP - embS / 2, embS, hexMix(glow, "#FFFFFF", 0.35), 1.8)}</g>`;
+      }
+      parts += sparkP(39 + w * 0.24, 30 + h * 0.26, 6 * k) + sparkP(39 + w * 0.78, 30 + h * 0.32, 8 * k) + sparkP(39 + w * 0.3, 30 + h * 0.66, 5 * k);
+      parts += `<text x="${cxP.toFixed(1)}" y="${(30 + h * 0.72).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(19 * k * typeK).toFixed(1)}" font-weight="800" letter-spacing="2" fill="${hexMix(glow, "#FFFFFF", 0.4)}" text-anchor="middle" dominant-baseline="central">${opts.label ?? "12 CARDS"}</text>`;
+      parts += crimp(30 - 2 * k) + crimp(30 + h - 32 * k);
+      return inject(track.replace("<svg ", '<svg data-pack="1" '), parts);
+    }
     case "resource": {
       /* HUD counter — icon medallion, numeric value, optional /max, optional
          add button. Currency, lives, energy, tickets, materials. */
       const h = 78 * k;
-      const val = opts.label ?? "1 250";
+      const val = opts.label ?? "1,250";
       const maxTxt = opts.max ? ` / ${opts.max}` : "";
       const fsV = 30 * k;
       // width breathes with the type scale and leaves real air after the
@@ -1370,13 +2018,21 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const cy = 30 + h / 2;
       const medR = h * 0.44;
+      const noIcon = opts.icon === null; // removed glyph — the value centers
       const icon = opts.icon ?? STOCK_ICONS.gem;
       const dim = state === "disabled" ? 0.45 : 1;
       const parts =
-        candyKnob(39 + 6 * k + medR, cy, medR, bevel) +
-        iconGroup(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), { strokeWidth: 2.4 }) +
-        contentText(val, 39 + 20 * k + medR * 2, cy + 1 + typeOyK * k, fsV * typeK, { keepCase: true, opacity: dim }) +
-        (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * typeK * 0.62).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK * 0.8).toFixed(1)}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(maxTxt)}</text>` : "") +
+        (noIcon ? "" :
+          candyKnob(39 + 6 * k + medR, cy, medR, bevel) +
+          themedIcon(icon, 39 + 6 * k + medR - medR * 0.52, cy - medR * 0.52, medR * 1.04, darken(bevel, 0.55), 2.4)) +
+        (noIcon
+          ? contentText(`${val}${maxTxt}`, 39 + (w - (opts.addBtn ? 46 * k : 0)) / 2, cy + 1 + typeOyK * k, fsV * typeK, { anchor: "middle", keepCase: true, opacity: dim })
+          : contentText(val, 39 + 20 * k + medR * 2, cy + 1 + typeOyK * k, fsV * typeK, { keepCase: true, opacity: dim }) +
+            /* the divider gets REAL air: 0.7em advance per value glyph (heavy
+               italic faces overhang) plus a 0.36em gap — and no leading space
+               in the <text>, since SVG collapses it and the slash would kiss
+               the last digit (the visual gate caught exactly that) */
+            (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * typeK * 0.7 + fsV * typeK * 0.36).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK * 0.8).toFixed(1)}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(`/ ${opts.max}`)}</text>` : "")) +
         (opts.addBtn ? candyKnob(39 + w - 8 * k - h * 0.32, cy, h * 0.32, glow) +
           `<text x="${(39 + w - 8 * k - h * 0.32).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="Inter, sans-serif" font-size="${26 * k}" font-weight="800" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">+</text>` : "");
       return inject(track, parts);
@@ -1385,12 +2041,23 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       /* Data row — portrait slot, two independent text groups, mini progress,
          trailing action. Characters, missions, inventory, shop rows. */
       const R2 = opts.row ?? {};
-      const w = 620 * k, h = 128 * k;
-      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 128 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const w = 620 * k;
+      /* overlap-proof: type sizes are known before the shell exists, so the
+         block's height GROWS with the stack — title line + sub line + bar can
+         never collide no matter how big the display face gets (universal
+         no-overlap law). 128k stands as the floor so default kits don't move. */
+      const sizeK2 = clamp(cfg.type.size / 52, 0.5, 2.2);
+      const fsT = 26 * k * sizeK2 * ((R2.titleSize ?? 100) / 100);
+      const fsS = 17 * k * Math.max(0.75, sizeK2 * 0.85 + 0.15) * ((R2.subSize ?? 100) / 100);
       const inset = bw + 6;
       const showAvatar = R2.avatar ?? true;
       const showBar = R2.progress ?? true;
       const showAction = R2.action ?? true;
+      const lineAdv = Math.max(24 * k, fsT * 0.55 + fsS * 0.78 + 4 * k);
+      const subOn = R2.subOn !== false;
+      const needH = inset + 16 * k + (subOn ? lineAdv + fsS * 0.6 : fsT * 0.55) + (showBar ? 36 * k : 16 * k) + inset;
+      const h = Math.max(128 * k, needH);
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 128 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
       const slotS = h - inset * 2 - 8;
       const sx = 39 + inset + 6, sy2 = 30 + inset + 4 + 2;
       const icon = opts.icon ?? STOCK_ICONS.user;
@@ -1398,10 +2065,6 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const dim = state === "disabled" ? 0.45 : 1;
       const title = opts.label ?? R2.title ?? "Shadow Knight";
       const sub = opts.sub ?? R2.sub ?? "Level 12 · Warrior";
-      // the row's own text follows the global type Size like every label
-      const sizeK2 = clamp(cfg.type.size / 52, 0.5, 2.2);
-      const fsT = 26 * k * sizeK2 * ((R2.titleSize ?? 100) / 100);
-      const fsS = 17 * k * Math.max(0.75, sizeK2 * 0.85 + 0.15) * ((R2.subSize ?? 100) / 100);
 
       const barY = 30 + h - inset - 16 * k;
       const barW = w - (tx - 39) - (showAction ? 90 * k : 34 * k);
@@ -1415,11 +2078,15 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          <linearGradient id="${gid2}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>` +
         (showAvatar
           ? `<path d="${roundRect(sx, sy2, slotS, slotS, 10 * k)}" fill="${wellFill}" opacity="0.92"/>` +
-            iconGroup(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, { strokeWidth: 2 })
+            (opts.icon === null ? "" : themedIcon(icon, sx + slotS * 0.2, sy2 + slotS * 0.2, slotS * 0.6, glow, 2))
           : "") +
         `<g clip-path="url(#${gid2}c)">` +
         contentText(title, tx, 30 + inset + 16 * k + ((R2.titleDy ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k, fsT, { keepCase: true, track: R2.titleTrack ?? 0, opacity: dim }) +
-        `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + Math.max(26 * k, fsT * 0.95) + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>` +
+        /* auto-leading from BOTH line heights: the title's lower half (with
+           its depth treatment) plus the subtitle's cap height — big display
+           type can never crash into line two (universal no-overlap law) */
+        (!subOn ? "" :
+          `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + lineAdv + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="${R2.subColor ?? "rgba(255,255,255,0.55)"}">${esc(sub)}</text>`) +
         `</g>` +
         (showBar
           ? (() => { const rfx = barFx(gid2, tx, barY, fillW2, 10 * k, 5 * k); return `<defs>${rfx.defs}</defs><path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
@@ -1427,12 +2094,12 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
           : "") +
         (!showAction ? ""
           : ov === "locked"
-            ? iconGroup(STOCK_ICONS.lock, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, "rgba(255,255,255,0.75)", { strokeWidth: 2.2 })
+            ? iconGroup(STOCK_ICONS.lock, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, "rgba(255,255,255,0.75)", { strokeWidth: 2.2 * iconWK })
             : ov === "check"
-              ? iconGroup(STOCK_ICONS.check, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, glow, { strokeWidth: 2.6 })
+              ? iconGroup(STOCK_ICONS.check, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, glow, { strokeWidth: 2.6 * iconWK })
               : ov === "alert"
-                ? iconGroup(STOCK_ICONS.warning, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2.2 })
-                : iconGroup(STOCK_ICONS.forward, 39 + w - 48 * k, 30 + h / 2 - 12 * k, 24 * k, "rgba(255,255,255,0.6)", { strokeWidth: 2.4 }));
+                ? iconGroup(STOCK_ICONS.warning, 39 + w - 52 * k, 30 + h / 2 - 14 * k, 28 * k, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2.2 * iconWK })
+                : iconGroup(STOCK_ICONS.forward, 39 + w - 48 * k, 30 + h / 2 - 12 * k, 24 * k, "rgba(255,255,255,0.6)", { strokeWidth: 2.4 * iconWK }));
       return inject(track, parts);
     }
     case "joystick": {
@@ -1515,11 +2182,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         // may ghost behind it). iconScale > 1 makes the icon the star of
         // the tile — match-3 boards, gem grids.
         const isc = clamp(opts.iconScale ?? 1, 0.5, 1.45);
-        if (cfg.type.outline.on) parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, darken(bevel, 0.5), { strokeWidth: 2 + cfg.type.outline.width * 0.7 }));
-        parts.push(iconGroup(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, hexMix(glow, "#FFFFFF", 0.3), { strokeWidth: 2 }));
+        parts.push(themedIcon(opts.icon, cx2 - inner * 0.3 * isc, cy2 - inner * 0.3 * isc, inner * 0.6 * isc, hexMix(glow, "#FFFFFF", 0.3), 2));
       }
       if (dimmed) parts.push(`<path d="${wellPath}" fill="rgba(6,8,16,0.62)"/>`);
-      if (ov === "locked") parts.push(iconGroup(STOCK_ICONS.lock, cx2 - 13, cy2 - 13, 26, "rgba(255,255,255,0.85)", { strokeWidth: 2.2 }));
+      if (ov === "locked") parts.push(iconGroup(STOCK_ICONS.lock, cx2 - 13, cy2 - 13, 26, "rgba(255,255,255,0.85)", { strokeWidth: 2.2 * iconWK }));
       if (ov.startsWith("cooldown")) {
         parts.push(`<text x="${cx2.toFixed(1)}" y="${(cy2 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${inner * 0.32}" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${esc(ov.split(":")[1] ?? "12s")}</text>`);
       }
@@ -1539,7 +2205,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       }
       if (ov === "check" || ov === "equipped" || ov === "claimable") {
         parts.push(`<circle cx="${33 + s2 - inset - 2}" cy="${27 + inset + 2}" r="13" fill="${ov === "claimable" ? glow : bevel}" stroke="${darken(bevel, 0.45)}" stroke-width="1.5"/>` +
-          iconGroup(STOCK_ICONS.check, 33 + s2 - inset - 10, 27 + inset - 6, 16, ov === "claimable" ? darken(bevel, 0.6) : "#FFFFFF", { strokeWidth: 3 }));
+          iconGroup(STOCK_ICONS.check, 33 + s2 - inset - 10, 27 + inset - 6, 16, ov === "claimable" ? darken(bevel, 0.6) : "#FFFFFF", { strokeWidth: 3 * iconWK }));
       }
       return inject(track, parts.join(""));
     }
@@ -1556,7 +2222,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const offFace = desaturate(hexMix(bevel, "#20242E", 0.72), 0.5);
       const total3 = d3 + pad3 * 2;
       const totH3 = total3 + 14; // extra floor below the sphere — captions need air
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${total3}" height="${totH3}" viewBox="0 0 ${total3} ${totH3}" role="img" aria-label="glow orb" data-orb="${lit ? "1" : "0"}">
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${total3}" height="${totH3}" viewBox="0 0 ${total3} ${totH3}" data-shell="${pad3} ${pad3} ${d3.toFixed(1)} ${d3.toFixed(1)}" role="img" aria-label="glow orb" data-orb="${lit ? "1" : "0"}">
 <defs>
   <radialGradient id="${gid7}" cx="0.34" cy="0.28" r="0.95">
     <stop offset="0" stop-color="#FFFFFF"/>
@@ -1649,7 +2315,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         const x0 = i * (hs + gap5);
         const on = i < full;
         return iconGroup(STOCK_ICONS.heart, x0, hs * 0.08, hs, on ? glow : "rgba(140,146,168,0.35)",
-          { strokeWidth: 2.4, filter: on ? `drop-shadow(0 0 6px ${hexRgba(glow, 0.6)})` : undefined });
+          { strokeWidth: 2.4 * iconWK, filter: on ? `drop-shadow(0 0 6px ${hexRgba(glow, 0.6)})` : undefined });
       }).join("");
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${W5}" height="${H5}" viewBox="0 0 ${W5} ${H5}" role="img" aria-label="lives: ${full} of ${n5}">${hearts}</svg>`;
     }
@@ -1697,22 +2363,45 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const urgent = v3 <= 0.25 && state !== "disabled" && !opts.label;
       const alarm = hexMix("#FF4D5A", bevel, 0.18);
       const dim = state === "disabled" ? 0.45 : 1;
-      const tw = 150 * k, th = 176 * k, gap2 = 20 * k, r3 = 20 * k, pad3 = 28;
+      const tw = 150 * k, th = 176 * k, gap2 = 20 * k, pad3 = 40; // pad grew for shell glow air
       const W2 = segs.length * tw + (segs.length - 1) * gap2 + pad3 * 2;
-      const H2 = th + 36 * k + pad3 * 2;
+      const H2 = th + 54 * k + pad3 * 2; // v63: the tag line gets real air below the tiles
       const tileFace = darken(effect(cfg.effects, "Inner Fill"), 0.8);
       const fsD = Math.min(96 * k * typeK, tw * 0.6);
+      /* v61: each tile is a REAL themed shell — the full candy stack in the
+         kit silhouette, portrait — with the split-flap instrument recessed
+         into a dark well so the digits keep their contrast */
+      /* container exception (curated defaults): silhouettes that don't read
+         at the tile's portrait aspect ship WITHOUT themed containers — the
+         split-flap instrument stands alone on its dark well. The timer-safe
+         list is curated in silhouettes.ts (`supports` includes "timer");
+         imported silhouettes default to bare until a human curates them in. */
+      const tMeta = silhouetteMeta(sov ?? cfg.shape);
+      const themedTiles = !!tMeta && tMeta.supports.includes("timer");
       const tiles = segs.map((sg, i) => {
         const x = pad3 + i * (tw + gap2);
         const midY = pad3 + th / 2;
-        return `<rect x="${x}" y="${pad3}" width="${tw}" height="${th}" rx="${r3}" fill="${tileFace}" stroke="${urgent ? alarm : darken(bevel, 0.35)}" stroke-width="2.5"/>
-          <path d="${roundRect(x, pad3, tw, th / 2, r3)}" fill="#FFFFFF" opacity="0.055"/>
-          ${contentText(sg, x + tw / 2, midY + 2, fsD, { anchor: "middle", keepCase: true, opacity: dim })}
-          <rect x="${x}" y="${(midY - 2).toFixed(1)}" width="${tw}" height="4" fill="#04060C" opacity="0.85"/>
-          <rect x="${x}" y="${(midY + 2).toFixed(1)}" width="${tw}" height="1.2" fill="#FFFFFF" opacity="0.1"/>
-          <circle cx="${(x + 11 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
-          <circle cx="${(x + tw - 11 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
-          <text x="${x + tw / 2}" y="${(pad3 + th + 22 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(12.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${urgent ? alarm : (isDarkBg(cfg.canvas) ? hexRgba(glow, 0.8) : darken(bevel, 0.3))}" text-anchor="middle" opacity="${dim}">${esc(tags[i] ?? "")}</text>` +
+        const shellSvg2 = themedTiles ? build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: th, fs: 0, iconSize: 0 }, { iconDef: null, label: "", shapeOverride: sov, fixedW: tw }) : "";
+        const shm = themedTiles ? /data-shell="([-\d. ]+)"/.exec(shellSvg2) : null;
+        const [tsx, tsy] = shm ? shm[1].split(" ").map(Number) : [33, 27];
+        const tileInner = themedTiles ? shellSvg2.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "") : "";
+        const insT = themedTiles ? bw + 5 * k : 3 * k;
+        const wellD = themedTiles
+          ? shapePath(sov ?? cfg.shape, x + insT, pad3 + insT, tw - insT * 2, th - insT * 2, Math.max(0, cfg.bevel.softness - 10))
+          : roundRect(x + insT, pad3 + insT, tw - insT * 2, th - insT * 2, 20 * k);
+        const gidT = "fc" + UID++;
+        return `${themedTiles ? `<g transform="translate(${(x - tsx).toFixed(1)} ${(pad3 - tsy).toFixed(1)})">${tileInner}</g>` : ""}
+          <clipPath id="${gidT}w"><path d="${wellD}"/></clipPath>
+          <path d="${wellD}" fill="${tileFace}"${urgent ? ` stroke="${alarm}" stroke-width="2.5"` : themedTiles ? "" : ` stroke="${hexMix(bevel, glow, 0.3)}" stroke-width="2" stroke-opacity="0.55"`}/>
+          <g clip-path="url(#${gidT}w)"><rect x="${x}" y="${pad3}" width="${tw}" height="${(th / 2).toFixed(1)}" fill="#FFFFFF" opacity="0.055"/></g>
+          ${contentText(sg, x + tw / 2 + 3 * k, midY + 2, fsD, { anchor: "middle", keepCase: true, opacity: dim })}
+          <g clip-path="url(#${gidT}w)">
+            <rect x="${x}" y="${(midY - 2).toFixed(1)}" width="${tw}" height="4" fill="#04060C" opacity="0.85"/>
+            <rect x="${x}" y="${(midY + 2).toFixed(1)}" width="${tw}" height="1.2" fill="#FFFFFF" opacity="0.1"/>
+          </g>
+          <circle cx="${(x + insT + 7 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
+          <circle cx="${(x + tw - insT - 7 * k).toFixed(1)}" cy="${midY}" r="${(3.6 * k).toFixed(1)}" fill="#04060C" opacity="0.92"/>
+          <text x="${x + tw / 2}" y="${(pad3 + th + 38 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(12.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${urgent ? alarm : (isDarkBg(cfg.canvas) ? hexRgba(glow, 0.8) : darken(bevel, 0.3))}" text-anchor="middle" opacity="${dim}">${esc(tags[i] ?? "")}</text>` +
           (i < segs.length - 1
             ? `<circle cx="${(x + tw + gap2 / 2).toFixed(1)}" cy="${(midY - 16 * k).toFixed(1)}" r="${(4 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.25)}"/><circle cx="${(x + tw + gap2 / 2).toFixed(1)}" cy="${(midY + 16 * k).toFixed(1)}" r="${(4 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.25)}"/>`
             : "");
@@ -1724,6 +2413,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          sweep hand plus remaining-time arc, digital readout under center. */
       const d2 = ({ s: 156, m: 196, l: 248 } as Record<KitSize, number>)[size] * k;
       const pad2 = 46; // real air — neighbouring watches must never kiss
+      const padB = 96; // v55: generous open ground under the watch — the
+                       // caption below must never crowd the body
       const v3 = clamp(value ?? 0.62, 0, 1);
       const secs = Math.max(0, Math.round(v3 * 90));
       const tLabel = opts.label ?? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
@@ -1731,37 +2422,47 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const alarm = hexMix("#FF4D5A", bevel, 0.18);
       const dim = state === "disabled" ? 0.45 : 1;
       const crownH = 26 * k;
-      const W2 = d2 + pad2 * 2, H2 = d2 + crownH + pad2 * 2;
+      const W2 = d2 + pad2 * 2, H2 = d2 + crownH + pad2 + padB;
       const cx3 = W2 / 2, cy3 = pad2 + crownH + d2 / 2;
       const r0 = d2 / 2;
       const gid6 = "sw" + UID++;
+      const faceR0 = r0 * 0.88; // instrument well radius — fits inside any silhouette
       let ticks = "";
       for (let i = 0; i < 60; i++) {
         const major = i % 5 === 0;
         const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
-        const rOut = r0 - 13 * k, rIn = rOut - (major ? 10 * k : 5.5 * k);
+        const rOut = faceR0 - 5 * k, rIn = rOut - (major ? 10 * k : 5.5 * k);
         ticks += `<line x1="${(cx3 + Math.cos(a) * rIn).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rIn).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rOut).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rOut).toFixed(1)}" stroke="#FFFFFF" stroke-width="${major ? 2.4 : 1.2}" opacity="${major ? 0.75 : 0.3}"/>`;
       }
       const aH = v3 * Math.PI * 2 - Math.PI / 2;
-      const rHand = r0 - 26 * k;
-      const arcR = r0 - 17 * k;
+      // v61: the body is a REAL themed shell — the full candy stack at watch
+      // size, silhouette-aware like every button — with a circular
+      // instrument well recessed into its face
+      const faceR = faceR0;
+      const rHand = faceR - 18 * k;
+      const arcR = faceR - 10 * k;
       const large = v3 > 0.5 ? 1 : 0;
       const arc = v3 > 0.01
         ? `<path d="M ${cx3} ${(cy3 - arcR).toFixed(1)} A ${arcR.toFixed(1)} ${arcR.toFixed(1)} 0 ${large} 1 ${(cx3 + Math.cos(aH) * arcR).toFixed(1)} ${(cy3 + Math.sin(aH) * arcR).toFixed(1)}" fill="none" stroke="${urgent ? alarm : glow}" stroke-width="${(5 * k).toFixed(1)}" stroke-linecap="round" opacity="0.4"/>`
         : "";
+      // container exception: shapes that don't read as a square watch housing
+      // fall back to the neutral circular body (curated `supports: "timer"`)
+      const swMeta = silhouetteMeta(sov ?? cfg.shape);
+      const swShell = build(cfg, state === "disabled" ? "disabled" : "default", { x: 33, y: 27, h: d2, fs: 0, iconSize: 0 }, { iconDef: null, label: "", shapeOverride: swMeta && swMeta.supports.includes("timer") ? sov : "round", fixedW: d2 });
+      const swSh = /data-shell="([-\d. ]+)"/.exec(swShell);
+      const [ssx, ssy, ssw, ssh] = swSh ? swSh[1].split(" ").map(Number) : [33, 27, d2, d2];
+      const swInner = swShell.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="stopwatch" data-timer="watch"${urgent ? ' data-urgent="1"' : ""}>
 <defs>
   <linearGradient id="${gid6}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>
-  <filter id="${gid6}g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
 </defs>
 <g opacity="${dim}">
   <rect x="${(cx3 - 9 * k).toFixed(1)}" y="${(pad2 + 2 * k).toFixed(1)}" width="${(18 * k).toFixed(1)}" height="${(16 * k).toFixed(1)}" rx="${(4 * k).toFixed(1)}" fill="url(#${gid6})" stroke="${darken(bevel, 0.45)}" stroke-width="1.5"/>
   <rect x="${(cx3 - 13 * k).toFixed(1)}" y="${(pad2).toFixed(1)}" width="${(26 * k).toFixed(1)}" height="${(6 * k).toFixed(1)}" rx="${(3 * k).toFixed(1)}" fill="${darken(bevel, 0.3)}"/>
   <g transform="rotate(-42 ${cx3} ${cy3})"><rect x="${(cx3 - 6 * k).toFixed(1)}" y="${(cy3 - r0 - 12 * k).toFixed(1)}" width="${(12 * k).toFixed(1)}" height="${(14 * k).toFixed(1)}" rx="${(3 * k).toFixed(1)}" fill="${darken(bevel, 0.25)}"/></g>
   <g transform="rotate(42 ${cx3} ${cy3})"><rect x="${(cx3 - 6 * k).toFixed(1)}" y="${(cy3 - r0 - 12 * k).toFixed(1)}" width="${(12 * k).toFixed(1)}" height="${(14 * k).toFixed(1)}" rx="${(3 * k).toFixed(1)}" fill="${darken(bevel, 0.25)}"/></g>
-  <circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gid6})" filter="url(#${gid6}g)" opacity="0.35"/>
-  <circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gid6})" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>
-  <circle cx="${cx3}" cy="${cy3}" r="${(r0 - 9 * k).toFixed(1)}" fill="${wellFill}"/>
+  <g transform="translate(${(cx3 - (ssx + ssw / 2)).toFixed(1)} ${(cy3 - (ssy + ssh / 2)).toFixed(1)})">${swInner}</g>
+  <circle cx="${cx3}" cy="${cy3}" r="${faceR.toFixed(1)}" fill="${wellFill}"/>
   ${ticks}
   ${arc}
   <line x1="${cx3}" y1="${cy3}" x2="${(cx3 + Math.cos(aH) * rHand).toFixed(1)}" y2="${(cy3 + Math.sin(aH) * rHand).toFixed(1)}" stroke="${urgent ? alarm : hexMix(glow, "#FFFFFF", 0.35)}" stroke-width="${(3.4 * k).toFixed(1)}" stroke-linecap="round"/>
@@ -1780,8 +2481,363 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const urgent = v3 <= 0.25 && state !== "disabled" && !opts.label;
       return renderTypeSpecimen(cfg, tLabel).replace("<svg ", `<svg data-timer="digits"${urgent ? ' data-urgent="1"' : ""} `);
     }
+    case "speedo": {
+      /* Classic speedometer — dial, tick ring, red zone, needle. value is
+         the speed fraction; the readout derives km/h so hosts rev it live.
+         No numerals on the dial: scale marks are geometry, numbers live in
+         the readout (engine-replaceable). */
+      const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
+      const pad2 = 46;
+      const v3 = clamp(value ?? 0.62, 0, 1);
+      const part = opts.part;
+      /* v71 · form factor: the dial sinks into a real engine housing —
+         walls, extrusion, gloss and shadow all come from the theme, so the
+         gauge extrudes like every other component. Engine-export part
+         layers keep the bare-canvas contract. */
+      const useHousing = !part;
+      const D = d2 + (bw + 18 * k) * 2;
+      const W2 = d2 + pad2 * 2, H2 = d2 + pad2 * 2;
+      const cx3 = useHousing ? 39 + D / 2 : W2 / 2, cy3 = useHousing ? 30 + D / 2 : H2 / 2, r0 = d2 / 2;
+      const gid8 = "sp" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI; // 270°, opening at the bottom
+      const ang = A0 + v3 * SWEEP;
+      const alarm = hexMix("#FF4D5A", bevel, 0.18);
+      let ticks = "";
+      for (let i = 0; i <= 27; i++) {
+        const major = i % 3 === 0;
+        const a = A0 + (i / 27) * SWEEP;
+        const rO = r0 - 12 * k, rI = rO - (major ? 13 * k : 7 * k);
+        const red = i / 27 > 0.78;
+        ticks += `<line x1="${(cx3 + Math.cos(a) * rI).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rI).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rO).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rO).toFixed(1)}" stroke="${red ? alarm : "#FFFFFF"}" stroke-width="${major ? 3 : 1.4}" opacity="${red ? 0.9 : major ? 0.75 : 0.32}"/>`;
+      }
+      const needle = `<g${part === "needle" ? "" : ` transform="rotate(0)"`}>` +
+        `<line x1="${(cx3 - Math.cos(ang) * 16 * k).toFixed(1)}" y1="${(cy3 - Math.sin(ang) * 16 * k).toFixed(1)}" x2="${(cx3 + Math.cos(ang) * (r0 - 30 * k)).toFixed(1)}" y2="${(cy3 + Math.sin(ang) * (r0 - 30 * k)).toFixed(1)}" stroke="${alarm}" stroke-width="${(4 * k).toFixed(1)}" stroke-linecap="round"/>` +
+        candyKnob(cx3, cy3, 9 * k, bevel) + `</g>`;
+      const readout = contentText(String(Math.round(v3 * 174)), cx3, cy3 + r0 * 0.5, Math.min(d2 * 0.17, r0 * 0.44) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
+        `<text x="${cx3}" y="${(cy3 + r0 * 0.82).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">MPH</text>`;
+      const face =
+        `<circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gid8})" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>` +
+        `<circle cx="${cx3}" cy="${cy3}" r="${(r0 - 9 * k).toFixed(1)}" fill="${wellFill}"/>` + ticks;
+      const inner2 = part === "needle" ? needle : part === "face" ? face : face + needle + readout;
+      if (useHousing) {
+        const track = build(cfg, state, { x: 39, y: 30, h: D, fs: 0, iconSize: 0, tokenH: 280 }, { iconDef: null, label: "", fixedW: D, shapeOverride: sov });
+        return inject(track.replace("<svg ", '<svg data-race="speedo" '),
+          `<defs><linearGradient id="${gid8}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs><g opacity="${dim}">${inner2}</g>`);
+      }
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="speedometer" data-race="speedo">
+<defs><linearGradient id="${gid8}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
+<g opacity="${dim}">${inner2}</g>
+</svg>`;
+    }
+    case "speedo2": {
+      /* Futuristic HUD speedometer — an open arc of segments lighting up to
+         the value, digital readout center. Pure light, no body. */
+      const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
+      const pad2 = 46;
+      const v3 = clamp(value ?? 0.62, 0, 1);
+      const part = opts.part;
+      // v71 · form factor: same housing rule as the classic dial — the
+      // light-segments sit in a recessed well inside the themed shell
+      const useHousing = !part;
+      const D = d2 + (bw + 18 * k) * 2;
+      const W2 = d2 + pad2 * 2, H2 = d2 + pad2 * 2;
+      const cx3 = useHousing ? 39 + D / 2 : W2 / 2, cy3 = useHousing ? 30 + D / 2 : H2 / 2, r0 = d2 / 2;
+      const gid8 = "s2" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI;
+      const N = 24;
+      let segs = "";
+      for (let i = 0; i < N; i++) {
+        const a = A0 + ((i + 0.5) / N) * SWEEP;
+        const lit = part === "face" ? false : (i + 0.5) / N <= v3;
+        const rO = r0, rI = r0 - 20 * k;
+        // unlit segments must survive a light canvas too — white dies there
+        const col = lit ? hexMix(bevel, glow, i / N) : useHousing ? "#FFFFFF" : isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.35);
+        segs += `<line x1="${(cx3 + Math.cos(a) * rI).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rI).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rO).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rO).toFixed(1)}" stroke="${col}" stroke-width="${(8 * k).toFixed(1)}" stroke-linecap="round" opacity="${lit ? 0.95 : useHousing ? 0.2 : isDarkBg(cfg.canvas) ? 0.14 : 0.3}"${lit ? ` filter="url(#${gid8}g)"` : ""}/>`;
+      }
+      if (part === "segment") {
+        const segW = 10 * k, segH = 26 * k;
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${(segW * 2).toFixed(0)}" height="${(segH + 12).toFixed(0)}" viewBox="0 0 ${(segW * 2).toFixed(0)} ${(segH + 12).toFixed(0)}"><line x1="${segW}" y1="6" x2="${segW}" y2="${segH + 6}" stroke="${glow}" stroke-width="${segW.toFixed(1)}" stroke-linecap="round"/></svg>`;
+      }
+      const arc = `<circle cx="${cx3}" cy="${cy3}" r="${(r0 - 30 * k).toFixed(1)}" fill="none" stroke="${hexRgba(glow, 0.25)}" stroke-width="1.5" stroke-dasharray="3 7"/>`;
+      const readout = part === "face" ? "" :
+        contentText(String(Math.round(v3 * 174)), cx3, cy3 - 4 * k, Math.min(d2 * 0.24, r0 * 0.6) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
+        `<text x="${cx3}" y="${(cy3 + r0 * 0.46).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">MPH</text>`;
+      if (useHousing) {
+        const track = build(cfg, state, { x: 39, y: 30, h: D, fs: 0, iconSize: 0, tokenH: 280 }, { iconDef: null, label: "", fixedW: D, shapeOverride: sov });
+        const well = `<circle cx="${cx3.toFixed(1)}" cy="${cy3.toFixed(1)}" r="${(r0 + 8 * k).toFixed(1)}" fill="${wellFill}" opacity="0.92"/>`;
+        return inject(track.replace("<svg ", '<svg data-race="speedo2" '),
+          `<defs><filter id="${gid8}g" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="0" stdDeviation="${(4 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.7"/></filter></defs><g opacity="${dim}">${well}${segs}${arc}${readout}</g>`);
+      }
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="HUD speedometer" data-race="speedo2">
+<defs><filter id="${gid8}g" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="0" stdDeviation="${(4 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.7"/></filter></defs>
+<g opacity="${dim}">${segs}${arc}${readout}</g>
+</svg>`;
+    }
+    case "tacho": {
+      /* Rev meter — the third voice of the diegetic instrument language the
+         racing gauges share: dark circular well, marks riding the rim, one
+         glow accent, candy hub, readout on the lower face. Here the marks
+         ARE the value: fat wedge segments sweep 270°, zone-tinted green →
+         amber → red, lit up to the needle. */
+      const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
+      const v3 = clamp(value ?? 0.62, 0, 1);
+      // v71 · form factor: housed like its siblings — theme walls, extrusion
+      const D = d2 + (bw + 18 * k) * 2;
+      const cx3 = 39 + D / 2, cy3 = 30 + D / 2, r0 = d2 / 2;
+      const gidT2 = "tc" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI;
+      const ang = A0 + v3 * SWEEP;
+      const alarm = hexMix("#FF4D5A", bevel, 0.15);
+      const zone = (t: number) => t < 0.6 ? "#3ECF6A" : t < 0.82 ? "#FFC531" : "#FF4D5A";
+      let segsOn = "", segsOff = "";
+      for (let i = 0; i < 28; i++) {
+        const t0 = i / 27;
+        const a = A0 + t0 * SWEEP;
+        const rO = r0 - 11 * k, rI = rO - 15 * k;
+        const seg = `<line x1="${(cx3 + Math.cos(a) * rI).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rI).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rO).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rO).toFixed(1)}" stroke="${zone(t0)}" stroke-width="${(6.5 * k).toFixed(1)}" stroke-linecap="round" opacity="${t0 <= v3 ? "0.96" : "0.14"}"/>`;
+        if (t0 <= v3) segsOn += seg; else segsOff += seg;
+      }
+      const needle = `<line x1="${(cx3 - Math.cos(ang) * 15 * k).toFixed(1)}" y1="${(cy3 - Math.sin(ang) * 15 * k).toFixed(1)}" x2="${(cx3 + Math.cos(ang) * (r0 - 32 * k)).toFixed(1)}" y2="${(cy3 + Math.sin(ang) * (r0 - 32 * k)).toFixed(1)}" stroke="${v3 > 0.82 ? alarm : "#FFFFFF"}" stroke-width="${(3.6 * k).toFixed(1)}" stroke-linecap="round" opacity="0.92"/>`;
+      const readout = contentText((v3 * 9).toFixed(1), cx3, cy3 + r0 * 0.5, Math.min(d2 * 0.16, r0 * 0.42) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
+        `<text x="${cx3}" y="${(cy3 + r0 * 0.82).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">RPM ×1000</text>`;
+      const trackT = build(cfg, state, { x: 39, y: 30, h: D, fs: 0, iconSize: 0, tokenH: 280 }, { iconDef: null, label: "", fixedW: D, shapeOverride: sov });
+      return inject(trackT.replace("<svg ", `<svg data-race="tacho"${v3 > 0.82 ? ' data-urgent="1"' : ""} `),
+        `<defs>
+  <linearGradient id="${gidT2}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${darken(bevel, 0.3)}"/></linearGradient>
+  <filter id="${gidT2}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3.5 * k).toFixed(1)}" flood-color="${v3 > 0.82 ? alarm : "#7CE6A0"}" flood-opacity="0.5"/></filter>
+</defs>
+<g opacity="${dim}">
+  <circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gidT2})" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>
+  <circle cx="${cx3}" cy="${cy3}" r="${(r0 - 8 * k).toFixed(1)}" fill="${wellFill}"/>
+  ${segsOff}<g filter="url(#${gidT2}g)">${segsOn}</g>
+  ${needle}
+  ${candyKnob(cx3, cy3, 9 * k, bevel)}
+  ${readout}
+</g>`);
+    }
+    case "circuit": {
+      /* Race circuit mini-map — the fictional KAZURI RING (somewhere in the
+         East African highlands): hairpin, ridge climb, long savanna sweep,
+         gorge esses, drawn as one closed line. Rendered as a dimensional
+         ribbon: isometric squash + extruded walls so elevation reads. */
+      const w = 250 * k, h = 175 * k, pad2 = 40;
+      const W2 = w + pad2 * 2, H2 = h + pad2 * 2;
+      const gid9 = "cc" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const sx3 = w / 220, sy3 = h / 150;
+      const d3 = `M ${(30 * sx3 + pad2).toFixed(1)} ${(118 * sy3 + pad2).toFixed(1)} L ${(24 * sx3 + pad2).toFixed(1)} ${(106 * sy3 + pad2).toFixed(1)} Q ${(20 * sx3 + pad2).toFixed(1)} ${(96 * sy3 + pad2).toFixed(1)} ${(28 * sx3 + pad2).toFixed(1)} ${(92 * sy3 + pad2).toFixed(1)} L ${(60 * sx3 + pad2).toFixed(1)} ${(78 * sy3 + pad2).toFixed(1)} Q ${(66 * sx3 + pad2).toFixed(1)} ${(75 * sy3 + pad2).toFixed(1)} ${(64 * sx3 + pad2).toFixed(1)} ${(68 * sy3 + pad2).toFixed(1)} L ${(46 * sx3 + pad2).toFixed(1)} ${(34 * sy3 + pad2).toFixed(1)} Q ${(43 * sx3 + pad2).toFixed(1)} ${(26 * sy3 + pad2).toFixed(1)} ${(50 * sx3 + pad2).toFixed(1)} ${(22 * sy3 + pad2).toFixed(1)} L ${(74 * sx3 + pad2).toFixed(1)} ${(12 * sy3 + pad2).toFixed(1)} Q ${(82 * sx3 + pad2).toFixed(1)} ${(8 * sy3 + pad2).toFixed(1)} ${(88 * sx3 + pad2).toFixed(1)} ${(14 * sy3 + pad2).toFixed(1)} L ${(102 * sx3 + pad2).toFixed(1)} ${(30 * sy3 + pad2).toFixed(1)} Q ${(106 * sx3 + pad2).toFixed(1)} ${(36 * sy3 + pad2).toFixed(1)} ${(114 * sx3 + pad2).toFixed(1)} ${(34 * sy3 + pad2).toFixed(1)} L ${(168 * sx3 + pad2).toFixed(1)} ${(22 * sy3 + pad2).toFixed(1)} Q ${(178 * sx3 + pad2).toFixed(1)} ${(20 * sy3 + pad2).toFixed(1)} ${(182 * sx3 + pad2).toFixed(1)} ${(28 * sy3 + pad2).toFixed(1)} L ${(196 * sx3 + pad2).toFixed(1)} ${(62 * sy3 + pad2).toFixed(1)} Q ${(199 * sx3 + pad2).toFixed(1)} ${(70 * sy3 + pad2).toFixed(1)} ${(192 * sx3 + pad2).toFixed(1)} ${(76 * sy3 + pad2).toFixed(1)} L ${(160 * sx3 + pad2).toFixed(1)} ${(100 * sy3 + pad2).toFixed(1)} Q ${(130 * sx3 + pad2).toFixed(1)} ${(122 * sy3 + pad2).toFixed(1)} ${(96 * sx3 + pad2).toFixed(1)} ${(128 * sy3 + pad2).toFixed(1)} L ${(48 * sx3 + pad2).toFixed(1)} ${(136 * sy3 + pad2).toFixed(1)} Q ${(36 * sx3 + pad2).toFixed(1)} ${(138 * sy3 + pad2).toFixed(1)} ${(32 * sx3 + pad2).toFixed(1)} ${(128 * sy3 + pad2).toFixed(1)} Z`;
+      /* dimensional ribbon: the ground shadow sits deepest, then stacked
+         wall passes rise to the lit racing line on top */
+      const wall = [8, 6.5, 5, 3.5, 2]
+        .map((dy, i) => `<path d="${d3}" transform="translate(0 ${(dy * k).toFixed(1)})" fill="none" stroke="${darken(bevel, 0.62 - i * 0.05)}" stroke-width="${(9 * k).toFixed(1)}" stroke-linejoin="round"/>`)
+        .join("");
+      const startTick = `<line x1="${(26 * sx3 + pad2).toFixed(1)}" y1="${(110 * sy3 + pad2 - 6).toFixed(1)}" x2="${(36 * sx3 + pad2).toFixed(1)}" y2="${(114 * sy3 + pad2 + 4).toFixed(1)}" stroke="${isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.5)}" stroke-width="3" stroke-dasharray="3 3" opacity="0.9"/>`;
+      const track =
+        `<ellipse cx="${(W2 / 2).toFixed(1)}" cy="${(H2 / 2 + 16 * k).toFixed(1)}" rx="${(w * 0.52).toFixed(1)}" ry="${(h * 0.4).toFixed(1)}" fill="${hexRgba("#04070E", 0.35)}"/>` +
+        wall +
+        `<path d="${d3}" fill="none" stroke="${darken(bevel, 0.45)}" stroke-width="${(9 * k).toFixed(1)}" stroke-linejoin="round" opacity="0.95"/>` +
+        `<path d="${d3}" fill="none" stroke="${glow}" stroke-width="${(4 * k).toFixed(1)}" stroke-linejoin="round" filter="url(#${gid9}g)"/>` +
+        startTick;
+      /* isometric squash makes the extrusion read as elevation */
+      const iso = (inner: string) => `<g transform="translate(0 ${(H2 * 0.13).toFixed(1)}) scale(1 0.74)">${inner}</g>`;
+      if (opts.part === "track") {
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}"><defs><filter id="${gid9}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.55"/></filter></defs>${iso(track)}</svg>`;
+      }
+      const markers =
+        `<circle cx="${(64 * sx3 + pad2).toFixed(1)}" cy="${(68 * sy3 + pad2).toFixed(1)}" r="${(6.5 * k).toFixed(1)}" fill="${glow}" filter="url(#${gid9}g)"/>` +
+        `<circle cx="${(150 * sx3 + pad2).toFixed(1)}" cy="${(107 * sy3 + pad2).toFixed(1)}" r="${(5 * k).toFixed(1)}" fill="${isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.55)}" opacity="0.85"/>` +
+        `<circle cx="${(114 * sx3 + pad2).toFixed(1)}" cy="${(34 * sy3 + pad2).toFixed(1)}" r="${(5 * k).toFixed(1)}" fill="${hexMix("#FF4D5A", bevel, 0.18)}" opacity="0.9"/>`;
+      const tag = `<text x="${(cxOf(W2)).toFixed(1)}" y="${(H2 - 10).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".3em" fill="${isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.3)}" text-anchor="middle" opacity="${dim}">KAZURI RING · GP CIRCUIT</text>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="race circuit map" data-race="circuit">
+<defs><filter id="${gid9}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.55"/></filter></defs>
+<g opacity="${dim}">${iso(track + markers)}${tag}</g>
+</svg>`;
+    }
+    case "leaderboard": {
+      /* Track position list — TOP 5, the player's row lit. The panel is the
+         kit shell; every row is live engine content in real games. */
+      const w = 330 * k, h = 250 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 168 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const inset = bw + 8;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const rows = [
+        { p: "1", d: "HAM", gap: "1:21.548", you: false },
+        { p: "2", d: "VER", gap: "+0.842", you: false },
+        { p: "3", d: "YOU", gap: "+2.156", you: true },
+        { p: "4", d: "LEC", gap: "+3.271", you: false },
+        { p: "5", d: "PIA", gap: "+4.712", you: false },
+      ];
+      const x0 = 39 + inset + 16 * k, x1 = 39 + w - inset - 18 * k;
+      const headY = 30 + inset + 20 * k;
+      const rowH = (h - inset * 2 - 40 * k) / rows.length;
+      const gid10 = "lb" + UID++;
+      const ink = "rgba(255,255,255,0.88)", ink2 = "rgba(255,255,255,0.5)";
+      const parts =
+        `<defs><linearGradient id="${gid10}s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${hexRgba(bevel, 0.55)}"/><stop offset="0.5" stop-color="${hexRgba(glow, 0.55)}"/><stop offset="1" stop-color="${hexRgba(bevel, 0.55)}"/></linearGradient></defs>` +
+        `<text x="${x0.toFixed(1)}" y="${headY.toFixed(1)}" font-family="Inter, sans-serif" font-size="${(12 * k).toFixed(1)}" font-weight="800" letter-spacing=".26em" fill="${hexRgba(glow, 0.8)}" opacity="${dim}">TOP 5</text>` +
+        rows.map((r, i) => {
+          const yC = 30 + inset + 34 * k + rowH * (i + 0.5);
+          const hl = r.you
+            ? `<rect x="${(x0 - 6 * k).toFixed(1)}" y="${(yC - rowH * 0.44).toFixed(1)}" width="${(x1 - x0 + 12 * k).toFixed(1)}" height="${(rowH * 0.88).toFixed(1)}" rx="${(7 * k).toFixed(1)}" fill="url(#${gid10}s)" stroke="${hexRgba(glow, 0.8)}" stroke-width="1.5"/>`
+            : "";
+          const w8 = r.you ? 900 : 700;
+          return hl +
+            `<text x="${(x0 + 4 * k).toFixed(1)}" y="${yC.toFixed(1)}" font-family="Inter, sans-serif" font-size="${(15 * k).toFixed(1)}" font-weight="${w8}" fill="${r.you ? "#FFFFFF" : ink2}" dominant-baseline="central">${r.p}</text>` +
+            `<text x="${(x0 + 30 * k).toFixed(1)}" y="${yC.toFixed(1)}" font-family="Inter, sans-serif" font-size="${(16 * k).toFixed(1)}" font-weight="${w8}" letter-spacing=".08em" fill="${r.you ? "#FFFFFF" : ink}" dominant-baseline="central">${r.d}</text>` +
+            `<text x="${x1.toFixed(1)}" y="${yC.toFixed(1)}" font-family="Inter, sans-serif" font-size="${(13.5 * k).toFixed(1)}" font-weight="600" fill="${r.you ? hexMix(glow, "#FFFFFF", 0.4) : ink2}" text-anchor="end" dominant-baseline="central">${r.gap}</text>`;
+        }).join("");
+      if (opts.part === "base") return track; // rows are live engine content
+      return inject(track, `<g opacity="${dim}">${parts}</g>`).replace("<svg ", `<svg data-race="board" `);
+    }
+    case "trophy": {
+      /* 1st-place trophy — candy gold, the rank lives on the bowl as
+         replaceable content. Shell-free celebration asset. */
+      const d4 = ({ s: 130, m: 168, l: 214 } as Record<KitSize, number>)[size] * k;
+      const pad4 = 44;
+      const W2 = d4 + pad4 * 2, H2 = d4 * 1.22 + pad4 * 2;
+      const cx3 = W2 / 2;
+      const gid11 = "tr" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const gold = hexMix("#F5B93C", bevel, 0.18);
+      const goldHi = lighten(gold, 0.45), goldLo = darken(gold, 0.4);
+      const bowlW = d4 * 0.72, bowlH = d4 * 0.52;
+      const bx = cx3 - bowlW / 2, by = pad4 + d4 * 0.06;
+      const rank = opts.label ?? "1";
+      const stemY = by + bowlH, baseY = stemY + d4 * 0.2;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" data-shell="${bx.toFixed(1)} ${by.toFixed(1)} ${bowlW.toFixed(1)} ${(baseY + d4 * 0.12 - by).toFixed(1)}" role="img" aria-label="first place trophy" data-race="trophy">
+<defs>
+  <linearGradient id="${gid11}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${goldLo}"/><stop offset="0.35" stop-color="${goldHi}"/><stop offset="0.6" stop-color="${gold}"/><stop offset="1" stop-color="${goldLo}"/></linearGradient>
+  <filter id="${gid11}g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${(d4 * 0.05).toFixed(1)}"/></filter>
+</defs>
+<g opacity="${dim}">
+  <ellipse cx="${cx3}" cy="${(baseY + d4 * 0.15).toFixed(1)}" rx="${(bowlW * 0.55).toFixed(1)}" ry="${(d4 * 0.05).toFixed(1)}" fill="rgba(0,0,0,0.35)"/>
+  <ellipse cx="${cx3}" cy="${(by + bowlH * 0.34).toFixed(1)}" rx="${(bowlW * 0.72).toFixed(1)}" ry="${(bowlH * 0.62).toFixed(1)}" fill="${gold}" filter="url(#${gid11}g)" opacity="0.3"/>
+  <path d="M ${(bx - d4 * 0.14).toFixed(1)} ${(by + bowlH * 0.14).toFixed(1)} q ${(-d4 * 0.16).toFixed(1)} ${(bowlH * 0.32).toFixed(1)} ${(d4 * 0.18).toFixed(1)} ${(bowlH * 0.52).toFixed(1)}" fill="none" stroke="${gold}" stroke-width="${(d4 * 0.055).toFixed(1)}" stroke-linecap="round"/>
+  <path d="M ${(bx + bowlW + d4 * 0.14).toFixed(1)} ${(by + bowlH * 0.14).toFixed(1)} q ${(d4 * 0.16).toFixed(1)} ${(bowlH * 0.32).toFixed(1)} ${(-d4 * 0.18).toFixed(1)} ${(bowlH * 0.52).toFixed(1)}" fill="none" stroke="${gold}" stroke-width="${(d4 * 0.055).toFixed(1)}" stroke-linecap="round"/>
+  <path d="M ${bx.toFixed(1)} ${by.toFixed(1)} H ${(bx + bowlW).toFixed(1)} V ${(by + bowlH * 0.42).toFixed(1)} Q ${(bx + bowlW).toFixed(1)} ${(by + bowlH).toFixed(1)} ${cx3.toFixed(1)} ${(by + bowlH).toFixed(1)} Q ${bx.toFixed(1)} ${(by + bowlH).toFixed(1)} ${bx.toFixed(1)} ${(by + bowlH * 0.42).toFixed(1)} Z" fill="url(#${gid11})" stroke="${goldLo}" stroke-width="2"/>
+  <ellipse cx="${cx3}" cy="${by.toFixed(1)}" rx="${(bowlW / 2).toFixed(1)}" ry="${(d4 * 0.05).toFixed(1)}" fill="${goldHi}" stroke="${goldLo}" stroke-width="1.5"/>
+  <ellipse cx="${(bx + bowlW * 0.28).toFixed(1)}" cy="${(by + bowlH * 0.3).toFixed(1)}" rx="${(bowlW * 0.12).toFixed(1)}" ry="${(bowlH * 0.22).toFixed(1)}" fill="#FFFFFF" opacity="0.5"/>
+  <path d="M ${(cx3 - d4 * 0.07).toFixed(1)} ${stemY.toFixed(1)} L ${(cx3 - d4 * 0.11).toFixed(1)} ${baseY.toFixed(1)} H ${(cx3 + d4 * 0.11).toFixed(1)} L ${(cx3 + d4 * 0.07).toFixed(1)} ${stemY.toFixed(1)} Z" fill="${darken(gold, 0.15)}" stroke="${goldLo}" stroke-width="1.5"/>
+  <path d="${roundRect(cx3 - bowlW * 0.34, baseY, bowlW * 0.68, d4 * 0.08, d4 * 0.02)}" fill="url(#${gid11})" stroke="${goldLo}" stroke-width="1.5"/>
+  <path d="${roundRect(cx3 - bowlW * 0.42, baseY + d4 * 0.07, bowlW * 0.84, d4 * 0.06, d4 * 0.02)}" fill="${darken(gold, 0.28)}" stroke="${goldLo}" stroke-width="1.5"/>
+  ${rank ? contentText(rank, cx3, by + bowlH * 0.44, d4 * 0.34 * typeK, { anchor: "middle", keepCase: true, opacity: dim }) : ""}
+  <path d="M ${(bx + bowlW * 0.82).toFixed(1)} ${(by - d4 * 0.05).toFixed(1)} l ${(d4 * 0.025).toFixed(1)} ${(d4 * 0.05).toFixed(1)} ${(d4 * 0.05).toFixed(1)} ${(d4 * 0.025).toFixed(1)} ${(-d4 * 0.05).toFixed(1)} ${(d4 * 0.025).toFixed(1)} ${(-d4 * 0.025).toFixed(1)} ${(d4 * 0.05).toFixed(1)} ${(-d4 * 0.025).toFixed(1)} ${(-d4 * 0.05).toFixed(1)} ${(-d4 * 0.05).toFixed(1)} ${(-d4 * 0.025).toFixed(1)} ${(d4 * 0.05).toFixed(1)} ${(-d4 * 0.025).toFixed(1)} Z" fill="#FFFFFF" opacity="0.9"/>
+</g>
+</svg>`;
+    }
+    case "laptimes": {
+      /* Lap comparison — two lap-time traces on one techy plot. Every value
+         is live engine data in real games; the panel is the kit shell. */
+      const w = 340 * k, h = 240 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 168 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      if (opts.part === "base") return track;
+      const inset = bw + 10;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const gid12 = "lp" + UID++;
+      const x0 = 39 + inset + 14 * k, x1 = 39 + w - inset - 14 * k;
+      const y0 = 30 + inset + 34 * k, y1 = 30 + h - inset - 30 * k;
+      const you = [72, 68, 65, 66, 62, 63, 60, 58];
+      const rival = [70, 69, 66, 67, 64.5, 65, 63, 62];
+      const lo = 56, hi = 74;
+      const pt = (v: number, i: number, arr: number[]) =>
+        `${(x0 + ((x1 - x0) * i) / (arr.length - 1)).toFixed(1)},${(y0 + ((v - lo) / (hi - lo)) * (y1 - y0)).toFixed(1)}`;
+      const grid = [0.25, 0.5, 0.75].map((t) =>
+        `<line x1="${x0.toFixed(1)}" y1="${(y0 + (y1 - y0) * t).toFixed(1)}" x2="${x1.toFixed(1)}" y2="${(y0 + (y1 - y0) * t).toFixed(1)}" stroke="rgba(255,255,255,0.12)" stroke-width="1" stroke-dasharray="3 5"/>`).join("");
+      const youPts = you.map((v, i) => pt(v, i, you)).join(" ");
+      const last = youPts.split(" ").pop()!.split(",");
+      const parts =
+        `<defs><filter id="${gid12}g" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.7"/></filter></defs>` +
+        `<text x="${x0.toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${hexRgba(glow, 0.8)}">LAP COMPARISON</text>` +
+        `<circle cx="${(x1 - 92 * k).toFixed(1)}" cy="${(30 + inset + 12 * k).toFixed(1)}" r="${(3.5 * k).toFixed(1)}" fill="${glow}"/>` +
+        `<text x="${(x1 - 84 * k).toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(10 * k).toFixed(1)}" font-weight="700" fill="rgba(255,255,255,0.75)">YOU</text>` +
+        `<circle cx="${(x1 - 48 * k).toFixed(1)}" cy="${(30 + inset + 12 * k).toFixed(1)}" r="${(3.5 * k).toFixed(1)}" fill="rgba(255,255,255,0.5)"/>` +
+        `<text x="${(x1 - 40 * k).toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(10 * k).toFixed(1)}" font-weight="700" fill="rgba(255,255,255,0.55)">RIVAL</text>` +
+        grid +
+        `<polyline points="${rival.map((v, i) => pt(v, i, rival)).join(" ")}" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="${(2 * k).toFixed(1)}" stroke-dasharray="5 5" stroke-linejoin="round"/>` +
+        `<polyline points="${youPts}" fill="none" stroke="${glow}" stroke-width="${(3 * k).toFixed(1)}" stroke-linejoin="round" stroke-linecap="round" filter="url(#${gid12}g)"/>` +
+        `<circle cx="${last[0]}" cy="${last[1]}" r="${(4.5 * k).toFixed(1)}" fill="${glow}" filter="url(#${gid12}g)"/>` +
+        `<text x="${x0.toFixed(1)}" y="${(y1 + 20 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(9.5 * k).toFixed(1)}" font-weight="700" letter-spacing=".12em" fill="rgba(255,255,255,0.4)">LAP 1</text>` +
+        `<text x="${x1.toFixed(1)}" y="${(y1 + 20 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(9.5 * k).toFixed(1)}" font-weight="700" letter-spacing=".12em" fill="rgba(255,255,255,0.4)" text-anchor="end">LAP 8</text>` +
+        `<text x="${x1.toFixed(1)}" y="${(y0 - 8 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(10.5 * k).toFixed(1)}" font-weight="800" fill="#4ADE80" text-anchor="end">−0.7s / LAP</text>`;
+      return inject(track, `<g opacity="${dim}">${parts}</g>`).replace("<svg ", `<svg data-race="laps" `);
+    }
+    case "telemetry": {
+      /* Telemetry — throttle / brake / speed traces over one sector. The
+         techy pit-wall panel; every trace is live engine data in games. */
+      const w = 340 * k, h = 240 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 168 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      if (opts.part === "base") return track;
+      const inset = bw + 10;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const gid13 = "tm" + UID++;
+      const x0 = 39 + inset + 14 * k, x1 = 39 + w - inset - 14 * k;
+      const y0 = 30 + inset + 34 * k, y1 = 30 + h - inset - 30 * k;
+      const W3 = x1 - x0, H3 = y1 - y0;
+      // normalized traces along the sector (0..1 of plot height)
+      const thr = [1, 1, 0.6, 0.2, 0.5, 1, 1, 0.75, 0.3, 0.7, 1, 1];
+      const brk = [0, 0, 0.5, 0.9, 0.2, 0, 0, 0.3, 0.85, 0.15, 0, 0];
+      const spd = [0.8, 0.9, 0.7, 0.4, 0.55, 0.8, 0.95, 0.75, 0.45, 0.6, 0.85, 0.98];
+      const px = (i: number, arr: number[]) => (x0 + (W3 * i) / (arr.length - 1)).toFixed(1);
+      const py = (v: number) => (y1 - v * H3).toFixed(1);
+      const area = (arr: number[]) => `M ${x0.toFixed(1)} ${y1.toFixed(1)} ` + arr.map((v, i) => `L ${px(i, arr)} ${py(v * 0.5)}`).join(" ") + ` L ${x1.toFixed(1)} ${y1.toFixed(1)} Z`;
+      const vgrid = [0.2, 0.4, 0.6, 0.8].map((t) =>
+        `<line x1="${(x0 + W3 * t).toFixed(1)}" y1="${y0.toFixed(1)}" x2="${(x0 + W3 * t).toFixed(1)}" y2="${y1.toFixed(1)}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`).join("");
+      const parts =
+        `<defs><filter id="${gid13}g" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="${(3 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.65"/></filter></defs>` +
+        `<text x="${x0.toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11.5 * k).toFixed(1)}" font-weight="800" letter-spacing=".22em" fill="${hexRgba(glow, 0.8)}">TELEMETRY · S2</text>` +
+        `<text x="${x1.toFixed(1)}" y="${(30 + inset + 16 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(10 * k).toFixed(1)}" font-weight="700" text-anchor="end"><tspan fill="#4ADE80">THR</tspan><tspan fill="rgba(255,255,255,0.3)"> · </tspan><tspan fill="${hexMix("#FF4D5A", bevel, 0.18)}">BRK</tspan><tspan fill="rgba(255,255,255,0.3)"> · </tspan><tspan fill="${glow}">SPD</tspan></text>` +
+        vgrid +
+        `<path d="${area(thr)}" fill="#4ADE80" opacity="0.28"/>` +
+        `<path d="${area(brk)}" fill="${hexMix("#FF4D5A", bevel, 0.18)}" opacity="0.3"/>` +
+        `<polyline points="${spd.map((v, i) => `${px(i, spd)},${py(v)}`).join(" ")}" fill="none" stroke="${glow}" stroke-width="${(2.6 * k).toFixed(1)}" stroke-linejoin="round" stroke-linecap="round" filter="url(#${gid13}g)"/>` +
+        `<line x1="${x0.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke="rgba(255,255,255,0.25)" stroke-width="1.2"/>` +
+        `<text x="${x0.toFixed(1)}" y="${(y1 + 20 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(9.5 * k).toFixed(1)}" font-weight="700" letter-spacing=".12em" fill="rgba(255,255,255,0.4)">T4</text>` +
+        `<text x="${x1.toFixed(1)}" y="${(y1 + 20 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(9.5 * k).toFixed(1)}" font-weight="700" letter-spacing=".12em" fill="rgba(255,255,255,0.4)" text-anchor="end">T7</text>`;
+      return inject(track, `<g opacity="${dim}">${parts}</g>`).replace("<svg ", `<svg data-race="telemetry" `);
+    }
+    case "startlights": {
+      /* Start lights — the five-pod countdown gantry. value lights the pods
+         one by one; zero is lights-out. Click revs the sequence live. */
+      const podR = 22 * k;
+      const gapP = 16 * k;
+      const housW = podR * 2 * 5 + gapP * 6, housH = podR * 2 + 26 * k;
+      const pad5 = 44;
+      const W2 = housW + pad5 * 2, H2 = housH + 34 * k + pad5 * 2;
+      const hx = pad5, hy = pad5 + 14 * k;
+      const v3 = clamp(value ?? 0.6, 0, 1);
+      const lit = Math.round(v3 * 5);
+      const alarm = hexMix("#FF4D5A", bevel, 0.15);
+      const gid14 = "sl" + UID++;
+      const dim = state === "disabled" ? 0.45 : 1;
+      const isBase = opts.part === "base";
+      let pods = "";
+      for (let i = 0; i < 5; i++) {
+        const cx3 = hx + gapP + podR + i * (podR * 2 + gapP);
+        const cy3 = hy + housH / 2;
+        const on = !isBase && i < lit;
+        pods +=
+          `<circle cx="${cx3.toFixed(1)}" cy="${cy3.toFixed(1)}" r="${(podR + 4 * k).toFixed(1)}" fill="${darken(bevel, 0.62)}" stroke="${darken(bevel, 0.4)}" stroke-width="1.5"/>` +
+          `<circle cx="${cx3.toFixed(1)}" cy="${cy3.toFixed(1)}" r="${podR.toFixed(1)}" fill="${on ? alarm : hexMix(bevel, "#12141C", 0.78)}"${on ? ` filter="url(#${gid14}g)"` : ""}/>` +
+          (on ? `<ellipse cx="${(cx3 - podR * 0.3).toFixed(1)}" cy="${(cy3 - podR * 0.38).toFixed(1)}" rx="${(podR * 0.34).toFixed(1)}" ry="${(podR * 0.2).toFixed(1)}" fill="#FFFFFF" opacity="0.55"/>`
+            : `<circle cx="${cx3.toFixed(1)}" cy="${cy3.toFixed(1)}" r="${(podR * 0.72).toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>`);
+      }
+      const tag = isBase ? "" :
+        `<text x="${(W2 / 2).toFixed(1)}" y="${(hy + housH + 24 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".3em" fill="${lit === 0 ? "#4ADE80" : isDarkBg(cfg.canvas) ? hexRgba(glow, 0.7) : darken(bevel, 0.3)}" text-anchor="middle" opacity="${dim}">${lit === 0 ? "LIGHTS OUT" : "GET READY"}</text>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" data-shell="${hx.toFixed(1)} ${hy.toFixed(1)} ${housW.toFixed(1)} ${housH.toFixed(1)}" role="img" aria-label="start lights" data-race="lights">
+<defs><filter id="${gid14}g" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="0" stdDeviation="${(6 * k).toFixed(1)}" flood-color="${alarm}" flood-opacity="0.8"/></filter></defs>
+<g opacity="${dim}">
+  <rect x="${(W2 / 2 - 3 * k).toFixed(1)}" y="${(pad5 - 12 * k).toFixed(1)}" width="${(6 * k).toFixed(1)}" height="${(16 * k).toFixed(1)}" fill="${darken(bevel, 0.5)}"/>
+  <path d="${roundRect(hx, hy, housW, housH, 14 * k)}" fill="${hexMix(bevel, "#0A0C14", 0.68)}" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>
+  ${pods}
+  ${tag}
+</g>
+</svg>`;
+    }
     case "dropdown": {
-      const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy });
+      const btn = build(cfg, state, { x: 39, y: 30, h: 110 * k, fs: 32 * k, iconSize: 30 * k }, { label: opts.label ?? "Select option", iconDef: STOCK_ICONS.chevron, shapeOverride: sov, textOy: opts.textOy, textOx: opts.textOx });
       if (state !== "pressed") return btn;
       // pressed = open: the menu drops beneath, drawn from the same palette.
       // The viewBox origin is -glowPad, so the content width is the total

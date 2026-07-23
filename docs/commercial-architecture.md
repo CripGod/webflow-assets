@@ -1,0 +1,161 @@
+# Commercial architecture — living document
+
+Required by Appendix A of the commercial business plan (July 21, 2026).
+This documents what exists **today**, what is deliberately deferred, and
+where every boundary for the later phases already lives. It is updated
+whenever a commercial phase ships.
+
+## Status: Phase 1 (accounts + cloud saves) — shipped
+## Update: named projects + opt-in showcase (v76) — shipped
+
+```
+Browser (GitHub Pages, static Vite build)
+│  editor, rendering, exports        ← all still client-side & free
+│  src/generator/cloud.ts            ← single client-side account boundary
+│      │ dynamic import of @supabase/supabase-js (code-split)
+│      ▼
+Supabase (managed auth + Postgres, RLS everywhere)
+   auth.users                        ← identity; passwords never touch our code
+   public.profiles                   ← 1:1 with users; plan_id pointer ('free')
+   public.plans                      ← capability catalog as data (not code)
+   public.workspaces                 ← the cloud save: whole ui-generator-* keyspace
+   public.projects                   ← named saves (LIVE, v76); private by default; share_slug publishes
+   public.terms_acceptances          ← consent records (version, locale, 13+)
+   public.organizations (+members)   ← reserved, deny-all RLS (studio phase)
+```
+
+## Authentication flow
+
+- Supabase Auth (email/password, magic link, password reset). No custom
+  auth, no password storage, no service-role key anywhere in the client.
+- Config resolution: `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` baked
+  at build time (GitHub Actions secrets), with a per-browser localStorage
+  override (`forge-cloud-url`/`forge-cloud-anon`) so the owner can test a
+  project against the live static deploy. Unconfigured → the entire layer
+  is inert and the app is the local-only build.
+- Sign-up records a consent row (version `TERMS_VERSION` in cloud.ts,
+  locale, 13+ affirmation) — deferred to the first authenticated session
+  when email confirmation is on.
+
+## Cloud-save model
+
+- The document is the app's entire `ui-generator-*` localStorage keyspace,
+  as one JSONB (`workspaces.doc`). Whole-doc last-write-wins.
+- Change detection: a storage write-hook stamps `forge-cloud-lastedit` the
+  moment any synced key changes (signed in or not) and schedules a
+  debounced push; a 3 s signature poll (FNV-1a over sorted keys+values)
+  backstops it. Tab-hidden flushes whenever the doc is ahead of the cloud.
+- Sign-in reconciliation: no server copy → push local; local edited more
+  recently than the server row → push local; otherwise the server copy
+  wins — the local copy is snapshotted to `forge-cloud-prevlocal` first
+  (never overwriting an unrestored snapshot; restorable from the account
+  menu), and the page reloads only after the pull verifiably applied.
+- Hardening invariants (each closed a reviewed failure mode):
+  - **No push before pull** — pushes are gated on a successful
+    reconciliation; a failed first pull retries with backoff instead of
+    letting a near-empty local doc clobber the cloud copy.
+  - **Account-boundary guard** — `forge-cloud-owner` remembers which
+    account the local doc belongs to; a different user signing in on the
+    same browser never uploads the previous user's work.
+  - **Verified pulls, capped reloads** — `applyDoc` verifies the applied
+    signature; a per-tab counter stops quota failures from reload-looping.
+  - **Serialized, retried, rebasing pushes** — one in-flight push,
+    exponential backoff on failure, and a staleness check that re-runs
+    reconciliation when another device wrote since our last pull.
+  - **Honest chip** — sync errors show as "Cloud paused — saved locally",
+    never as a green saved state.
+- The DB keeps one previous revision (`workspaces.previous`, maintained by
+  trigger only when the doc actually changes) as a server-side undo.
+- Magic links are sign-in only (`shouldCreateUser: false`): account
+  creation stays on the consent-gated path, so no account exists without a
+  13+/terms record. The consent marker is bound to the accepting email and
+  carries the real acceptance timestamp. Draft Terms/Privacy live at
+  `public/legal/` and are linked from the sign-up checkbox.
+
+## Named projects + opt-in showcase (v76)
+
+Phase 1 gave every account one auto-synced document (the workspace — "your
+current desk"). v76 turns on the reserved `public.projects` boundary so an
+account keeps a **library** of named kits — "saved files" beside the desk —
+using only the schema and RLS that already shipped. No server functions, so
+this stays entirely on the free static tier.
+
+- **Payload contract, single-sourced.** A project stores the same curated
+  kit snapshot a share link carries — `store.kitPayload()` (cfg + per-
+  component forks, content, sizing, nudges). `shareKit()` and `saveProject()`
+  now build from that one function, so a project, a `#share=` URL, and a
+  published `#p=` link are byte-identical views of the same kit.
+- **Two load paths, one function.** `store.loadKitPayload(p, {viewer})`:
+  `viewer:true` (a share / public link) hydrates read-only in memory, exactly
+  like a shared kit; `viewer:false` (opening your own project) also persists
+  every field to the keys the app boots from, so the opened kit survives
+  reload and the write-hook syncs it into the workspace. Opening confirms
+  first — it replaces the kit on screen.
+- **CRUD in the single client boundary.** `cloud.ts` gains
+  `listProjects / saveProject / updateProjectDoc / renameProject /
+  deleteProject / setProjectPublic / loadProjectDoc / loadPublicProject`.
+  Every owner call carries `user_id = auth.uid()` and is double-guarded by
+  RLS; the account menu gates the Projects UI on a live session.
+- **Opt-in publish → `share_slug`.** Publishing a project mints a short,
+  unguessable slug once (retried on the unlikely collision) and copies a
+  `#p=<slug>` link. Anyone — even signed-out — can open it read-only via the
+  `is_public` RLS path; the anon key reads that one row and nothing else.
+  Unpublishing keeps the slug so the same link re-activates on republish.
+  This is the "move shares to `projects.share_slug`" upgrade the known-
+  limitations list called for; the self-contained `#share=` URL still works.
+
+Boundaries honored: projects are **private by default**, publishing is an
+explicit per-project act, `plan_id` is untouched (nothing here is gated), and
+no exporter moved — the first *paid* feature still waits for server authority
+(Vercel), never a client flag.
+
+## Security posture (what is and is not protected)
+
+- The anon key is public by design; **all** access control is row-level
+  security. Every table has RLS enabled; workspaces/projects/consents are
+  owner-only (projects additionally world-readable only when `is_public`).
+- `profiles.plan_id` cannot be self-upgraded: the update policy's WITH
+  CHECK pins it to 'free' until server-side entitlement resolution exists.
+- Honest limitation (per Appendix A): everything the browser renders —
+  kit definitions, the renderer, exporters — remains inspectable today.
+  Nothing commercially gated ships yet, so nothing needs server authority
+  yet. The first paid feature must land server-side (Vercel functions),
+  never as a client flag.
+
+## Deliberately deferred (with their reserved boundaries)
+
+| Phase (plan §12)            | Reserved today                                             |
+| --------------------------- | ---------------------------------------------------------- |
+| Stripe test mode, billing   | `plans` table; `profiles.plan_id`; annual-only decision     |
+| Entitlement service         | capabilities-as-data in `plans.capabilities` (jsonb)        |
+| Protected exports           | none client-side to remove later — exporters stay free now  |
+| Opt-in showcase             | SHIPPED (v76): named projects + `is_public`/`share_slug`     |
+| Studio / classroom seats    | `organizations`, `organization_members` (deny-all RLS)      |
+| Data rights                 | Download-my-data in the account menu; deletion via Supabase |
+
+## Known limitations / open items
+
+- Sync is whole-document LWW: two devices editing simultaneously trade the
+  document; the server keeps one previous revision. Fine for a single
+  designer; revisit before teams.
+- Share links now have two shapes: the self-contained `#share=` URL (the
+  kit deflated into the link, works with no cloud) and, since v76, a
+  published project's short `#p=<share_slug>` link (resolved from the cloud
+  by slug). The `#p=` link needs a cloud-configured deployment to resolve;
+  where cloud is off it simply no-ops and `#share=` remains the fallback.
+- The repo is public and the frontend is on GitHub Pages. Appendix A's
+  end-state wants a private repo + Vercel (for server functions and bundle
+  privacy). The repo is now Vercel-ready (`vercel.json`, source maps off);
+  the click-path — import into Vercel first, then flip the repo private —
+  is documented in docs/CLOUD-SETUP.md ("Hide the code"). The bundle the
+  browser runs remains inspectable until exports move server-side; that is
+  Appendix A's documented limitation, not a regression.
+- Terms/Privacy documents are drafts; counsel review is a launch gate
+  (plan §10). The consent record stores the accepted version string.
+
+## Rollback
+
+Phase 1 is additive. Removing the two GitHub secrets (or never setting
+them) returns every visitor to the exact pre-cloud, local-only behavior.
+The Supabase project can be paused or deleted independently; local copies
+of work always survive sign-out.

@@ -1,7 +1,6 @@
 import { createElement } from "react";
 import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { icons as lucideIcons } from "lucide-react";
 import type { IconDef } from "./model";
 
 // Multi-library icon engine. Every library is normalized to the same
@@ -72,8 +71,11 @@ function pickFrom(mod: Record<string, unknown>, test: (n: string) => boolean, re
 
 async function loadRaw(id: string): Promise<Loaded> {
   switch (id) {
-    case "lucide":
-      return pickFrom(lucideIcons as unknown as Record<string, unknown>, () => true, (n) => n);
+    case "lucide": {
+      // code-split like every other library — the registry is heavy
+      const m = await import("./lucideLib");
+      return pickFrom(m.default as unknown as Record<string, unknown>, () => true, (n) => n);
+    }
     case "phosphor": {
       const m = await import("react-icons/pi");
       return pickFrom(m as Record<string, unknown>, (n) => /^Pi[A-Z]/.test(n) && !/(Bold|Duotone|Fill|Light|Thin)$/.test(n), (n) => n.slice(2));
@@ -118,8 +120,8 @@ export function loadLib(id: string): Promise<Loaded> {
   return p;
 }
 
-// Lucide is bundled — make it available synchronously from the start.
-loaded.set("lucide", pickFrom(lucideIcons as unknown as Record<string, unknown>, () => true, (n) => n));
+// Lucide loads through loadLib like every other library — the registry
+// lives in its own lazy chunk so the app shell stays light.
 
 export function searchLib(id: string, query: string, limit = 24): string[] {
   const l = loaded.get(id);

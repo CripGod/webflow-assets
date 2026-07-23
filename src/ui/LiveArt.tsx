@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GenConfig, GenStateName, IconDef, KitComponentId, KitSize, Shape } from "@/generator/model";
-import { renderBevel, renderKit } from "@/generator/bevel";
+import { addShine, renderBevel, renderKit } from "@/generator/bevel";
 
 /** What a piece of live art is: the master button (no kit), or one kit
  *  component with optional per-instance overrides. */
@@ -17,6 +17,9 @@ export interface LiveKit {
   baseState?: GenStateName;
   /** Per-component vertical text adjustment (explicit; 0 is valid). */
   textOy?: number;
+  textOx?: number;
+  dock?: { icon?: IconDef | null; side?: "left" | "right" } | null;
+  bar?: { segments?: number; gap?: number; snap?: boolean };
   /** Mobile-game piece slots: secondary label, /max value, add button,
    *  stackable status overlay. */
   sub?: string;
@@ -39,7 +42,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
  *  host wires it). Play mode: hover/press states, toggles flip, sliders drag,
  *  segments switch, progress animates, dropdowns open, badges award — every
  *  interaction the component implies, all through the same pure renderer. */
-export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient, className, style, title, onDesignClick }: {
+export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, ambient, shine, className, style, title, onDesignClick }: {
   cfg: GenConfig;
   kit?: LiveKit;
   playing: boolean;
@@ -48,6 +51,9 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   /** Anchor the shell, not the glow pad: pulls the art up-left by the pad so
    *  top-left-positioned hosts (the board) keep their saved layouts. */
   anchorContent?: boolean;
+  /** Dense-grid trim: reclaim the FULL fixed insets, not the conservative
+   *  share — gem boards want tiles nearly touching. */
+  tight?: boolean;
   /** Screen-composition mode: reclaim the invisible canvas around the shell
    *  (glow pad + fixed insets) with computed negative margins, so pieces
    *  stack at believable interface rhythm at any display scale. The glow
@@ -56,6 +62,9 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   trim?: boolean;
   /** Progress bars quietly re-fill on their own — the page breathes. */
   ambient?: boolean;
+  /** Specular shine band sweeping across the component face on a loop —
+   *  the motion-asset treatment. CSS drives (and reduced-motion stops) it. */
+  shine?: boolean;
   className?: string;
   style?: React.CSSProperties;
   title?: string;
@@ -83,9 +92,9 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   // alt-tone pieces (muted titles) render live but ignore hover and press.
   const disabled = kit?.baseState === "disabled";
   const inert = disabled || kit?.tone === "alt";
-  const value = id === "toggle" || id === "checkbox" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
+  const value = id === "toggle" || id === "checkbox" || id === "radio" || id === "orb" ? (playing && !disabled ? (on ? 1 : 0) : kit?.value)
     : id === "slider" ? (playing && !disabled ? val : kit?.value)
-    : id === "progress" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" ? (playing && !disabled ? pval : kit?.value)
+    : id === "progress" || id === "segbar" || id === "emblembar" || id === "vsbar" || id === "hotbar" || id === "ring" || id === "flipclock" || id === "stopwatch" || id === "timerdigits" || id === "speedo" || id === "speedo2" || id === "tacho" ? (playing && !disabled ? pval : kit?.value)
     : id === "segment" ? (playing && !disabled ? sel : kit?.value)
     : kit?.value;
 
@@ -104,13 +113,16 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   // hosts pass fresh kit literals every render — key on the fields, not the
   // object, so the (string-building) renderer only runs when something changed
   const kitKey = kit
-    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.iconScale ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}|${kit.kind ?? ""}|${kit.tone ?? ""}`
+    ? `${kit.id}|${kit.size ?? "m"}|${kit.shape ?? ""}|${kit.label ?? ""}|${(kit.segments ?? []).join(",")}|${kit.icon ? kit.icon.lib + ":" + kit.icon.name : kit.icon === null ? "none" : ""}|${kit.textOy ?? ""}|${kit.textOx ?? ""}|${kit.dock ? (kit.dock.side ?? "left") + ":" + (kit.dock.icon ? kit.dock.icon.name : kit.dock.icon === null ? "none" : "clock") : ""}|${kit.bar ? JSON.stringify(kit.bar) : ""}|${kit.sub ?? ""}|${kit.max ?? ""}|${kit.addBtn ? 1 : 0}|${kit.overlay ?? ""}|${kit.iconScale ?? ""}|${kit.row ? JSON.stringify(kit.row) : ""}|${kit.kind ?? ""}|${kit.tone ?? ""}`
     : "";
   const svg = useMemo(
-    () => kit
-      ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: id === "input" ? (typed ?? kit.label) : kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, iconScale: kit.iconScale, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
-      : renderBevel(cfg, state),
-    [cfg, kitKey, state, value, id === "joystick" ? stick : null, id === "input" ? typed : null] // eslint-disable-line react-hooks/exhaustive-deps
+    () => {
+      const raw = kit
+        ? renderKit(cfg, kit.id, kit.size ?? "m", state, value, kit.shape, { label: id === "input" ? (typed ?? kit.label) : kit.label, segments: kit.segments, icon: kit.icon, textOy: kit.textOy, textOx: kit.textOx, dock: kit.dock, bar: kit.bar, sub: kit.sub, max: kit.max, addBtn: kit.addBtn, overlay: kit.overlay, iconScale: kit.iconScale, row: kit.row, kind: kit.kind, tone: kit.tone, stick: id === "joystick" && playing ? stick : undefined })
+        : renderBevel(cfg, state);
+      return shine ? addShine(raw) : raw;
+    },
+    [cfg, kitKey, state, value, shine, id === "joystick" ? stick : null, id === "input" ? typed : null] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // natural width × scale — uniform physical scale across every piece, so a
@@ -142,13 +154,14 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   const trimStyle = useMemo(() => {
     if (!trim || scale === undefined || shellFree) return undefined;
     const s = scale;
+    const ins = tight ? { t: 27, x: 33, b: 58 } : { t: 14, x: 12, b: 22 };
     return {
-      marginTop: -Math.round((pad + 14) * s),
-      marginRight: -Math.round((pad + 12) * s),
-      marginBottom: -Math.round((pad + 22) * s),
-      marginLeft: -Math.round((pad + 12) * s),
+      marginTop: -Math.round((pad + ins.t) * s),
+      marginRight: -Math.round((pad + ins.x) * s),
+      marginBottom: -Math.round((pad + ins.b) * s),
+      marginLeft: -Math.round((pad + ins.x) * s),
     };
-  }, [trim, scale, pad, shellFree]);
+  }, [trim, scale, pad, shellFree, tight]);
 
   /* Map a pointer to the control's track using the exact geometry the renderer
      stamped on the svg (viewBox units) — precise at any scale or glow pad. */
@@ -172,6 +185,22 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
     cancelAnimationFrame(raf.current);
     if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setPval(target);
+      return;
+    }
+    if (id === "tacho") {
+      // v67: the rev meter REDLINES — slam past the red threshold, hold with
+      // a violent needle oscillation, then fall back to the resting value
+      const redT = Math.max(target, 0.94);
+      const t0r = performance.now();
+      const stepR = (t: number) => {
+        const dt = t - t0r;
+        if (dt < 850) { const u = dt / 850; setPval(redT * (1 - (1 - u) ** 3)); raf.current = requestAnimationFrame(stepR); }
+        else if (dt < 2700) { setPval(clamp01(redT - 0.02 + Math.sin(dt * 0.09) * 0.028 + (Math.random() - 0.5) * 0.05)); raf.current = requestAnimationFrame(stepR); }
+        else if (dt < 3300) { const u = (dt - 2700) / 600; setPval(redT + (target - redT) * (1 - (1 - u) ** 2)); raf.current = requestAnimationFrame(stepR); }
+        else setPval(target);
+      };
+      setPval(0);
+      raf.current = requestAnimationFrame(stepR);
       return;
     }
     setPval(0);
@@ -204,11 +233,12 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
     raf.current = requestAnimationFrame(step);
   };
   const isTimer = id === "flipclock" || id === "stopwatch" || id === "timerdigits";
+  const isGauge = id === "speedo" || id === "speedo2" || id === "tacho"; // clicking revs / replays it
 
-  // ambient progress: bars, rings and timers quietly replay on their own beat
+  // ambient progress: bars, rings, timers and gauges quietly replay on their own beat
   const beat = useRef(4600 + Math.random() * 2400);
   useEffect(() => {
-    if (!ambient || (id !== "progress" && id !== "ring" && !isTimer) || !playing) return;
+    if (!ambient || (id !== "progress" && id !== "segbar" && id !== "vsbar" && id !== "hotbar" && id !== "ring" && !isTimer && !isGauge) || !playing) return;
     const t = window.setInterval(isTimer ? playTimer : playProgress, beat.current);
     return () => window.clearInterval(t);
   }, [ambient, id, playing]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -218,11 +248,26 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
      click target — a native `click` never fires. The wrapper div is stable,
      so pointerup on it is the reliable activation signal. */
   const pressedHere = useRef(false);
+  const [burst, setBurst] = useState(0);
+  /* claim celebration: white-hot ignition then a themed particle burst —
+     colors come from the kit's own effect wells, never stock confetti */
+  const burstHtml = burst ? `<span class="fx-burstwrap" aria-hidden="true">` + Array.from({ length: 26 }, (_, i) => {
+    const a = (i / 26) * Math.PI * 2 + (i % 3) * 0.31;
+    const dist = 58 + ((i * 37) % 92);
+    const c = [cfg.effects.Bevel ?? "#59A7C9", cfg.effects.Glow ?? "#8FF0FF", cfg.effects.Highlight ?? "#FFFFFF"][i % 3];
+    const s = 5 + ((i * 13) % 8);
+    return `<i style="--dx:${(Math.cos(a) * dist).toFixed(0)}px;--dy:${(Math.sin(a) * dist).toFixed(0)}px;width:${s}px;height:${s}px;background:${c}"></i>`;
+  }).join("") + `</span>` : "";
+  const fireBurst = () => {
+    setBurst(Date.now());
+    window.setTimeout(() => setBurst(0), 1200);
+  };
   const activate = (e: React.PointerEvent) => {
+    if ((kit?.label ?? "").toUpperCase().includes("CLAIM") || id === "pack") fireBurst();
     if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
-    else if (id === "toggle" || id === "checkbox" || id === "orb") setOn((v) => !v);
+    else if (id === "toggle" || id === "checkbox" || id === "radio" || id === "orb") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);
-    else if (id === "progress" || id === "ring") playProgress();
+    else if (id === "progress" || id === "segbar" || id === "emblembar" || id === "vsbar" || id === "hotbar" || id === "ring" || isGauge) playProgress();
     else if (isTimer) playTimer();
     else if (id === "segment") {
       const c = trackCoord(e);
@@ -306,7 +351,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
       onKeyDown: (e: React.KeyboardEvent) => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOn((v) => !v); }
       },
-    } : id === "progress" || id === "ring" || isTimer ? {
+    } : id === "progress" || id === "segbar" || id === "ring" || isTimer ? {
       role: "button" as const,
       tabIndex: 0,
       "aria-label": isTimer ? "Restart the timer" : "Play progress demo",
@@ -315,6 +360,18 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
       },
     } : {}),
   };
+
+  useEffect(() => {
+    if (id !== "input") return;
+    const root = ref.current?.querySelector("svg");
+    const caret = root?.querySelector("[data-caret]");
+    const val = root?.querySelector("[data-value]") as SVGGraphicsElement | null;
+    if (!root || !caret || !val) return;
+    try {
+      const b = val.getBBox();
+      if (b.width > 0) caret.setAttribute("x", (b.x + b.width + 6).toFixed(1));
+    } catch { /* not laid out yet */ }
+  }, [svg, id]);
 
   const anchorStyle = trimStyle ?? (anchorContent && pad > 0 ? { marginLeft: -pad, marginTop: -pad } : undefined);
   // choice controls render pinned to their resting pose — the hover answer
@@ -326,13 +383,13 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, ambient
   // draggable pieces own their gestures — a slider drag must never pan the page
   const gestureStyle = id === "slider" || id === "segment" || id === "joystick" ? { touchAction: "none" as const } : undefined;
   return (
-    <div ref={ref} className={shellFree ? `${className ?? ""} kp-shellfree` : className} title={title}
+    <div ref={ref} className={`${shellFree ? `${className ?? ""} kp-shellfree` : className ?? ""}${burst ? " fx-igniting" : ""}`} title={title}
       style={{ ...style, ...(width !== undefined ? { width } : {}), ...anchorStyle, ...gestureStyle, ...choiceHover }}
       {...(playing ? playHandlers
         : onDesignClick ? {
             onClick: onDesignClick, role: "button", tabIndex: 0,
             onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onDesignClick(); } },
           } : {})}
-      dangerouslySetInnerHTML={{ __html: svg }} />
+      dangerouslySetInnerHTML={{ __html: svg + burstHtml }} />
   );
 }

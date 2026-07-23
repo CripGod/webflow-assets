@@ -1,16 +1,18 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { Hand, Minus, Plus, LayoutGrid, Grip, AlignJustify, Square, SquarePen, Play, ImagePlus, X, PenTool } from "lucide-react";
-import { useGen } from "@/generator/store";
+import { useGen, fileToBgDataUrl } from "@/generator/store";
 import { renderBevel, renderKit } from "@/generator/bevel";
-import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES , applyKitDesign, applyKitTextFill, isDarkBg } from "@/generator/model";
+import { KIT_COMPONENTS, CANVAS_BGS, STATE_NAMES , applyKitDesign, applyKitTextFill, isDarkBg, resolveKitIcon } from "@/generator/model";
 import type { GenStateName } from "@/generator/model";
 import { KitPage } from "./KitPage";
+import { LiveArt } from "./LiveArt";
 import { BoardView } from "./Board";
 
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitTextFill, kitDesigns, kitRow, kitKind } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, parentId, kitShapes, kitSizes, kitTextOy, kitTextOx, kitTextFill, kitIcons, kitLabels, kitDesigns, kitRow, kitKind, kitBar, boards, activeBoard, setBoardBg } = useGen();
+  const actBd = boards.find((b) => b.id === activeBoard);
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -34,9 +36,13 @@ export function CanvasView() {
   // slider responds live on the surface the user is actually looking at
   const fSize = focus ? (kitSizes[focus] ?? "l") : "l";
   const fOy = focus ? kitTextOy[`${focus}:${fSize}`] : undefined;
+  const fOx = focus ? kitTextOx[`${focus}:${fSize}`] : undefined;
+  // bar-family config for the hero: dock + segments follow the store
+  const fBar = focus === "progress" || focus === "segbar" ? kitBar[focus] : undefined;
+  const fDock = fBar?.dock ? { icon: resolveKitIcon(kitIcons[focus!], undefined), side: fBar.dockSide ?? "left" as const } : undefined;
   const heroSvg = useMemo(
-    () => (focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined, kind: focus === "panel" ? (kitKind ?? undefined) : undefined }) : renderBevel(cfg, displayed)),
-    [cfg, displayed, focus, kitShapes, fSize, fOy, kitRow, kitKind, kitTextFill, kitDesigns]
+    () => (focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, textOx: fOx, icon: resolveKitIcon(kitIcons[focus], undefined), label: kitLabels[focus], dock: fDock, bar: fBar, row: focus === "datarow" ? kitRow : undefined, kind: focus === "panel" ? (kitKind ?? undefined) : undefined }) : parentId !== "button" ? renderKit(cfg, parentId, "l", displayed, undefined, kitShapes[parentId], { label: kitLabels[parentId], icon: resolveKitIcon(kitIcons[parentId], undefined) }) : renderBevel(cfg, displayed)),
+    [cfg, displayed, focus, parentId, kitShapes, fSize, fOy, fOx, kitRow, kitKind, kitBar, kitTextFill, kitIcons, kitLabels, kitDesigns]
   );
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
@@ -65,7 +71,10 @@ export function CanvasView() {
       <div
         ref={scroller}
         className={`canvas${panMode ? " pan" : ""}`}
-        style={bgImage ? {
+        /* the Board owns its own per-artboard backgrounds — the editor's
+           backdrop image must never paint behind it (the old
+           picture-in-picture bug) */
+        style={bgImage && phase !== "board" ? {
           backgroundColor: cfg.canvas,
           backgroundImage: `url(${bgImage})`,
           backgroundSize: "cover",
@@ -97,8 +106,22 @@ export function CanvasView() {
               </button>
             )}
             <div className="state-cap" style={{ color: capColor }}>
-              {CAP[displayed]}{playing && live ? " · live" : ""}
+              {playing && focus ? "Live — hover, press, drag" : `${CAP[displayed]}${playing && live ? " · live" : ""}`}
             </div>
+            {playing && focus ? (
+              /* v62: in Play mode the hero IS the live component — sliders
+                 drag, toggles flip, bars replay — the same LiveArt engine
+                 the kit page runs, at hero scale */
+              <div className="hero-slot hot" onPointerDown={(e) => e.stopPropagation()}>
+                <LiveArt playing scale={1}
+                  cfg={applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus])}
+                  kit={{ id: focus, size: fSize, shape: kitShapes[focus], label: kitLabels[focus],
+                    icon: resolveKitIcon(kitIcons[focus], undefined), textOy: fOy, textOx: fOx,
+                    dock: fDock, bar: fBar,
+                    row: focus === "datarow" ? kitRow : undefined,
+                    kind: focus === "panel" ? (kitKind ?? undefined) : undefined }} />
+              </div>
+            ) : (
             <div
               className={`hero-slot${playing ? " hot" : ""}`}
               {...(playing ? {
@@ -110,6 +133,7 @@ export function CanvasView() {
               } : {})}
               dangerouslySetInnerHTML={{ __html: heroSvg }}
             />
+            )}
           </div>
         ) : phase === "board" ? (
           <BoardView playing={playing} />
@@ -172,19 +196,23 @@ export function CanvasView() {
           </div>
           )}
           <span className="zdiv" />
-          <button title="Upload a background image — see your assets on a real game screen" onClick={() => bgInput.current?.click()}
-            className={bgImage ? "on" : ""}>
+          <button title={phase === "board" ? "Upload a background for the ACTIVE artboard — it crops to the board bounds" : "Upload a background image — see your assets on a real game screen"}
+            onClick={() => bgInput.current?.click()}
+            className={(phase === "board" ? !!actBd?.bgImage : !!bgImage) ? "on" : ""}>
             <ImagePlus size={17} strokeWidth={1.8} />
           </button>
-          {bgImage && (
-            <button title="Clear background image" onClick={() => setBgImage(null)}>
+          {(phase === "board" ? actBd?.bgImage : bgImage) && (
+            <button title="Clear background image" onClick={() => (phase === "board" ? setBoardBg({ bgImage: null }) : setBgImage(null))}>
               <X size={16} strokeWidth={2} />
             </button>
           )}
           <input ref={bgInput} type="file" accept="image/*" style={{ display: "none" }}
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) setBgImage(URL.createObjectURL(f));
+              // the board keeps ONE image per artboard, persisted as a
+              // downscaled data URL; the editor backdrop stays session-only
+              if (f && phase === "board") void fileToBgDataUrl(f).then((url) => setBoardBg({ bgImage: url, bgShow: true }));
+              else if (f) setBgImage(URL.createObjectURL(f));
               e.target.value = "";
             }} />
           <span className="zdiv" />
@@ -213,7 +241,7 @@ export function CanvasView() {
             <button className={`scard clickable${s === selectedState ? " sel" : ""}`} key={s}
               onClick={() => setSelectedState(s)} title={`Edit ${cap}`} aria-pressed={s === selectedState}>
               <div className="scard-title">{cap}{s === selectedState ? " · editing" : ""}</div>
-              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, s, v, kitShapes[focus], { textOy: fOy, row: focus === "datarow" ? kitRow : undefined }) : renderBevel(cfg, s) }} />
+              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, s, v, kitShapes[focus], { textOy: fOy, textOx: fOx, icon: resolveKitIcon(kitIcons[focus], undefined), label: kitLabels[focus], dock: fDock, bar: fBar, row: focus === "datarow" ? kitRow : undefined }) : parentId !== "button" ? renderKit(cfg, parentId, "l", s, v, kitShapes[parentId], { label: kitLabels[parentId], icon: resolveKitIcon(kitIcons[parentId], undefined) }) : renderBevel(cfg, s) }} />
             </button>
           ))}
         </div>
