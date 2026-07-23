@@ -237,7 +237,7 @@ function Piece(p: PieceOpts & { caption: string; ambient?: boolean }) {
   return (
     <figure className={`kp-piece${shineOn ? " kp-shine" : ""}`}>
       <LiveArt cfg={cfg} playing scale={p.scale ?? PIECE_SCALE} className="kp-live"
-        kit={kit} title={p.caption} ambient={p.ambient} />
+        kit={kit} title={p.caption} ambient={p.ambient} shine={p.shine} />
       <figcaption className="kp-cap">
         {locked && <Lock className="kp-lockic" size={11} strokeWidth={2.4} aria-label="Locked to its own look" />}
         <span>{p.caption}</span>
@@ -998,6 +998,9 @@ const exportActions = [
         rk("segbar", "Segmented · Smooth", { bar: { segments: 8, snap: false } }, 0.55),
         rk("vsbar", "VS health bar", {}, 0.72),
         rk("hotbar", "Hotbar · slot 3", {}, 0.25),
+        rk("cardback", "Card back", {}),
+        rk("cardback", "Deck cover", { label: "STARTER · 30" }),
+        rk("pack", "Card pack", {}),
         rk("tacho", "Rev meter · 7.4", {}, 0.82),
         rk("input", "Input · Focus", {}, undefined, "hover"),
         rk("input", "Input · Disabled", {}, undefined, "disabled"),
@@ -1468,6 +1471,14 @@ const exportActions = [
           <Piece id="vsbar" caption="VS health bar · fighting" value={0.72} ambient scale={0.5} />
           <Piece id="hotbar" caption="Hotbar · sandbox" value={0.25} ambient scale={0.5} />
         </div>
+        <div className="kp-subhead">Card battler</div>
+        <p className="kp-note">Every set ships its back as a pair — standard and premium foil (the shine sweep) — and the same back becomes a deck cover the moment it takes a nameplate. Packs carry the crimped foil caps; click one to tear it open with the themed burst.</p>
+        <div className="kp-tray">
+          <Piece id="cardback" caption="Card back · standard" scale={0.42} />
+          <Piece id="cardback" caption="Card back · premium foil" scale={0.42} shine />
+          <Piece id="cardback" caption="Deck cover · nameplate" label="STARTER · 30" scale={0.42} />
+          <Piece id="pack" caption="Card pack · click to tear open" scale={0.42} />
+        </div>
         <StateStrip variants={[
           { cap: "Min", piece: { id: "slider", value: 0, scale: 0.26 } },
           { cap: "25%", piece: { id: "slider", value: 0.25, scale: 0.26 } },
@@ -1546,7 +1557,7 @@ const exportActions = [
       <Sec n="08" title="Game HUD & Data" note="Counters, rows, slots and rings. Every icon, portrait and value is a replaceable slot.">
         <div className="kp-subhead">HUD counters</div>
         <div className="kp-tray">
-          <Piece id="resource" caption="Compact" label="1 250" scale={0.4} />
+          <Piece id="resource" caption="Compact" label="1,250" scale={0.4} />
           <Piece id="resource" caption="Current / max" label="3" max="5" icon={STOCK_ICONS.heart} scale={0.4} />
           <Piece id="resource" caption="With add" label="980" addBtn scale={0.4} />
           <Piece id="resource" caption="Low resource" label="0" max="5" icon={STOCK_ICONS.heart} baseState="hover" scale={0.4} />

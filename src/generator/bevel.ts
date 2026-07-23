@@ -1795,7 +1795,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
           const x1 = i === n - 1 ? bx + trackW + gapPad + inset : cx0 + cellW;
           const grow = i === 0 || i === n - 1 ? gapPad : 0;
           const on = i < lit;
-          const body = `<rect x="${x0.toFixed(1)}" y="${(by - grow).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${(bh + grow * 2).toFixed(1)}" rx="${Math.min(6 * k, cellW * 0.18).toFixed(1)}" fill="${on ? `url(#${gid})` : "rgba(255,255,255,0.07)"}"${on ? ` opacity="${dim}"` : ""}/>`;
+          const body = `<rect x="${x0.toFixed(1)}" y="${(by - grow).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${(bh + grow * 2).toFixed(1)}" rx="${Math.min((2 + cfg.bevel.softness * 0.16) * k, cellW * 0.3, bh / 2).toFixed(1)}" fill="${on ? `url(#${gid})` : "rgba(255,255,255,0.07)"}"${on ? ` opacity="${dim}"` : ""}/>`;
           if (on) litCells += body + `<rect x="${x0.toFixed(1)}" y="${(by + bh * 0.08).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>`;
           else offCells += body;
         }
@@ -1913,12 +1913,16 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const selN = clamp(Math.round((value ?? 0.22) * (n - 1)), 0, n - 1);
       const x0h = 39 + (w - (n * cell + (n - 1) * gap)) / 2;
       const yh = 30 + (h - cell) / 2;
+      /* v71: cell corners RIDE the Smoothness slider — on a pill shell the
+         silhouette can't round any further, so the cells are where the
+         control must visibly live (board-launched hotbars start on pill) */
+      const cellR = Math.min(cell / 2, (3 + cfg.bevel.softness * 0.42) * k);
       const icons = [STOCK_ICONS.sword ?? STOCK_ICONS.star, STOCK_ICONS.shield ?? STOCK_ICONS.star, STOCK_ICONS.heart, STOCK_ICONS.gem ?? STOCK_ICONS.star, STOCK_ICONS.star];
       let cells = "";
       for (let i = 0; i < n; i++) {
         const cx0 = x0h + i * (cell + gap);
         const on = i === selN;
-        cells += `<path d="${roundRect(cx0, yh, cell, cell, 12 * k)}" fill="${wellFill}" opacity="${on ? 0.98 : 0.85}"${on ? ` stroke="${glow}" stroke-width="${(3 * k).toFixed(1)}" style="filter: drop-shadow(0 0 ${6 * k}px ${glow})"` : ` stroke="${hexRgba(darken(bevel, 0.4), 0.6)}" stroke-width="1.2"`} data-cell="${i}"/>`;
+        cells += `<path d="${roundRect(cx0, yh, cell, cell, cellR)}" fill="${wellFill}" opacity="${on ? 0.98 : 0.85}"${on ? ` stroke="${glow}" stroke-width="${(3 * k).toFixed(1)}" style="filter: drop-shadow(0 0 ${6 * k}px ${glow})"` : ` stroke="${hexRgba(darken(bevel, 0.4), 0.6)}" stroke-width="1.2"`} data-cell="${i}"/>`;
         const ic = icons[i];
         if (i < icons.length && ic) cells += themedIcon(ic, cx0 + cell * 0.22, yh + cell * 0.22, cell * 0.56, hexMix(glow, "#FFFFFF", 0.3), 2);
         if (i === 0 || i === 3) cells += `<text x="${(cx0 + cell - 8 * k).toFixed(1)}" y="${(yh + cell - 10 * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(17 * k).toFixed(1)}" font-weight="800" fill="rgba(255,255,255,0.85)" text-anchor="end">64</text>`;
@@ -1926,11 +1930,70 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       }
       return inject(track.replace("<svg ", '<svg data-hotbar="1" '), cells);
     }
+    case "cardback": {
+      /* Card battler · the set's card back. The theme fills the portrait
+         shell, an inner frame line echoes the silhouette at a true offset,
+         and the set emblem floats on its own radial glow. opts.label turns
+         the back into a deck cover — the nameplate rides the bottom rail. */
+      const w = 300 * k, h = 420 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 430 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const gid = "cb" + UID++;
+      const frameP = wellOf(w, h, bw + 12 * k);
+      const cxC = 39 + w / 2, cyC = 30 + h * (opts.label ? 0.44 : 0.5);
+      const emb = opts.icon === null ? null : (opts.icon ?? STOCK_ICONS.gem ?? STOCK_ICONS.star);
+      const embS = w * 0.44;
+      const spark = (sx: number, sy: number, r: number) =>
+        `<path d="M ${sx.toFixed(1)} ${(sy - r).toFixed(1)} L ${(sx + r * 0.28).toFixed(1)} ${(sy - r * 0.28).toFixed(1)} L ${(sx + r).toFixed(1)} ${sy.toFixed(1)} L ${(sx + r * 0.28).toFixed(1)} ${(sy + r * 0.28).toFixed(1)} L ${sx.toFixed(1)} ${(sy + r).toFixed(1)} L ${(sx - r * 0.28).toFixed(1)} ${(sy + r * 0.28).toFixed(1)} L ${(sx - r).toFixed(1)} ${sy.toFixed(1)} L ${(sx - r * 0.28).toFixed(1)} ${(sy - r * 0.28).toFixed(1)} Z" fill="${hexRgba(hexMix(glow, "#FFFFFF", 0.55), 0.85)}"/>`;
+      let parts = `<defs><radialGradient id="${gid}g"><stop offset="0" stop-color="${glow}" stop-opacity="0.5"/><stop offset="0.6" stop-color="${glow}" stop-opacity="0.18"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient></defs>
+        <path d="${frameP}" fill="none" stroke="${hexRgba(hexMix(glow, "#FFFFFF", 0.25), 0.55)}" stroke-width="${(2.4 * k).toFixed(1)}"/>`;
+      if (emb) {
+        parts += `<circle cx="${cxC.toFixed(1)}" cy="${cyC.toFixed(1)}" r="${(embS * 0.85).toFixed(1)}" fill="url(#${gid}g)"/>` +
+          `<g style="filter: drop-shadow(0 0 ${(10 * k).toFixed(0)}px ${glow})">${themedIcon(emb, cxC - embS / 2, cyC - embS / 2, embS, hexMix(glow, "#FFFFFF", 0.35), 1.8)}</g>`;
+      }
+      const inX = 39 + bw + 34 * k, inY = 30 + bw + 34 * k;
+      parts += spark(inX, inY, 7 * k) + spark(39 + w - bw - 34 * k, inY, 7 * k) + spark(inX, 30 + h - bw - 34 * k, 5 * k) + spark(39 + w - bw - 34 * k, 30 + h - bw - 34 * k, 5 * k);
+      if (opts.label) {
+        const py = 30 + h - 76 * k;
+        parts += `<path d="${roundRect(39 + w * 0.12, py, w * 0.76, 46 * k, 12 * k)}" fill="${wellFill}" opacity="0.94" stroke="${hexRgba(darken(bevel, 0.35), 0.6)}" stroke-width="1"/>` +
+          `<text x="${cxC.toFixed(1)}" y="${(py + 23 * k + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(17 * k * typeK).toFixed(1)}" font-weight="800" letter-spacing="1.5" fill="${hexMix(glow, "#FFFFFF", 0.4)}" text-anchor="middle" dominant-baseline="central">${opts.label}</text>`;
+      }
+      return inject(track.replace("<svg ", '<svg data-cardback="1" '), parts);
+    }
+    case "pack": {
+      /* Card battler · booster pack — the engine body wears crimped foil
+         caps top and bottom; the set emblem glows at the heart. Clicking
+         it in play mode fires the white-hot ignition + themed burst. */
+      const w = 310 * k, h = 430 * k;
+      const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0, tokenH: 440 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
+      const gid = "pk" + UID++;
+      const crimp = (yTop: number) => {
+        const chh = 34 * k, cx0 = 39 - 5 * k, cw = w + 10 * k;
+        let ridges = "";
+        for (let rx = cx0 + 8 * k; rx < cx0 + cw - 6 * k; rx += 9 * k)
+          ridges += `<line x1="${rx.toFixed(1)}" y1="${(yTop + 4 * k).toFixed(1)}" x2="${rx.toFixed(1)}" y2="${(yTop + chh - 4 * k).toFixed(1)}" stroke="rgba(255,255,255,0.16)" stroke-width="${(2.2 * k).toFixed(1)}"/>`;
+        return `<path d="${roundRect(cx0, yTop, cw, chh, 7 * k)}" fill="${darken(bevel, 0.22)}" stroke="${hexRgba(darken(bevel, 0.5), 0.8)}" stroke-width="1"/>
+          <path d="${roundRect(cx0, yTop, cw, chh * 0.45, 7 * k)}" fill="rgba(255,255,255,0.14)"/>${ridges}`;
+      };
+      const cxP = 39 + w / 2, cyP = 30 + h * 0.44;
+      const emb = opts.icon === null ? null : (opts.icon ?? STOCK_ICONS.gem ?? STOCK_ICONS.star);
+      const embS = w * 0.4;
+      const sparkP = (sx: number, sy: number, r: number) =>
+        `<path d="M ${sx.toFixed(1)} ${(sy - r).toFixed(1)} L ${(sx + r * 0.28).toFixed(1)} ${(sy - r * 0.28).toFixed(1)} L ${(sx + r).toFixed(1)} ${sy.toFixed(1)} L ${(sx + r * 0.28).toFixed(1)} ${(sy + r * 0.28).toFixed(1)} L ${sx.toFixed(1)} ${(sy + r).toFixed(1)} L ${(sx - r * 0.28).toFixed(1)} ${(sy + r * 0.28).toFixed(1)} L ${(sx - r).toFixed(1)} ${sy.toFixed(1)} L ${(sx - r * 0.28).toFixed(1)} ${(sy - r * 0.28).toFixed(1)} Z" fill="${hexRgba(hexMix(glow, "#FFFFFF", 0.55), 0.85)}"/>`;
+      let parts = `<defs><radialGradient id="${gid}g"><stop offset="0" stop-color="${glow}" stop-opacity="0.5"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient></defs>`;
+      if (emb) {
+        parts += `<circle cx="${cxP.toFixed(1)}" cy="${cyP.toFixed(1)}" r="${(embS * 0.8).toFixed(1)}" fill="url(#${gid}g)"/>` +
+          `<g style="filter: drop-shadow(0 0 ${(9 * k).toFixed(0)}px ${glow})">${themedIcon(emb, cxP - embS / 2, cyP - embS / 2, embS, hexMix(glow, "#FFFFFF", 0.35), 1.8)}</g>`;
+      }
+      parts += sparkP(39 + w * 0.24, 30 + h * 0.26, 6 * k) + sparkP(39 + w * 0.78, 30 + h * 0.32, 8 * k) + sparkP(39 + w * 0.3, 30 + h * 0.66, 5 * k);
+      parts += `<text x="${cxP.toFixed(1)}" y="${(30 + h * 0.72).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(19 * k * typeK).toFixed(1)}" font-weight="800" letter-spacing="2" fill="${hexMix(glow, "#FFFFFF", 0.4)}" text-anchor="middle" dominant-baseline="central">${opts.label ?? "12 CARDS"}</text>`;
+      parts += crimp(30 - 2 * k) + crimp(30 + h - 32 * k);
+      return inject(track.replace("<svg ", '<svg data-pack="1" '), parts);
+    }
     case "resource": {
       /* HUD counter — icon medallion, numeric value, optional /max, optional
          add button. Currency, lives, energy, tickets, materials. */
       const h = 78 * k;
-      const val = opts.label ?? "1 250";
+      const val = opts.label ?? "1,250";
       const maxTxt = opts.max ? ` / ${opts.max}` : "";
       const fsV = 30 * k;
       // width breathes with the type scale and leaves real air after the
@@ -1951,7 +2014,11 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         (noIcon
           ? contentText(`${val}${maxTxt}`, 39 + (w - (opts.addBtn ? 46 * k : 0)) / 2, cy + 1 + typeOyK * k, fsV * typeK, { anchor: "middle", keepCase: true, opacity: dim })
           : contentText(val, 39 + 20 * k + medR * 2, cy + 1 + typeOyK * k, fsV * typeK, { keepCase: true, opacity: dim }) +
-            (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * typeK * 0.62).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK * 0.8).toFixed(1)}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(maxTxt)}</text>` : "")) +
+            /* the divider gets REAL air: 0.7em advance per value glyph (heavy
+               italic faces overhang) plus a 0.36em gap — and no leading space
+               in the <text>, since SVG collapses it and the slash would kiss
+               the last digit (the visual gate caught exactly that) */
+            (maxTxt ? `<text x="${(39 + 20 * k + medR * 2 + val.length * fsV * typeK * 0.7 + fsV * typeK * 0.36).toFixed(1)}" y="${(cy + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(fsV * typeK * 0.8).toFixed(1)}" font-weight="600" fill="rgba(255,255,255,0.55)" dominant-baseline="central">${esc(`/ ${opts.max}`)}</text>` : "")) +
         (opts.addBtn ? candyKnob(39 + w - 8 * k - h * 0.32, cy, h * 0.32, glow) +
           `<text x="${(39 + w - 8 * k - h * 0.32).toFixed(1)}" y="${(cy + 1).toFixed(1)}" font-family="Inter, sans-serif" font-size="${26 * k}" font-weight="800" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">+</text>` : "");
       return inject(track, parts);
@@ -2408,14 +2475,20 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
       const pad2 = 46;
       const v3 = clamp(value ?? 0.62, 0, 1);
+      const part = opts.part;
+      /* v71 · form factor: the dial sinks into a real engine housing —
+         walls, extrusion, gloss and shadow all come from the theme, so the
+         gauge extrudes like every other component. Engine-export part
+         layers keep the bare-canvas contract. */
+      const useHousing = !part;
+      const D = d2 + (bw + 18 * k) * 2;
       const W2 = d2 + pad2 * 2, H2 = d2 + pad2 * 2;
-      const cx3 = W2 / 2, cy3 = H2 / 2, r0 = d2 / 2;
+      const cx3 = useHousing ? 39 + D / 2 : W2 / 2, cy3 = useHousing ? 30 + D / 2 : H2 / 2, r0 = d2 / 2;
       const gid8 = "sp" + UID++;
       const dim = state === "disabled" ? 0.45 : 1;
       const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI; // 270°, opening at the bottom
       const ang = A0 + v3 * SWEEP;
       const alarm = hexMix("#FF4D5A", bevel, 0.18);
-      const part = opts.part;
       let ticks = "";
       for (let i = 0; i <= 27; i++) {
         const major = i % 3 === 0;
@@ -2433,6 +2506,11 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
         `<circle cx="${cx3}" cy="${cy3}" r="${r0}" fill="url(#${gid8})" stroke="${darken(bevel, 0.45)}" stroke-width="2"/>` +
         `<circle cx="${cx3}" cy="${cy3}" r="${(r0 - 9 * k).toFixed(1)}" fill="${wellFill}"/>` + ticks;
       const inner2 = part === "needle" ? needle : part === "face" ? face : face + needle + readout;
+      if (useHousing) {
+        const track = build(cfg, state, { x: 39, y: 30, h: D, fs: 0, iconSize: 0, tokenH: 280 }, { iconDef: null, label: "", fixedW: D, shapeOverride: sov });
+        return inject(track.replace("<svg ", '<svg data-race="speedo" '),
+          `<defs><linearGradient id="${gid8}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs><g opacity="${dim}">${inner2}</g>`);
+      }
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="speedometer" data-race="speedo">
 <defs><linearGradient id="${gid8}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient></defs>
 <g opacity="${dim}">${inner2}</g>
@@ -2444,21 +2522,25 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
       const pad2 = 46;
       const v3 = clamp(value ?? 0.62, 0, 1);
+      const part = opts.part;
+      // v71 · form factor: same housing rule as the classic dial — the
+      // light-segments sit in a recessed well inside the themed shell
+      const useHousing = !part;
+      const D = d2 + (bw + 18 * k) * 2;
       const W2 = d2 + pad2 * 2, H2 = d2 + pad2 * 2;
-      const cx3 = W2 / 2, cy3 = H2 / 2, r0 = d2 / 2;
+      const cx3 = useHousing ? 39 + D / 2 : W2 / 2, cy3 = useHousing ? 30 + D / 2 : H2 / 2, r0 = d2 / 2;
       const gid8 = "s2" + UID++;
       const dim = state === "disabled" ? 0.45 : 1;
       const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI;
       const N = 24;
-      const part = opts.part;
       let segs = "";
       for (let i = 0; i < N; i++) {
         const a = A0 + ((i + 0.5) / N) * SWEEP;
         const lit = part === "face" ? false : (i + 0.5) / N <= v3;
         const rO = r0, rI = r0 - 20 * k;
         // unlit segments must survive a light canvas too — white dies there
-        const col = lit ? hexMix(bevel, glow, i / N) : isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.35);
-        segs += `<line x1="${(cx3 + Math.cos(a) * rI).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rI).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rO).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rO).toFixed(1)}" stroke="${col}" stroke-width="${(8 * k).toFixed(1)}" stroke-linecap="round" opacity="${lit ? 0.95 : isDarkBg(cfg.canvas) ? 0.14 : 0.3}"${lit ? ` filter="url(#${gid8}g)"` : ""}/>`;
+        const col = lit ? hexMix(bevel, glow, i / N) : useHousing ? "#FFFFFF" : isDarkBg(cfg.canvas) ? "#FFFFFF" : darken(bevel, 0.35);
+        segs += `<line x1="${(cx3 + Math.cos(a) * rI).toFixed(1)}" y1="${(cy3 + Math.sin(a) * rI).toFixed(1)}" x2="${(cx3 + Math.cos(a) * rO).toFixed(1)}" y2="${(cy3 + Math.sin(a) * rO).toFixed(1)}" stroke="${col}" stroke-width="${(8 * k).toFixed(1)}" stroke-linecap="round" opacity="${lit ? 0.95 : useHousing ? 0.2 : isDarkBg(cfg.canvas) ? 0.14 : 0.3}"${lit ? ` filter="url(#${gid8}g)"` : ""}/>`;
       }
       if (part === "segment") {
         const segW = 10 * k, segH = 26 * k;
@@ -2468,6 +2550,12 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const readout = part === "face" ? "" :
         contentText(String(Math.round(v3 * 174)), cx3, cy3 - 4 * k, Math.min(d2 * 0.24, r0 * 0.6) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
         `<text x="${cx3}" y="${(cy3 + r0 * 0.46).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">MPH</text>`;
+      if (useHousing) {
+        const track = build(cfg, state, { x: 39, y: 30, h: D, fs: 0, iconSize: 0, tokenH: 280 }, { iconDef: null, label: "", fixedW: D, shapeOverride: sov });
+        const well = `<circle cx="${cx3.toFixed(1)}" cy="${cy3.toFixed(1)}" r="${(r0 + 8 * k).toFixed(1)}" fill="${wellFill}" opacity="0.92"/>`;
+        return inject(track.replace("<svg ", '<svg data-race="speedo2" '),
+          `<defs><filter id="${gid8}g" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="0" stdDeviation="${(4 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.7"/></filter></defs><g opacity="${dim}">${well}${segs}${arc}${readout}</g>`);
+      }
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="HUD speedometer" data-race="speedo2">
 <defs><filter id="${gid8}g" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="0" stdDeviation="${(4 * k).toFixed(1)}" flood-color="${glow}" flood-opacity="0.7"/></filter></defs>
 <g opacity="${dim}">${segs}${arc}${readout}</g>
@@ -2480,10 +2568,10 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          ARE the value: fat wedge segments sweep 270°, zone-tinted green →
          amber → red, lit up to the needle. */
       const d2 = ({ s: 176, m: 216, l: 264 } as Record<KitSize, number>)[size] * k;
-      const pad2 = 46;
       const v3 = clamp(value ?? 0.62, 0, 1);
-      const W2 = d2 + pad2 * 2, H2 = d2 + pad2 * 2;
-      const cx3 = W2 / 2, cy3 = H2 / 2, r0 = d2 / 2;
+      // v71 · form factor: housed like its siblings — theme walls, extrusion
+      const D = d2 + (bw + 18 * k) * 2;
+      const cx3 = 39 + D / 2, cy3 = 30 + D / 2, r0 = d2 / 2;
       const gidT2 = "tc" + UID++;
       const dim = state === "disabled" ? 0.45 : 1;
       const A0 = 0.75 * Math.PI, SWEEP = 1.5 * Math.PI;
@@ -2501,8 +2589,9 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       const needle = `<line x1="${(cx3 - Math.cos(ang) * 15 * k).toFixed(1)}" y1="${(cy3 - Math.sin(ang) * 15 * k).toFixed(1)}" x2="${(cx3 + Math.cos(ang) * (r0 - 32 * k)).toFixed(1)}" y2="${(cy3 + Math.sin(ang) * (r0 - 32 * k)).toFixed(1)}" stroke="${v3 > 0.82 ? alarm : "#FFFFFF"}" stroke-width="${(3.6 * k).toFixed(1)}" stroke-linecap="round" opacity="0.92"/>`;
       const readout = contentText((v3 * 9).toFixed(1), cx3, cy3 + r0 * 0.5, Math.min(d2 * 0.16, r0 * 0.42) * typeK, { anchor: "middle", keepCase: true, opacity: dim }) +
         `<text x="${cx3}" y="${(cy3 + r0 * 0.82).toFixed(1)}" font-family="Inter, sans-serif" font-size="${(11 * k).toFixed(1)}" font-weight="800" letter-spacing=".24em" fill="${hexRgba(glow, 0.75)}" text-anchor="middle" opacity="${dim}">RPM ×1000</text>`;
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${W2.toFixed(0)}" height="${H2.toFixed(0)}" viewBox="0 0 ${W2.toFixed(0)} ${H2.toFixed(0)}" role="img" aria-label="rev meter" data-race="tacho"${v3 > 0.82 ? ' data-urgent="1"' : ""}>
-<defs>
+      const trackT = build(cfg, state, { x: 39, y: 30, h: D, fs: 0, iconSize: 0, tokenH: 280 }, { iconDef: null, label: "", fixedW: D, shapeOverride: sov });
+      return inject(trackT.replace("<svg ", `<svg data-race="tacho"${v3 > 0.82 ? ' data-urgent="1"' : ""} `),
+        `<defs>
   <linearGradient id="${gidT2}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${darken(bevel, 0.3)}"/></linearGradient>
   <filter id="${gidT2}g" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="${(3.5 * k).toFixed(1)}" flood-color="${v3 > 0.82 ? alarm : "#7CE6A0"}" flood-opacity="0.5"/></filter>
 </defs>
@@ -2513,8 +2602,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
   ${needle}
   ${candyKnob(cx3, cy3, 9 * k, bevel)}
   ${readout}
-</g>
-</svg>`;
+</g>`);
     }
     case "circuit": {
       /* Race circuit mini-map — the fictional KAZURI RING (somewhere in the
