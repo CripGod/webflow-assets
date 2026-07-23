@@ -18,7 +18,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      # Cloud accounts (optional): set these two repository secrets to bake
+      # the Supabase connection into the build. Absent, the app ships in
+      # local-only mode exactly as before. The anon key is public by design;
+      # access control lives in row-level security (supabase/schema.sql).
       - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
   deploy:
