@@ -124,6 +124,11 @@ interface Rig {
   disposables: { dispose(): void }[];
 }
 
+// The schematic's resting viewing angle (radians). It loads here and holds
+// still — the reference exploded-diagram view — until the user drags it.
+const BASE_YAW = 0.52;   // horizontal rotation (y)
+const BASE_PITCH = 0.07; // vertical tilt (x)
+
 export function HeroGL() {
   const { cfg } = useGen();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -162,7 +167,7 @@ export function HeroGL() {
 
     const group = new THREE.Group();
     group.position.set(-1.12, 0.05, 0);
-    group.rotation.set(0.07, 0.52, 0);
+    group.rotation.set(BASE_PITCH, BASE_YAW, 0);
     scene.add(group);
 
     const disposables: { dispose(): void }[] = [];
@@ -437,8 +442,10 @@ export function HeroGL() {
         userPitch = clampP(userPitch + velY);
         velX *= 0.94; velY *= 0.94;
       }
-      group.rotation.y = 0.52 + Math.sin(t * 0.19) * 0.11 + userYaw;
-      group.rotation.x = 0.07 + Math.sin(t * 0.13) * 0.025 + userPitch;
+      // rests at a fixed viewing angle on load (no auto-wobble) — the schematic
+      // loads square to the reference view; user drag still rotates it freely
+      group.rotation.y = BASE_YAW + userYaw;
+      group.rotation.x = BASE_PITCH + userPitch;
       layerMeshes.forEach((pl, i) => { pl.position.y = pl.userData.baseY * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
       glowMat.opacity = 0.7 + Math.sin(t * 0.9) * 0.22;
       sats.forEach((m2, i) => { m2.position.y = m2.userData.baseY + Math.sin(t * 0.42 + i * 1.9) * 0.05; });
