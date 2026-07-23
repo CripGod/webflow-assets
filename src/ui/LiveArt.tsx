@@ -263,7 +263,7 @@ export function LiveArt({ cfg, kit, playing, scale, anchorContent, trim, tight, 
     window.setTimeout(() => setBurst(0), 1200);
   };
   const activate = (e: React.PointerEvent) => {
-    if ((kit?.label ?? "").toUpperCase().includes("CLAIM")) fireBurst();
+    if ((kit?.label ?? "").toUpperCase().includes("CLAIM") || id === "pack") fireBurst();
     if (id === "input") { setEditing(true); if (typed === null) setTyped(kit?.label ?? ""); (e.currentTarget as HTMLElement).focus?.(); }
     else if (id === "toggle" || id === "checkbox" || id === "radio" || id === "orb") setOn((v) => !v);
     else if (id === "dropdown" || id === "badge") setOpen((v) => !v);

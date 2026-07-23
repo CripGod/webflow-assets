@@ -89,3 +89,22 @@ lighting defaults 315°/48%/36%/24% · material 62/18/107/12 · no JS errors · 
   Master approval, which was granted.
 - Known SVG-export limitation: CSS blend-modes/box-shadows can't be reproduced
   exactly in SVG (icon emboss reads a bit heavy); PNG is the faithful fallback.
+
+## The Visual Gate (v71 — standing law)
+Math gets a layout close; the EYE ships it. Every text/spacing change passes
+two gates, in order, and the second is final:
+
+1. **Mathematical** — positions derive from known font sizes and advances,
+   never magic pixels; growth rules (auto-height, width-breathes-with-type)
+   must hold at type-scale extremes.
+2. **Visual** — render the real thing and LOOK at it before shipping:
+   screenshots at the default theme AND at least one heavy/italic display
+   face, because glyph overhang, SVG whitespace collapse, and pattern noise
+   only show up on pixels. A measured-truth probe (bounding-box overlap
+   check) backs the eyeball where possible.
+
+Two failures this law caught on day one: the HUD counter's "3 / 5" divider
+(SVG collapses a leading space in <text>, so the slash kissed the last digit
+— the math said it fit), and waypoint connector tubes crossing their captions
+on themes whose glow pads shift the shells (static top; the fix rides the
+measured --rail-y axis).

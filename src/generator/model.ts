@@ -770,7 +770,8 @@ export type KitComponentId =
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
   | "flipclock" | "stopwatch" | "timerdigits"
   | "speedo" | "speedo2" | "tacho" | "circuit" | "leaderboard" | "trophy"
-  | "laptimes" | "telemetry" | "startlights";
+  | "laptimes" | "telemetry" | "startlights"
+  | "cardback" | "pack";
 export type KitSize = "s" | "m" | "l";
 export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "primary", name: "Primary button" },
@@ -817,6 +818,8 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "laptimes", name: "Lap comparison" },
   { id: "telemetry", name: "Telemetry" },
   { id: "startlights", name: "Start lights" },
+  { id: "cardback", name: "Card back" },
+  { id: "pack", name: "Card pack" },
 ];
 
 /* v70 · SPARSE forks. A component's fork stores only the design paths the
@@ -943,6 +946,11 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   leaderboard: "kenneyRect", // rows are rectangular content — oval shells clip them
   laptimes: "kenneyRect",    // plots are rectangular too
   telemetry: "kenneyRect",
+  cardback: "round",         // portrait card — rounded rect reads as a card
+  pack: "round",
+  speedo: "round",           // v71 · gauges wear real housings — round shells
+  speedo2: "round",
+  tacho: "round",
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the
