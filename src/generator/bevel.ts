@@ -3,6 +3,8 @@ import { lighten, darken, hexMix, desaturate, saturate, hexRgba, fontByName, DEF
 import { iconGroup } from "./icons";
 import { silhouetteMeta } from "./silhouettes";
 import { importedShape, flattenPath, pointInPoly, selfIntersections, type Pt } from "./importedShapes";
+import { productionSkinRecipe } from "./skinRecipes";
+import { renderSkinRecipe } from "./skins";
 import rough from "roughjs";
 
 /* Rough.js draws the hand-drawn *line character* over the approved outline —
@@ -388,6 +390,14 @@ export function shapePath(shape: Shape, x: number, y: number, w: number, h: numb
     // `:caps` suffix opts a render into the three-slice experiment.
     if (shape.endsWith(":caps")) return transformPathCapAware(imp.path, imp.viewBox, x, y, w, h, imp.capSrc);
     return transformPath(imp.path, imp.viewBox, x, y, w, h);
+  }
+  if (shape.startsWith("skin:")) {
+    // Approved Layered Skin design: kit pieces and previews take the
+    // recipe's FOOTPRINT through the standard engine (material stays the
+    // user's); only the hero path renders the full layered assembly.
+    const rec = productionSkinRecipe(shape);
+    if (rec) return transformPathCapAware(rec.footprint, [0, 0, 200, 100], x, y, w, h, rec.stretch.leftCap);
+    return roundRect(x, y, w, h, 4 + softness * 0.52); // unapproved id — neutral fallback
   }
   if (shape.startsWith("user:")) {
     const us = userShapes().find((u) => u.id === shape);
@@ -1346,6 +1356,16 @@ export function shellPaths(cfg: GenConfig, shape: Shape, x: number, y: number, w
 /** Master component — width follows the label. Margins are 1.5× so large
  *  shadow distances never clip against the invisible canvas bounds. */
 export function renderBevel(cfg: GenConfig, state: GenStateName): string {
+  // Approved Layered Skin silhouettes render the full authored assembly —
+  // recipe materials, compound assets, per-part depth — at the hero frame.
+  // Width leans on cap-preserving stretch: caps stay rigid, the center
+  // band widens for longer labels.
+  const rec = productionSkinRecipe(cfg.shape);
+  if (rec) {
+    const label = cfg.content.label || rec.label;
+    const w = Math.max(336, Math.min(640, 200 + label.length * 28));
+    return renderSkinRecipe(rec, state, w, 168, { label, font: cfg.type.font });
+  }
   return build(cfg, state, { x: 52, y: 36, h: 168, fs: 52, iconSize: 46 });
 }
 

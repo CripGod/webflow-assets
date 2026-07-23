@@ -28,6 +28,21 @@
 import type { ButtonSkinRecipe } from "./skins";
 import { IMPORTED_SHAPES } from "./importedShapes";
 
+/** Layered Skin designs approved for the PRODUCTION picker. Twin Grip is
+ *  deliberately absent — it has not passed art direction yet and stays
+ *  behind the lab page until it does. */
+export const PRODUCTION_SKINS: string[] = ["prizeBow"];
+
+/** Resolve a production `skin:` Shape to its recipe. Anything not on the
+ *  approved list (including every lab-only recipe) returns undefined, so
+ *  unapproved designs can never leak into the app. */
+export function productionSkinRecipe(shape: string): ButtonSkinRecipe | undefined {
+  if (!shape.startsWith("skin:")) return undefined;
+  const id = shape.slice(5);
+  if (!PRODUCTION_SKINS.includes(id)) return undefined;
+  return SKIN_RECIPES.find((r) => r.id === id);
+}
+
 export const SKIN_RECIPES: ButtonSkinRecipe[] = [
   {
     id: "twinGrip",

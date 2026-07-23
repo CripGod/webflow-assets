@@ -24,7 +24,7 @@ export interface SilhouetteMeta {
   category: SilhouetteCategory;
   source: string;
   license: string;
-  renderer: "procedural";
+  renderer: "procedural" | "layered";
   capScale: number;
   content: { top: number; right: number; bottom: number; left: number };
   minWidth: number;
@@ -102,6 +102,14 @@ export const SILHOUETTES: SilhouetteMeta[] = [
   { id: "doboBracket", name: "Bracket Label", category: "Banners & Labels", source: "custom study (after an itch.io label)", license: "original", renderer: "procedural",
     capScale: 0.36, content: { top: 0.14, right: 0.42, bottom: 0.14, left: 0.42 }, minWidth: 120, minHeight: 44,
     supports: ["button", "chip", "badge", "tab", "progress"], character: "Bar with half-round side lobes and meeting notches — measured proportions, drawn as an original study." },
+  /* v70 — first Layered Skin design promoted from the Vector Drawing Lab.
+     The hero renders the full authored assembly (compound ribbon, gold
+     frame, glass face); kit pieces and previews use the recipe footprint
+     through the standard engine. Twin Grip is NOT listed — it has not
+     passed art direction and stays behind the lab page. */
+  { id: "skin:prizeBow", name: "Candy Wrapper", category: "Banners & Labels", source: "Vector Drawing Lab — Layered Skin proof", license: "original", renderer: "layered",
+    capScale: 0.35, content: { top: 0.32, right: 0.29, bottom: 0.32, left: 0.29 }, minWidth: 150, minHeight: 60,
+    supports: ["button"], character: "Wrapped bow assembly — compound ribbon loops behind a wide gold-framed plate, gathering collars in front." },
 ];
 
 export function silhouetteMeta(id: Shape): SilhouetteMeta | undefined {

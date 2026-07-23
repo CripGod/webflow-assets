@@ -29,7 +29,12 @@ export type Shape =
   // v64 — Silhouette Feasibility Lab imports (importedShapes.ts). Reached
   // ONLY through the isolated lab page; never listed in the production
   // picker until the lab results are approved.
-  | `lab:${string}`;
+  | `lab:${string}`
+  // v70 — approved Layered Skin designs promoted from the lab
+  // (skinRecipes.ts PRODUCTION_SKINS). The hero renders the full layered
+  // assembly; kit pieces and picker previews use the recipe footprint
+  // through the standard single-shell engine.
+  | `skin:${string}`;
 /* ── user silhouettes ─────────────────────────────────────────────
    Imported flat vectors: one closed, filled outline normalized to its own
    bounding box; the renderer stretches it into each component's frame.
