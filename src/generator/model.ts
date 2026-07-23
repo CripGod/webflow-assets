@@ -704,13 +704,14 @@ export function hslHex(h: number, s: number, l: number): string {
    accent temperature. */
 type Harmony = "analogous" | "complementary" | "split" | "triadic" | "monochrome";
 
-export function randomizeConfig(c: GenConfig): GenConfig {
+export function randomizeConfig(c: GenConfig, excludePresetIds: string[] = []): GenConfig {
   const r = (min: number, max: number) => Math.round(min + Math.random() * (max - min));
   // v67: a third of rolls jump to a different preset CONSTRUCTION first
   // (shape, bevel, candy build) so randomize explores the whole wardrobe,
   // then the palette work below recolors it
   if (Math.random() < 0.34) {
-    const pr = PRESETS[Math.floor(Math.random() * PRESETS.length)];
+    const pool = PRESETS.filter((p) => !excludePresetIds.includes(p.id));
+    const pr = (pool.length ? pool : PRESETS)[Math.floor(Math.random() * (pool.length || PRESETS.length))];
     c = { ...c, shape: pr.shape, bevel: { ...pr.bevel } };
     const nc = JSON.parse(JSON.stringify(c.candy)) as CandyTokens;
     applyPresetCandy(nc, pr);
