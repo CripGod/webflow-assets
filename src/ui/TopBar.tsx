@@ -154,7 +154,7 @@ export function TopBar() {
     <header className="top">
       <div className="brand">
         <Logo />
-        <span className="name">The UI Generator</span>
+        <span className="name">UI Kit Maker</span>
       </div>
       <div className="top-spacer" />
 

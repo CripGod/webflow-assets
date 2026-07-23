@@ -257,7 +257,7 @@ export function buildHtml(cfg: GenConfig): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${label} — The UI Generator</title>
+<title>${label} — UI Kit Maker</title>
 ${fontLink}
 <style>
   * { margin: 0; box-sizing: border-box; }
@@ -278,7 +278,7 @@ ${live}
 <div class="row">
 ${cards}
 </div>
-<footer>Made with The UI Generator · PatternBreak</footer>
+<footer>Made with UI Kit Maker · PatternBreak</footer>
 </body>
 </html>`;
 }
@@ -325,7 +325,7 @@ export async function downloadGameKit(cfg: GenConfig): Promise<void> {
   // pad the sprites now carry, at sheet scale
   const cap = Math.round((cfg.bevel.width + cfg.candy.rim.width + 34 + glowPadOf(cfg)) * scale);
   const manifest = {
-    generator: "The UI Generator (PatternBreak)",
+    generator: "UI Kit Maker (PatternBreak)",
     sheet: `ui-${cfg.presetId}-sheet@${scale}x.png`,
     scale,
     label: cfg.content.label,

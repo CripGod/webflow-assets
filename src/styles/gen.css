@@ -913,8 +913,11 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
    (addShine); CSS sweeps it across the viewBox on a calm loop. Percentages
    resolve against the svg viewBox via transform-box, so one rule fits every
    component width. */
-.kit-shine { transform-box: view-box; animation: kit-shine 3.2s cubic-bezier(.33,.1,.3,1) infinite; }
-@keyframes kit-shine { 0% { transform: translateX(0); } 42% { transform: translateX(175%); } 100% { transform: translateX(175%); } }
+.kit-shine { transform-box: view-box; animation: kit-shine var(--shine-dur, 11s) cubic-bezier(.33,.1,.3,1) var(--shine-delay, 0s) infinite; }
+/* a brief glint, then a long rest — each piece carries its own --shine-delay
+   and --shine-dur (set per-piece in KitPage) so the sweep never fires in
+   unison across the screen. */
+@keyframes kit-shine { 0% { transform: translateX(0); } 9%, 100% { transform: translateX(175%); } }
 @media (prefers-reduced-motion: reduce) {
   .kp-mostage, .mo-pulse, .mo-bounce, .mo-glow, .mo-shake, .mo-pop, .mo-press, .mo-slidein, .mo-rise, .kp-ringpulse, .kit-shine, .kp-tnodezone.current::after { animation: none !important; }
   .kit-shine { opacity: 0; }
@@ -1949,17 +1952,9 @@ button.inv2-slot:hover { border-color: var(--inv-acc); color: var(--st-ink); }
 /* parent-eligibility error */
 .parenterr { color: #F5A66B; border-left: 2px solid #F5A66B; padding-left: 8px; }
 
-/* global shine sweep — a soft specular band gliding over every live piece */
-.kp-shine .kp-live { position: relative; overflow: hidden; }
-.kp-shine .kp-live::after {
-  content: ""; position: absolute; inset: -30% -60%; pointer-events: none;
-  background: linear-gradient(115deg, transparent 42%, rgba(255,255,255,0.16) 50%, rgba(255,255,255,0.34) 52%, rgba(255,255,255,0.16) 54%, transparent 62%);
-  transform: translateX(-70%);
-  animation: kpShine 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  mix-blend-mode: screen;
-}
-@keyframes kpShine { 0% { transform: translateX(-70%); } 55% { transform: translateX(70%); } 100% { transform: translateX(70%); } }
-@media (prefers-reduced-motion: reduce) { .kp-shine .kp-live::after { animation: none; display: none; } }
+/* The global shine now routes through the clipped SVG band (addShine +
+   .kit-shine), so it is masked to the component face and staggered per piece.
+   The old unclipped card-overlay sweep (.kp-shine .kp-live::after) is retired. */
 
 /* claim celebration: white-hot ignition + themed particle burst */
 .fx-igniting { position: relative; }
