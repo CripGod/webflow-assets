@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Search as SearchIcon, X, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Search as SearchIcon, X, Settings, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize, DESIGN_KEYS, presetById, designDiff, mergeKitDesign } from "@/generator/model";
 import type { GenStateName, BlendMode, PatternType, KitComponentId } from "@/generator/model";
@@ -61,7 +61,7 @@ const GROUPS: Record<string, string[]> = {
 };
 
 export function Rail() {
-  const { sectionFilter, setSectionFilter, phase, setPhase, helpOn, setHelpOn } = useGen();
+  const { sectionFilter, setSectionFilter, phase, setPhase } = useGen();
   const items = [
     { id: "states", Icon: Globe, label: "Global & states" },
     { id: "style", Icon: Layers, label: "Style preset" },
@@ -108,8 +108,6 @@ export function Rail() {
       ))}
       <span className="gap" />
       <button title="Settings" aria-label="Settings"><Settings size={22} strokeWidth={1.7} /></button>
-      <button title="Help — live hints in the top bar while you roll over controls" aria-label="Help"
-        className={helpOn ? "on" : ""} onClick={() => setHelpOn(!helpOn)}><HelpCircle size={22} strokeWidth={1.7} /></button>
     </nav>
   );
 }
