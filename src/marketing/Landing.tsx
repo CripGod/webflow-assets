@@ -1,204 +1,205 @@
+import { useState, useCallback } from "react";
 import {
-  ArrowRight, Shapes, Gem, Layers, Download, Gamepad2, Building2, Rocket,
-  GraduationCap, PenTool, Blocks, ShieldCheck, Sun, Moon, Github, MousePointerClick,
+  ArrowRight, Play, BadgeCheck, Infinity as InfinityIcon, Gamepad2, ChevronDown,
+  Shapes, Box, Layers, Upload, Building2, Rocket, GraduationCap, PenTool, Blocks,
+  Lock, Check, Coins, Star, Github,
 } from "lucide-react";
 import { navigate } from "@/shell/router";
 import { openAuth } from "@/shell/authOverlay";
-import { useTheme, toggleTheme } from "@/shell/theme";
 import { HeroStudio } from "./HeroStudio";
-// The real PatternBreak mark, bundled from the repo root (same file the editor
-// uses). gen.css inverts `img.logo` in dark mode.
+import { KitShowcase } from "./KitShowcase";
+import { DEFAULT_DESIGN, type Design } from "./studioModel";
 import logoUrl from "../../pb-logo.png";
 
 const REPO_URL = "https://github.com/patternbreakai/ui-kit-maker";
 
-const TUNE = [
-  { icon: Shapes, title: "Shape it", body: "24 procedural silhouettes — pills, chamfers, shields, hand-drawn. Swap the outline; the material stays put." },
-  { icon: Gem, title: "Skin it", body: "Bevel, gloss, extrusion, glow, printed patterns. Real hard-candy depth — never a flat fill." },
-  { icon: Layers, title: "State-aware", body: "Default, Hover, Pressed, Disabled are designed together and stay in sync — one footprint, no drift." },
-  { icon: Download, title: "Export anywhere", body: "Live canvas, semantic HTML, layered SVG, PNG — plus a read-only share link teammates can open." },
+const TRUST = [
+  { icon: BadgeCheck, t: "100% Deterministic", s: "Same input, same output" },
+  { icon: InfinityIcon, t: "Yours forever", s: "Export and ship" },
+  { icon: Gamepad2, t: "Game ready", s: "Engine-ready assets" },
 ];
-
-const AUDIENCE = [
-  { icon: Gamepad2, title: "Game devs", body: "A cohesive HUD, menu, and shop kit in an afternoon — not a sprint." },
-  { icon: Building2, title: "Indie & small studios", body: "Punch above your weight. No full-time UI artist required." },
-  { icon: Rocket, title: "Hobbyists & makers", body: "Make the side project look shipped, not sketched." },
-  { icon: GraduationCap, title: "Students", body: "Learn design systems by playing with a real one. Free, forever." },
-  { icon: PenTool, title: "UI designers", body: "Prototype a whole component family faster than you'd mock one screen." },
-  { icon: Blocks, title: "Prototypers & no-code", body: "Drop polished, exportable UI into any tool or engine." },
+const SPEED = [
+  { icon: Shapes, cls: "pink", title: "Shape it", body: "Dial in shape, nudge, radius, depth and more — once.", chips: ["dots"] },
+  { icon: Box, cls: "blue", title: "Skin it", body: "Pick a material, tune glow, shadow, and surface detail.", chips: ["swatch"] },
+  { icon: Layers, cls: "green", title: "State-aware", body: "Default, hover, pressed, disabled — all connected.", chips: ["states"] },
+  { icon: Upload, cls: "gold", title: "Export anywhere", body: "PNG, SVG, JSON, Figma, or engine-ready UI assets.", chips: ["PNG", "SVG", "JSON"] },
 ];
-
-const STEPS = [
-  { title: "Design the master", body: "Tune one component — silhouette, material, type, and its four states." },
-  { title: "Generate the kit", body: "One model fans out to every component and size, live on the canvas." },
-  { title: "Export or share", body: "Download an engine kit, HTML, SVG, or PNG — or publish a live link." },
+const CREATORS = [
+  { icon: Gamepad2, g: "linear-gradient(160deg,#7c3aed,#2563eb)", t: "Game devs", b: "Ship faster with cohesive, scalable UI that evolves." },
+  { icon: Building2, g: "linear-gradient(160deg,#db2777,#7c3aed)", t: "Indies & small studios", b: "Make your game look premium — without a huge team." },
+  { icon: Rocket, g: "linear-gradient(160deg,#f59e0b,#db2777)", t: "Hobbyists & makers", b: "Build beautiful UI for your passion projects." },
+  { icon: GraduationCap, g: "linear-gradient(160deg,#06b6d4,#3b82f6)", t: "Students", b: "Learn by doing. Create, iterate, level up." },
+  { icon: PenTool, g: "linear-gradient(160deg,#a855f7,#ec4899)", t: "UI designers", b: "Go from concept to interactive kits in minutes." },
+  { icon: Blocks, g: "linear-gradient(160deg,#f97316,#facc15)", t: "Prototypers & no-code", b: "Power up prototypes and tools with real game UI." },
+];
+const OWN_LIST = [
+  "100% original, every time", "No training. No scraping.",
+  "Commercial use, always", "Clear terms. No surprises.",
 ];
 
 export function Landing() {
-  const theme = useTheme();
+  const [design, setDesign] = useState<Design>(DEFAULT_DESIGN);
+  const [driving, setDriving] = useState(false);
+  const [gridOn, setGridOn] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const onChange = useCallback((d: Design) => setDesign(d), []);
+  const say = useCallback((m: string) => {
+    setToast(m);
+    window.clearTimeout((say as unknown as { _t?: number })._t);
+    (say as unknown as { _t?: number })._t = window.setTimeout(() => setToast(null), 2600);
+  }, []);
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const openApp = () => navigate("#/app");
 
   return (
     <div className="landing">
-      <header className="fd-nav">
-        <a className="fd-brand" href="#/" aria-label="The UI Generator — home">
-          <img className="logo" src={logoUrl} alt="" width={34} height={34} />
-          <span className="fd-brand__name">The UI Generator</span>
+      {/* ── nav ── */}
+      <header className="nv">
+        <a className="nv__brand" href="#/" aria-label="UI Kit Maker — home">
+          <img src={logoUrl} alt="" />
+          <span><span className="nv__name">UI Kit Maker</span><br /><span className="nv__by">by PatternBreak</span></span>
         </a>
-        <nav className="fd-nav__actions" aria-label="Primary">
-          <button className="fd-icon-btn" onClick={toggleTheme}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            title={theme === "dark" ? "Light mode" : "Dark mode"}>
-            {theme === "dark" ? <Sun size={17} strokeWidth={1.9} /> : <Moon size={17} strokeWidth={1.9} />}
-          </button>
-          <button className="fd-btn fd-btn--ghost" onClick={() => openAuth("signin")}>Sign in</button>
-          <button className="fd-btn fd-btn--primary" onClick={openApp}>Open the generator</button>
+        <nav className="nv__menu" aria-label="Primary">
+          <a onClick={() => scrollTo("speed")}>Features</a>
+          <a onClick={() => scrollTo("kit")}>How it works</a>
+          <a onClick={() => scrollTo("kit")}>Kits</a>
+          <a onClick={() => say("Pricing — coming soon.")}>Pricing</a>
+          <a onClick={() => say("Resources — coming soon.")}>Resources <ChevronDown /></a>
         </nav>
+        <div className="nv__actions">
+          <button className="btn btn--ghost" onClick={() => openAuth("signin")}>Sign in</button>
+          <button className="btn btn--neon" onClick={openApp}>Open the generator <ArrowRight /></button>
+        </div>
       </header>
 
-      <main>
-        {/* ── hero ─────────────────────────────────────────────── */}
-        <section className="fd-hero">
-          <div className="fd-hero__copy">
-            <span className="fd-eyebrow">Free · runs in your browser · your work stays yours</span>
-            <h1 className="fd-hero__title">
-              Design a UI kit that's <em>unmistakably yours.</em>
-            </h1>
-            <p className="fd-hero__sub">
-              Tweak a real button right here — color, shape, shine — then push it into a
-              whole kit. Every pixel comes from a deterministic engine, not AI, so what
-              you make is <b>100% yours</b> to ship, sell, and own.
-            </p>
-            <div className="fd-hero__cta">
-              <button className="fd-btn fd-btn--primary fd-btn--lg" onClick={openApp}>
-                Open the generator <ArrowRight size={18} strokeWidth={2.2} />
-              </button>
-              <button className="fd-btn fd-btn--ghost fd-btn--lg" onClick={() => openAuth("signin")}>Sign in</button>
+      <main className="wrap">
+        {/* ── hero ── */}
+        <section className="hero">
+          <div>
+            <p className="eyebrow">Design System</p>
+            <h1 className="h1">Design a<br />UI kit in<br /><span className="grad">seconds.</span></h1>
+            <p className="lead">One master component becomes a full, coherent game UI kit — instantly.</p>
+            <div className="hero__cta">
+              <button className="btn btn--neon btn--lg" onClick={openApp}>Open the generator <ArrowRight /></button>
+              <button className="demo-link" onClick={() => scrollTo("kit")}><span className="play"><Play fill="currentColor" /></span> Watch demo</button>
             </div>
-            <p className="fd-hero__note">
-              <MousePointerClick size={15} strokeWidth={2} /> This button is live — go on, mess it up.
-            </p>
+            <div className="trust">
+              {TRUST.map(({ icon: I, t, s }) => (
+                <div className="trust__item" key={t}><I /><span><b>{t}</b><span>{s}</span></span></div>
+              ))}
+            </div>
           </div>
-          <div className="fd-hero__art">
-            <HeroStudio />
+          <HeroStudio design={design} onChange={onChange} driving={driving}
+            onDrive={() => setDriving(true)} onPush={() => scrollTo("kit")}
+            gridOn={gridOn} onGrid={() => setGridOn((v) => !v)} />
+        </section>
+
+        {/* ── push to a kit ── */}
+        <section className="sec kit" id="kit">
+          <div className="kit__intro">
+            <p className="kicker">Push to a kit</p>
+            <h2 className="h2">One click.<br />Everything.</h2>
+            <p>Your master styles propagate across every component, state and screen — and it's all live. Poke it.</p>
+          </div>
+          <KitShowcase design={design} toast={say} />
+        </section>
+
+        {/* ── math ── */}
+        <section className="sec" style={{ paddingTop: 0 }}>
+          <div className="math">
+            <div className="math__spark" />
+            <div className="math__row">
+              <div className="math__cell c-pink"><b>24</b><span>Silhouettes</span></div>
+              <span className="math__op">×</span>
+              <div className="math__cell c-blue"><b>16</b><span>Material presets</span></div>
+              <span className="math__op">×</span>
+              <div className="math__cell c-cyan"><b>23</b><span>Type treatments</span></div>
+              <span className="math__op">=</span>
+              <div className="math__cell c-gold"><b>8,832</b><span>Starting kits</span></div>
+            </div>
           </div>
         </section>
 
-        {/* ── the math ─────────────────────────────────────────── */}
-        <section className="fd-math" aria-labelledby="fd-math-title">
-          <h2 className="fd-section-title" id="fd-math-title">The math is on your side</h2>
-          <div className="fd-eq" role="img"
-            aria-label="24 silhouettes times 16 material presets times 23 type treatments equals 8,832 starting kits, before color">
-            <span className="fd-eq__f"><b>24</b> silhouettes</span>
-            <span className="fd-eq__op">×</span>
-            <span className="fd-eq__f"><b>16</b> material presets</span>
-            <span className="fd-eq__op">×</span>
-            <span className="fd-eq__f"><b>23</b> type treatments</span>
-            <span className="fd-eq__op">=</span>
-            <span className="fd-eq__r"><b>8,832</b> starting kits</span>
-          </div>
-          <p className="fd-math__foot">
-            …and that's <em>before you pick a color.</em> Open up the palette and “millions”
-            starts to feel modest — every kit still 100% deterministic, 100% yours.
-          </p>
-        </section>
-
-        {/* ── what you can tune ────────────────────────────────── */}
-        <section className="fd-tune" aria-labelledby="fd-tune-title">
-          <h2 className="fd-section-title" id="fd-tune-title">Everything's a dial, nothing's a lock</h2>
-          <div className="fd-tune__grid">
-            {TUNE.map(({ icon: Icon, title, body }) => (
-              <article className="fd-tunecard" key={title}>
-                <span className="fd-tunecard__icon"><Icon size={22} strokeWidth={1.8} /></span>
-                <h3 className="fd-tunecard__title">{title}</h3>
-                <p className="fd-tunecard__body">{body}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        {/* ── rapid iteration band ─────────────────────────────── */}
-        <section className="fd-band">
-          <div className="fd-band__inner">
-            <span className="fd-eyebrow">Rapid iteration</span>
-            <h2 className="fd-band__title">Change one thing. Watch everything update.</h2>
-            <p className="fd-band__sub">
-              Every state, size, and component re-renders live as you drag — no re-exporting,
-              no regenerating, no waiting. Undo is one keystroke. Explore a thousand looks
-              before lunch and keep the one that clicks.
-            </p>
-          </div>
-        </section>
-
-        {/* ── who it's for ─────────────────────────────────────── */}
-        <section className="fd-who" aria-labelledby="fd-who-title">
-          <h2 className="fd-section-title" id="fd-who-title">Built for anyone who ships</h2>
-          <div className="fd-who__grid">
-            {AUDIENCE.map(({ icon: Icon, title, body }) => (
-              <article className="fd-whocard" key={title}>
-                <span className="fd-whocard__icon"><Icon size={20} strokeWidth={1.8} /></span>
-                <div>
-                  <h3 className="fd-whocard__title">{title}</h3>
-                  <p className="fd-whocard__body">{body}</p>
+        {/* ── built for speed ── */}
+        <section className="sec" id="speed" style={{ paddingTop: 0 }}>
+          <p className="kicker">Built for speed. Designed for games.</p>
+          <div className="grid4">
+            {SPEED.map(({ icon: I, cls, title, body, chips }) => (
+              <article className="scard" key={title}>
+                <span className={`hexi hexi--${cls}`}><I /></span>
+                <h3>{title}</h3><p>{body}</p>
+                <div className="mini">
+                  {title === "Export anywhere"
+                    ? chips.map((c) => <span key={c} className="chip" style={{ background: "linear-gradient(160deg,#f59e0b,#b45309)" }}>{c}</span>)
+                    : title === "State-aware"
+                    ? [0, 1, 2, 3].map((i) => <span key={i} className="dot" style={{ background: i === 0 ? "linear-gradient(160deg,#e879f9,#a21caf)" : "rgba(255,255,255,.08)" }} />)
+                    : [0, 1, 2, 3, 4].map((i) => <span key={i} className="dot" style={{ background: ["#e879f9", "#3b82f6", "#22d3ee", "#22c55e", "#f59e0b"][i], opacity: title === "Shape it" ? 0.5 : 1 }} />)}
                 </div>
               </article>
             ))}
           </div>
         </section>
 
-        {/* ── ownership / not-AI ───────────────────────────────── */}
-        <section className="fd-own" aria-labelledby="fd-own-title">
-          <span className="fd-own__badge"><ShieldCheck size={16} strokeWidth={2} /> Yours, for real</span>
-          <h2 className="fd-own__title" id="fd-own-title">No AI. No templates. No gray areas.</h2>
-          <p className="fd-own__body">
-            Every kit is drawn by a deterministic design engine — not a model trained on
-            other people's work. Nothing is scraped, nothing is “in the style of” someone
-            else. What you make is unique to your settings, and it's yours to ship, sell,
-            and call your own.
-          </p>
-        </section>
-
-        {/* ── how it works ─────────────────────────────────────── */}
-        <section className="fd-how" aria-labelledby="fd-how-title">
-          <h2 className="fd-section-title" id="fd-how-title">How it works</h2>
-          <ol className="fd-steps">
-            {STEPS.map(({ title, body }, i) => (
-              <li className="fd-step" key={title}>
-                <span className="fd-step__num" aria-hidden="true">{i + 1}</span>
-                <h3 className="fd-step__title">{title}</h3>
-                <p className="fd-step__body">{body}</p>
-              </li>
+        {/* ── made for creators ── */}
+        <section className="sec" id="creators" style={{ paddingTop: 0 }}>
+          <p className="kicker">Made for creators who build games</p>
+          <div className="grid6">
+            {CREATORS.map(({ icon: I, g, t, b }) => (
+              <article className="ccard" key={t}>
+                <div className="art" style={{ background: g }}><I /></div>
+                <div className="bd"><h4>{t}</h4><p>{b}</p></div>
+              </article>
             ))}
-          </ol>
+          </div>
         </section>
 
-        {/* ── final CTA ────────────────────────────────────────── */}
-        <section className="fd-cta-band">
-          <h2 className="fd-cta-band__title">Start building — nothing to install.</h2>
-          <p className="fd-cta-band__sub">
-            The editor is free and runs entirely in your browser. Sign in whenever you want
-            your kits saved and synced.
-          </p>
-          <div className="fd-hero__cta">
-            <button className="fd-btn fd-btn--primary fd-btn--lg" onClick={openApp}>
-              Open the generator <ArrowRight size={18} strokeWidth={2.2} />
-            </button>
+        {/* ── ownership ── */}
+        <section className="sec" id="own" style={{ paddingTop: 0 }}>
+          <div className="own">
+            <div className="lockart"><span className="halo" /><Lock strokeWidth={1.6} /></div>
+            <div className="own__h">
+              <h2 className="h2">No AI.<br />No templates.<br /><em>No gray areas.</em></h2>
+            </div>
+            <div>
+              <div className="own__mid">
+                <p>You create. You own. Your kits are yours to keep, use, and ship — forever.</p>
+                <ul>{OWN_LIST.map((l) => <li key={l}><Check /> {l}</li>)}</ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── final CTA ── */}
+        <section className="sec" style={{ paddingTop: 0 }}>
+          <div className="fcta">
+            <div className="fcta__deco">
+              <span className="coin"><Star size={18} fill="currentColor" /></span>
+            </div>
+            <div className="fcta__t">
+              <h3>Start building —<br /><em>nothing to install.</em></h3>
+              <p>Free to try. No credit card. Just vibes.</p>
+            </div>
+            <button className="btn btn--neon btn--lg" onClick={openApp}>Open the generator <ArrowRight /></button>
+            <div className="fcta__deco">
+              <span className="gem" /><span className="coin"><Coins size={18} /></span>
+            </div>
           </div>
         </section>
       </main>
 
-      <footer className="fd-footer">
-        <div className="fd-footer__brand">
-          <img className="logo" src={logoUrl} alt="" width={26} height={26} />
-          <span>The UI Generator</span>
-          <span className="fd-footer__by">by PatternBreak</span>
-        </div>
-        <nav className="fd-footer__links" aria-label="Footer">
+      <footer className="ft">
+        <div className="ft__brand"><img src={logoUrl} alt="" /><span>UI Kit Maker</span><span className="nv__by">by PatternBreak</span></div>
+        <nav className="ft__links" aria-label="Footer">
           <a href="legal/terms.html" target="_blank" rel="noreferrer">Terms</a>
           <a href="legal/privacy.html" target="_blank" rel="noreferrer">Privacy</a>
-          <a href={REPO_URL} target="_blank" rel="noreferrer"><Github size={15} strokeWidth={1.8} /> GitHub</a>
+          <a onClick={() => say("Licenses — coming soon.")}>Licenses</a>
+          <a href={REPO_URL} target="_blank" rel="noreferrer"><Github size={14} /> GitHub</a>
         </nav>
+        <span className="ft__meta">© 2026 PatternBreak, Inc. · All rights reserved.</span>
       </footer>
+
+      <div id="toast" className={toast ? "show" : ""}>{toast}</div>
     </div>
   );
 }

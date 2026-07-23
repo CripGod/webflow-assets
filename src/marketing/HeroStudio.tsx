@@ -1,204 +1,138 @@
-import { useEffect, useRef, useState } from "react";
-import { Play, Heart, Zap, Trophy, Rocket, Star, Shuffle, ArrowRight } from "lucide-react";
-import { navigate } from "@/shell/router";
+import { useEffect, useRef } from "react";
+import { Plus, Zap, Eye, Save, Download, AlignLeft, AlignCenter, AlignRight, CaseSensitive } from "lucide-react";
+import { PALETTES, ICONS, FONTS, WEIGHTS, REEL, vars, type Design } from "./studioModel";
 
-/* The hero "studio" — a live, customizable candy button rendered entirely in
-   CSS (no engine import, so the marketing page stays a lean, instant chunk).
-   It attract-loops through a few pre-built designs on its own, and the instant
-   the visitor touches any control it hands them the wheel. "Push to kit" shows
-   the same design cascaded across states + components, tiny — the appetite-
-   whetter for what the real generator does.
-
-   All look comes from CSS custom properties on the .studio root; @property
-   registrations (in frontdoor.css) let the colors morph smoothly. */
-
-type Palette = { key: string; name: string; hi: string; mid: string; lo: string; shadow: string; ink: string };
-
-const PALETTES: Palette[] = [
-  { key: "indigo", name: "Indigo", hi: "#8a90ff", mid: "#6366f1", lo: "#4f46e5", shadow: "rgba(79,70,229,.55)", ink: "#fff" },
-  { key: "violet", name: "Violet", hi: "#c08bff", mid: "#8b5cf6", lo: "#6d28d9", shadow: "rgba(109,40,217,.55)", ink: "#fff" },
-  { key: "pink", name: "Pink", hi: "#ff9ecd", mid: "#f472b6", lo: "#db2777", shadow: "rgba(219,39,119,.5)", ink: "#fff" },
-  { key: "red", name: "Red", hi: "#ff9a9a", mid: "#fb5e5e", lo: "#dc2626", shadow: "rgba(220,38,38,.5)", ink: "#fff" },
-  { key: "amber", name: "Amber", hi: "#ffd985", mid: "#fbbf24", lo: "#f59e0b", shadow: "rgba(245,158,11,.5)", ink: "#7a4406" },
-  { key: "lime", name: "Lime", hi: "#a6f08a", mid: "#4ade80", lo: "#16a34a", shadow: "rgba(22,163,74,.45)", ink: "#0a3d1c" },
-  { key: "teal", name: "Teal", hi: "#5cead4", mid: "#2dd4bf", lo: "#0d9488", shadow: "rgba(13,148,136,.45)", ink: "#06403a" },
-  { key: "sky", name: "Sky", hi: "#8fd6ff", mid: "#38bdf8", lo: "#0284c7", shadow: "rgba(2,132,199,.45)", ink: "#06324f" },
-];
-
-const ICONS = { Play, Heart, Zap, Trophy, Rocket, Star } as const;
-type IconName = keyof typeof ICONS;
-
-type Design = { palette: string; round: number; shine: number; label: string; icon: IconName };
-
-// The attract loop — hand-tuned, diverse, all gorgeous.
-const REEL: Design[] = [
-  { palette: "indigo", round: 18, shine: 0.62, label: "Play", icon: "Play" },
-  { palette: "pink", round: 30, shine: 0.5, label: "Claim", icon: "Heart" },
-  { palette: "teal", round: 10, shine: 0.72, label: "Boost", icon: "Zap" },
-  { palette: "amber", round: 32, shine: 0.46, label: "Win!", icon: "Trophy" },
-  { palette: "violet", round: 20, shine: 0.66, label: "Start", icon: "Rocket" },
-  { palette: "lime", round: 14, shine: 0.6, label: "Go", icon: "Star" },
-];
-
-const SURPRISE_LABELS = ["Play", "Start", "Claim", "Boost", "Level Up", "Go!", "Begin", "Win", "Collect", "Next"];
-const paletteOf = (key: string) => PALETTES.find((p) => p.key === key) ?? PALETTES[0];
-
-function vars(d: Design): React.CSSProperties {
-  const p = paletteOf(d.palette);
-  return {
-    ["--c-hi" as string]: p.hi,
-    ["--c-mid" as string]: p.mid,
-    ["--c-lo" as string]: p.lo,
-    ["--c-shadow" as string]: p.shadow,
-    ["--c-ink" as string]: p.ink,
-    ["--round" as string]: d.round,
-    ["--shine" as string]: d.shine,
-  };
-}
-
-export function HeroStudio() {
-  const [design, setDesign] = useState<Design>(REEL[0]);
-  const [driving, setDriving] = useState(false); // user has taken over
-  const [view, setView] = useState<"edit" | "kit">("edit");
+/* The LIVE STUDIO — a neon, fully-interactive candy-button designer. It
+   attract-loops through presets and hands the visitor the wheel the moment
+   they touch a control. Everything is CSS custom properties on the studio
+   root; @property registrations make the colors morph. */
+export function HeroStudio({
+  design, onChange, driving, onDrive, onPush, gridOn, onGrid,
+}: {
+  design: Design; onChange: (d: Design) => void;
+  driving: boolean; onDrive: () => void;
+  onPush: () => void; gridOn: boolean; onGrid: () => void;
+}) {
   const reelI = useRef(0);
   const Icon = ICONS[design.icon];
 
-  // Attract loop — cycles until the visitor takes the wheel. Paused for
-  // reduced-motion and whenever the kit preview is showing.
   useEffect(() => {
-    if (driving || view === "kit") return;
+    if (driving) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const t = setInterval(() => {
       reelI.current = (reelI.current + 1) % REEL.length;
-      setDesign(REEL[reelI.current]);
-    }, 2600);
+      onChange(REEL[reelI.current]);
+    }, 2800);
     return () => clearInterval(t);
-  }, [driving, view]);
+  }, [driving, onChange]);
 
-  const takeOver = () => { if (!driving) setDriving(true); };
-  const patch = (p: Partial<Design>) => { takeOver(); setDesign((d) => ({ ...d, ...p })); };
-
-  const surprise = () => {
-    takeOver();
-    const pal = PALETTES[Math.floor(rnd() * PALETTES.length)].key;
-    setDesign({
-      palette: pal,
-      round: Math.round(rnd() * 32),
-      shine: 0.35 + rnd() * 0.5,
-      label: SURPRISE_LABELS[Math.floor(rnd() * SURPRISE_LABELS.length)],
-      icon: (Object.keys(ICONS) as IconName[])[Math.floor(rnd() * Object.keys(ICONS).length)],
-    });
-  };
+  const take = () => { if (!driving) onDrive(); };
+  const set = (p: Partial<Design>) => { take(); onChange({ ...design, ...p }); };
+  const fill = (v: number) => ({ ["--fill" as string]: `${v}%` });
 
   return (
     <div className="studio" style={vars(design)}>
-      <div className="studio__stage">
-        <div className="studio__grid" aria-hidden="true" />
-        <span className={`studio__flag${driving ? " is-driving" : ""}`}>
-          {driving ? "✦ your design" : "✦ auto-designing — grab a control"}
-        </span>
+      <div className="studio__in">
+        <div className="studio__hd">
+          <span className="studio__live"><i /> LIVE STUDIO</span>
+          <span className={`st-flag${driving ? " on" : ""}`} style={{ position: "static" }}>
+            {driving ? "✦ your design" : "✦ auto-designing"}
+          </span>
+        </div>
 
-        {view === "edit" ? (
-          <div className="studio__previewwrap">
-            <button className="studio-btn" type="button" aria-label={`Preview button: ${design.label}`} tabIndex={-1}>
-              <Icon size={22} strokeWidth={2.6} fill={design.icon === "Play" || design.icon === "Heart" || design.icon === "Star" ? "currentColor" : "none"} />
-              <span>{design.label || " "}</span>
-            </button>
-          </div>
-        ) : (
-          <MiniKit design={design} />
-        )}
-      </div>
-
-      <div className="studio__controls" onPointerDownCapture={takeOver}>
-        <div className="ctl">
-          <span className="ctl__label">Color</span>
-          <div className="swatches" role="group" aria-label="Button color">
-            {PALETTES.map((p) => (
+        <div className="studio__cols">
+          {/* left: preview + shape controls */}
+          <div className="studio__main" onPointerDownCapture={take}>
+            <div className="stage" style={gridOn ? undefined : { backgroundImage: "radial-gradient(120% 120% at 50% 0%,rgba(168,85,247,.16),transparent 60%)" }}>
               <button
-                key={p.key}
-                className={`swatch${design.palette === p.key ? " is-on" : ""}`}
-                style={{ background: `linear-gradient(160deg, ${p.hi}, ${p.lo})` }}
-                aria-label={p.name}
-                aria-pressed={design.palette === p.key}
-                onClick={() => patch({ palette: p.key })}
-              />
-            ))}
+                className={`cbtn st-${design.state.toLowerCase()}`}
+                type="button" tabIndex={-1} aria-hidden="true"
+                style={{ fontFamily: "var(--ffam)", justifyContent: design.align === "center" ? "center" : `flex-${design.align === "left" ? "start" : "end"}`, textTransform: design.upper ? "uppercase" : "none" }}
+              >
+                <Icon strokeWidth={2.6} fill={["Play", "Heart", "Star"].includes(design.icon) ? "currentColor" : "none"} />
+                <span>{design.label || " "}</span>
+              </button>
+            </div>
+
+            <p className="lbl" style={{ marginTop: 16 }}>Color</p>
+            <div className="swatches">
+              {PALETTES.map((p) => (
+                <button key={p.key} className={`sw${design.palette === p.key ? " on" : ""}`}
+                  style={{ background: `linear-gradient(160deg,${p.hi},${p.lo})` }}
+                  aria-label={p.name} onClick={() => set({ palette: p.key })} />
+              ))}
+              <button className="sw sw--add" aria-label="More colors in the editor" onClick={onPush}><Plus /></button>
+            </div>
+
+            <div className="srow"><span>Roundness</span>
+              <input className="slider" style={fill(design.round)} type="range" min={0} max={100} value={design.round}
+                onChange={(e) => set({ round: +e.target.value })} aria-label="Roundness" />
+              <span>{design.round}%</span></div>
+            <div className="srow"><span>Glow</span>
+              <input className="slider" style={fill(design.glow)} type="range" min={0} max={100} value={design.glow}
+                onChange={(e) => set({ glow: +e.target.value })} aria-label="Glow" />
+              <span>{design.glow}%</span></div>
+            <div className="srow"><span>Shadow</span>
+              <input className="slider" style={fill(design.shadow)} type="range" min={0} max={100} value={design.shadow}
+                onChange={(e) => set({ shadow: +e.target.value })} aria-label="Shadow" />
+              <span>{design.shadow}%</span></div>
+
+            <div className="tabrow">
+              <span>State</span>
+              <div className="tabs">
+                {(["Default", "Hover", "Pressed", "Disabled"] as const).map((s) => (
+                  <button key={s} className={design.state === s ? "on" : ""} onClick={() => set({ state: s })}>{s}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* right: type controls */}
+          <div className="spanel" onPointerDownCapture={take}>
+            <div className="field"><span>Label</span>
+              <input className="inp" value={design.label} maxLength={12} placeholder="Your text"
+                onChange={(e) => set({ label: e.target.value })} onFocus={take} /></div>
+            <div className="field"><span>Font</span>
+              <select className="sel" value={design.font} onChange={(e) => set({ font: e.target.value })}>
+                {Object.keys(FONTS).map((f) => <option key={f} value={f}>{f}</option>)}
+              </select></div>
+            <div className="field"><span>Weight</span>
+              <select className="sel" value={design.weight} onChange={(e) => set({ weight: e.target.value })}>
+                {Object.keys(WEIGHTS).map((w) => <option key={w} value={w}>{w}</option>)}
+              </select></div>
+            <div className="field"><span>Size</span>
+              <div className="numrow">
+                <input className="slider" style={fill(((design.size - 20) / 40) * 100)} type="range" min={20} max={60} value={design.size}
+                  onChange={(e) => set({ size: +e.target.value })} aria-label="Size" />
+                <span className="numbox">{design.size} px</span>
+              </div></div>
+            <div className="field"><span>Letter spacing</span>
+              <div className="numrow">
+                <input className="slider" style={fill(((design.track + 2) / 10) * 100)} type="range" min={-2} max={8} value={design.track}
+                  onChange={(e) => set({ track: +e.target.value })} aria-label="Letter spacing" />
+                <span className="numbox">{design.track} px</span>
+              </div></div>
+            <div className="field"><span>Align</span>
+              <div className="align">
+                <button className={design.align === "left" ? "on" : ""} onClick={() => set({ align: "left" })} aria-label="Align left"><AlignLeft /></button>
+                <button className={design.align === "center" ? "on" : ""} onClick={() => set({ align: "center" })} aria-label="Align center"><AlignCenter /></button>
+                <button className={design.align === "right" ? "on" : ""} onClick={() => set({ align: "right" })} aria-label="Align right"><AlignRight /></button>
+                <button className={design.upper ? "on" : ""} onClick={() => set({ upper: !design.upper })} aria-label="Uppercase"><CaseSensitive /></button>
+              </div></div>
+          </div>
+
+          <div className="studio__foot-btn">
+            <button className="push" onClick={onPush}><Zap size={17} strokeWidth={2.4} fill="currentColor" /> Push to a kit</button>
+          </div>
+
+          <div className="toolbar">
+            <button onClick={onGrid}><span className={`tg${gridOn ? " on" : ""}`}><i /></span> Grid</button>
+            <button onClick={onPush}><Eye /> Preview</button>
+            <button onClick={onPush}><Save /> Save</button>
+            <button onClick={onPush}><Download /> Export</button>
           </div>
         </div>
-
-        <div className="ctl">
-          <label className="ctl__label" htmlFor="s-round">Roundness</label>
-          <input id="s-round" className="slider2" type="range" min={0} max={32} value={design.round}
-            onChange={(e) => patch({ round: +e.target.value })} />
-        </div>
-
-        <div className="ctl">
-          <label className="ctl__label" htmlFor="s-shine">Shine</label>
-          <input id="s-shine" className="slider2" type="range" min={0} max={100} value={Math.round(design.shine * 100)}
-            onChange={(e) => patch({ shine: +e.target.value / 100 })} />
-        </div>
-
-        <div className="ctl">
-          <label className="ctl__label" htmlFor="s-label">Label</label>
-          <input id="s-label" className="studio-text" type="text" maxLength={14} value={design.label}
-            placeholder="Your text" onChange={(e) => patch({ label: e.target.value })} onFocus={takeOver} />
-          <button className="chip-btn" onClick={surprise} title="Surprise me">
-            <Shuffle size={14} strokeWidth={2} /> Surprise me
-          </button>
-        </div>
-      </div>
-
-      <div className="studio__foot">
-        {view === "edit" ? (
-          <button className="studio__push" onClick={() => setView("kit")}>
-            <Zap size={16} strokeWidth={2.2} fill="currentColor" /> Push to a kit
-          </button>
-        ) : (
-          <>
-            <button className="studio__back" onClick={() => setView("edit")}>← Keep editing</button>
-            <button className="studio__open" onClick={() => navigate("#/app")}>
-              Do it for real <ArrowRight size={15} strokeWidth={2.2} />
-            </button>
-          </>
-        )}
       </div>
     </div>
   );
-}
-
-/* One design's DNA cascaded across states + components — tiny. */
-function MiniKit({ design }: { design: Design }) {
-  const Icon = ICONS[design.icon];
-  const label = design.label || "Play";
-  return (
-    <div className="minikit">
-      <div className="minikit__row">
-        {(["Default", "Hover", "Pressed", "Disabled"] as const).map((s) => (
-          <figure className="mk-cell" key={s}>
-            <button className={`studio-btn mk-btn mk-${s.toLowerCase()}`} tabIndex={-1} aria-hidden="true">
-              <Icon size={12} strokeWidth={2.6} /> <span>{label}</span>
-            </button>
-            <figcaption>{s}</figcaption>
-          </figure>
-        ))}
-      </div>
-      <div className="minikit__row minikit__row--parts">
-        <span className="mk-pill" aria-hidden="true"><Icon size={11} strokeWidth={2.6} /> {label}</span>
-        <span className="mk-badge" aria-hidden="true">NEW</span>
-        <span className="mk-round" aria-hidden="true"><Icon size={13} strokeWidth={2.6} /></span>
-        <span className="mk-toggle" aria-hidden="true"><i /></span>
-        <span className="mk-bar" aria-hidden="true"><i style={{ width: "62%" }} /></span>
-      </div>
-      <p className="minikit__cap">One button’s DNA → <b>46 components × 4 states</b>, instantly.</p>
-    </div>
-  );
-}
-
-/* Deterministic-ish jitter without Math.random (kept out of module scope so the
-   value differs per click via a rolling seed). */
-let seed = 0x2f6e2b1;
-function rnd() {
-  seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
-  return ((seed >>> 0) % 100000) / 100000;
 }
