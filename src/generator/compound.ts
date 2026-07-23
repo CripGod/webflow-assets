@@ -310,49 +310,54 @@ export const COMPOUND_ASSETS: Record<string, CompoundVectorAsset> = {
        notch between tail and loop (closed at the collar's left edge) →
        loop bottom edge → loop outer/crown → loop inner sweep back to the
        collar crossing. */
+    /* V73 — refined to the layered reference SVG's measured bounds:
+       upper loop x2–47 y5–58 (flatter crown, directional curl toward the
+       collar, cavity tucked at the inner attachment with a THICK rolled
+       lip), tail x3–47 y48–98 (front plane + folded darker return),
+       collar x37–52 y17–83. Loops/tail hide under the frame from x38. */
     footprint:
-      "M 51 17 C 55.5 20 58 26 58 34 C 56.8 40 56.2 45.5 56.2 50 C 56.2 54.5 56.8 60 58 66 C 58 74 55.5 80 51 83 C 48.5 82 46.5 81 44.7 79.5 C 43 85.5 38.5 92 34 97 L 26.5 90.5 L 17 99 C 20 92 24 84 29 76 C 33.3 69.2 38.2 63.1 43.9 58.1 C 44.1 56.4 44.2 54.6 44.3 53 C 36 55 25 53.5 17 48 C 6 40 1.5 28 4 17 C 7 5.5 21 -0.5 34 3.5 C 40.6 6 45.7 10.7 49.1 16.8 C 49.7 16.7 50.4 16.8 51 17 Z",
+      "M 45 17.5 C 49.5 20.5 52 26.5 52 34 C 50.8 40 50.2 45.5 50.2 50 C 50.2 54.5 50.8 60 52 66 C 52 73.5 49.5 79.5 45 82.5 C 41.5 80.5 39 78.5 37.7 75.5 C 34.5 81 30 88 25 93 L 18.5 87 L 9 94.5 C 12 87 16 79.5 21 72 C 25.8 64.8 31.9 58.6 38.7 53.8 C 38.7 53.9 38.65 54 38.6 54.1 C 37.8 54.4 36.9 54.7 36 55 C 26 57 14 51 8 42 C 2 33 1 23 5 15 C 10 6 22 3.5 30 7 C 34.8 9.4 38.4 13.4 41.1 18.2 C 42.4 17.9 43.7 17.6 45 17.5 Z",
     anchors: {
-      innerAttachment: { x: 50, y: 50 },
-      opticalCenter: { x: 26, y: 38 },
+      innerAttachment: { x: 45, y: 50 },
+      opticalCenter: { x: 22, y: 38 },
     },
-    attachmentZone: { x: 42, y: 12, width: 17, height: 74 },
+    attachmentZone: { x: 36, y: 14, width: 17, height: 72 },
     layers: [
       /* hidden rear knot bridge — closes seams behind collar and frame;
          never visibly a third lobe */
       { id: "rearKnotBridge", kind: "material", slot: "base", path:
-        "M 56 30 C 50.5 34 47.5 41.5 47.5 50 C 47.5 58.5 50.5 66 56 70 C 57.5 62 57.5 38 56 30 Z" },
-      /* lower hanging tail — narrow at the collar, FLARING down-outward
-         to a fishtail end */
+        "M 50 30 C 45.5 34 43 41.5 43 50 C 43 58.5 45.5 66 50 70 C 51.5 62 51.5 38 50 30 Z" },
+      /* lower hanging tail — front illuminated plane with a folded darker
+         return along the inner edge; articulated contour, fishtail end */
       { id: "lowerTail", kind: "material", slot: "base", patternSurface: true,
         profile: "flat-satin", bevelScale: 0.72, depthScale: 0.6, glossScale: 0.6, path:
-        "M 52 56 C 50 66 46 78 40 88 C 38 91.5 36 94.5 34 97 L 26.5 90.5 L 17 99 C 20 92 24 84 29 76 C 34 68 40 61 47 55.5 C 49 55.5 50.8 55.7 52 56 Z" },
+        "M 46 52 C 44 62 40 72 34 81 C 31 85.5 28 89.5 25 93 L 18.5 87 L 9 94.5 C 12 87 16 79.5 21 72 C 27 63 35 55.5 44 50.5 C 44.7 51 45.4 51.5 46 52 Z" },
       { id: "tailFoldShadow", kind: "overlay", slot: "fold", clipTo: "lowerTail", path:
-        "M 52 56 C 50.5 63 48 71 44.5 79 C 44 71.5 45 63.5 47.5 55.6 C 49.2 55.6 50.8 55.7 52 56 Z" },
+        "M 46 52 C 44 61 40.5 70.5 35.5 79 C 36.5 70 39 60.5 42.5 51.5 C 43.7 51.6 44.9 51.8 46 52 Z" },
       { id: "tailHighlight", kind: "detail", slot: "highlight", clipTo: "lowerTail", path:
-        "M 29 76 C 25.5 81.5 22 89 19.5 95.5 C 23.5 88.5 27.5 81.5 31.5 76.5 C 30.7 76.3 29.8 76.2 29 76 Z" },
-      /* hollow upper loop — tilted curled tube; the cavity overlaps the
-         loop's inner-lower boundary so the clip makes the dark opening
-         MEET the silhouette edge (looking into the tube) */
+        "M 21 72 C 17.5 77.5 14 84 11.5 90.5 C 15.5 84 19.5 77.5 23.5 72.5 C 22.7 72.3 21.8 72.2 21 72 Z" },
+      /* hollow upper loop — flatter outer crown, directional curl sweeping
+         into the collar; the cavity is tucked at the inner attachment and
+         overlaps the loop's boundary so the opening meets the edge */
       { id: "upperLoop", kind: "material", slot: "base", patternSurface: true,
         profile: "soft-pill", bevelScale: 1.2, castShadow: 0.32, path:
-        "M 54 34 C 53 20 46 8 34 3.5 C 21 -0.5 7 5.5 4 17 C 1.5 28 6 40 17 48 C 26 54.5 40 55.5 49 50 C 53 46 54.5 40 54 34 Z" },
+        "M 46 36 C 45 24 40 12 30 7 C 22 3.5 10 6 5 15 C 1 23 2 33 8 42 C 14 51 26 57 36 55 C 42 53.5 46 46 46 36 Z" },
       { id: "upperLoopCavity", kind: "overlay", slot: "cavity", clipTo: "upperLoop", path:
-        "M 15 36 C 17 28.5 26 25.5 35 28.5 C 45 32 51 40 49 47.5 C 47 55 37 57.5 28 54 C 19 50.5 13 43.5 15 36 Z" },
+        "M 20 34 C 24 27.5 33 26.5 40 31 C 47 35.5 49 44 45 50.5 C 41 57 31 58 24 53 C 17 48 16 40.5 20 34 Z" },
       { id: "upperLoopInnerLip", kind: "detail", slot: "crease", clipTo: "upperLoop", path:
-        "M 15 36 C 17 28.5 26 25.5 35 28.5 C 40 30.2 44.5 33.5 47 37.5 C 43.5 32 38 28.8 32.5 27.6 C 24.5 25.8 17.5 29.5 15 36 Z" },
+        "M 18 36 C 21 28.5 30.5 26.5 38.5 30.5 C 43 33 46 36.5 47 40.5 C 44 35.5 40 32.5 35.5 31 C 28.5 28.8 22 31 19.5 37.5 C 19 37 18.5 36.5 18 36 Z" },
       { id: "upperLoopFoldShadow", kind: "overlay", slot: "fold", clipTo: "upperLoop", path:
-        "M 53 44 C 48.5 42.5 44.5 39 42.5 34 C 46.5 36.5 50.5 40 52.5 42.5 Z" },
+        "M 45 44 C 41 42.5 37.5 39.5 35.5 35 C 39 37.5 42.5 40.5 44.5 43 Z" },
       { id: "upperLoopHighlight", kind: "detail", slot: "highlight", clipTo: "upperLoop", path:
-        "M 8 16 C 11.5 7 21 2.5 30.5 4.5 C 22.5 5.5 14 10 10.5 17.5 C 9.6 17 8.8 16.5 8 16 Z" },
+        "M 8 17 C 11 8.5 20 4.5 29 6.5 C 21.5 7 13.5 11 10.5 18.5 C 9.6 18 8.8 17.5 8 17 Z" },
       /* front: tall gathering collar over the frame edge, blunt ends */
       { id: "frontCollar", kind: "material", slot: "base", zSlot: "front", patternSurface: true,
         profile: "cylinder", bevelScale: 1.1, depthScale: 0.85, castShadow: 0.55, path:
-        "M 51 17 C 55.5 20 58 26 58 34 C 56.8 40 56.2 45.5 56.2 50 C 56.2 54.5 56.8 60 58 66 C 58 74 55.5 80 51 83 C 45.5 80.5 42.5 74 42.5 66 C 43.8 60 44.3 54.5 44.3 50 C 44.3 45.5 43.8 40 42.5 34 C 42.5 26 45.5 19.5 51 17 Z" },
+        "M 45 17.5 C 49.5 20.5 52 26.5 52 34 C 50.8 40 50.2 45.5 50.2 50 C 50.2 54.5 50.8 60 52 66 C 52 73.5 49.5 79.5 45 82.5 C 40 79.5 37 73 37 65 C 38.2 59.5 38.7 54.5 38.7 50 C 38.7 45.5 38.2 40.5 37 35 C 37 27 40 20.5 45 17.5 Z" },
       { id: "collarFoldShadow", kind: "overlay", slot: "fold", clipTo: "frontCollar", zSlot: "front", path:
-        "M 55 23 C 53.4 32 53.4 68 55 77 C 52 68 52 32 55 23 Z" },
+        "M 49.5 23 C 47.9 32 47.9 68 49.5 77 C 46.6 68 46.6 32 49.5 23 Z" },
       { id: "collarHighlight", kind: "detail", slot: "highlight", clipTo: "frontCollar", zSlot: "front", path:
-        "M 47.5 23 C 46 32 46 68 47.5 77 C 45.3 68 45.3 32 47.5 23 Z" },
+        "M 42.5 23 C 41.1 32 41.1 68 42.5 77 C 40.4 68 40.4 32 42.5 23 Z" },
     ],
     exposedControls: { baseColor: true, secondaryColor: true, pattern: true, finish: true, gloss: true, contrast: true },
   },

@@ -361,6 +361,25 @@ faithfully. v72 re-authored the TOPOLOGY to the target's bow:
   crossings). No target SVG survived upload (PNG only) — regions were
   measured from the supplied spec sheet instead.
 
+## Follow-up (v73): reference-proportion pass
+
+Adopted the layered reference SVG's measured bounds (the raw .svg didn't
+survive upload — bounds came from its review: loop x2–47 y5–58, tail
+x3–47 y48–98, collar x37–52 y17–83, frame x38–162 y22–78, face x43–157
+y28–72; center ≈62% of width). Loop re-authored with a flatter outer
+crown and a directional curl toward the collar; cavity tucked at the
+inner attachment with a thicker rolled lip; tail gains a folded darker
+return plane along its inner edge; collar narrowed; top/bottom diamond
+jewels added as accent parts (themed from the Highlight role) with
+matching footprint bumps; caps 58 → 52. Points the advisor's review
+already covered that the ENGINE does correctly (collar in the true
+global front slot, semantic repaint from data-slots not source fills,
+footprint never painted, per-layer extrusion, recipe-side mirroring
+instead of <use>) required no change. Validator: escape 0.02u, excess
+0.32u. Known limitation: jewels sit in the stretch band and widen at
+extreme aspects — a multi-zone rigid map or jewel toggle is the future
+fix. Verified in-app on the cyan theme; zero console errors.
+
 ## Follow-up (v70): mid-notch removed, complete bodies
 
 Per direction on the candy wrapper: the tail's fishtail V at mid-height

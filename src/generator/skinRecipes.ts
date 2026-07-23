@@ -87,7 +87,7 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
        plate. Clip + shadow + aura only — the asset's own footprint and the
        plate define every visible edge; nothing is painted behind them. */
     footprint:
-      "M 0 50 C 0 24 6 6 22 1.5 Q 32 -1 42 3 L 58 22 L 142 22 L 158 3 Q 168 -1 178 1.5 C 194 6 200 24 200 50 C 200 76 194 94 178 98.5 Q 168 101 158 97 L 142 78 L 58 78 L 42 97 Q 32 101 22 98.5 C 6 94 0 76 0 50 Z",
+      "M 0 50 C 0 24 6 6 22 1.5 Q 32 -1 42 3 L 58 22 L 86 22 L 100 12.5 L 114 22 L 142 22 L 158 3 Q 168 -1 178 1.5 C 194 6 200 24 200 50 C 200 76 194 94 178 98.5 Q 168 101 158 97 L 142 78 L 114 78 L 100 87.5 L 86 78 L 58 78 L 42 97 Q 32 101 22 98.5 C 6 94 0 76 0 50 Z",
     label: "CLAIM",
     /* V72 bow: rear COMPOUND ribbon asset (hollow loop, hanging fishtail,
        hidden knot bridge — per-layer profiles and depth) → thin saturated
@@ -100,11 +100,17 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
       { id: "frame", material: "metal", zIndex: 2, depth: 3.2, bevel: 2.2,
         specularMode: "streak", highlightBias: [-0.3, -0.28],
         edgeDarkening: 0.5, bounce: 0.5, shadowDensity: 0.6, path:
-        "M 60 22 L 140 22 C 147.5 22 152 26.5 152 33 L 152 67 C 152 73.5 147.5 78 140 78 L 60 78 C 52.5 78 48 73.5 48 67 L 48 33 C 48 26.5 52.5 22 60 22 Z" },
+        "M 50 22 L 150 22 C 157 22 162 26.5 162 33 L 162 67 C 162 73.5 157 78 150 78 L 50 78 C 43 78 38 73.5 38 67 L 38 33 C 38 26.5 43 22 50 22 Z" },
       { id: "face", material: "face", zIndex: 3, depth: 0, bevel: 3,
         glossFrac: 0.5, glossDip: 0.18, specularMode: "dot", highlightBias: [-0.12, -0.08],
         edgeDarkening: 0.1, saturationBoost: 0.4, bounce: 0.6, path:
-        "M 68 29 C 90 27.9 110 27.9 132 29 C 139 29 143.5 32.5 144 37.5 C 145.1 41.5 145.1 58.5 144 62.5 C 143.5 67.5 139 71 132 71 C 110 72.1 90 72.1 68 71 C 61 71 56.5 67.5 56 62.5 C 54.9 58.5 54.9 41.5 56 37.5 C 56.5 32.5 61 29 68 29 Z" },
+        "M 55 28 C 85 26.9 115 26.9 145 28 C 152 28 156.5 31.5 157 36.5 C 158.1 40.5 158.1 59.5 157 63.5 C 156.5 68.5 152 72 145 72 C 115 73.1 85 73.1 55 72 C 48 72 43.5 68.5 43 63.5 C 41.9 59.5 41.9 40.5 43 36.5 C 43.5 31.5 48 28 55 28 Z" },
+      { id: "jewelTop", material: "accent", zIndex: 5, depth: 0, bevel: 1.6,
+        specularMode: "dot", highlightBias: [-0.15, -0.2], edgeDarkening: 0.4, shadowDensity: 0.3, path:
+        "M 100 14.5 C 103.5 17 106.5 19.5 109 22 C 106.5 24.5 103.5 27 100 29.5 C 96.5 27 93.5 24.5 91 22 C 93.5 19.5 96.5 17 100 14.5 Z" },
+      { id: "jewelBottom", material: "accent", zIndex: 5, depth: 0, bevel: 1.6,
+        specularMode: "dot", highlightBias: [-0.15, -0.2], edgeDarkening: 0.4, shadowDensity: 0.3, path:
+        "M 100 70.5 C 103.5 73 106.5 75.5 109 78 C 106.5 80.5 103.5 83 100 85.5 C 96.5 83 93.5 80.5 91 78 C 93.5 75.5 96.5 73 100 70.5 Z" },
     ],
     materials: {
       face:    { light: "#FFA8DB", base: "#F45CAE", dark: "#B5206F", finish: "glass" },
@@ -113,8 +119,8 @@ export const SKIN_RECIPES: ButtonSkinRecipe[] = [
       frame:   { light: "#93265F", base: "#701048", dark: "#4A0630", finish: "matte" },
       accent:  { light: "#FFF0B8", base: "#FFCE45", dark: "#A66300", finish: "metal" },
     },
-    safeArea: { x: 62, y: 33, width: 76, height: 34 },
-    stretch: { leftCap: 58, rightCap: 58 },
+    safeArea: { x: 54, y: 33, width: 92, height: 34 },
+    stretch: { leftCap: 52, rightCap: 52 },
     layout: { idealAspect: 2.6, minAspect: 2.4, maxAspect: 3.2, minHeroWidth: 420 },
   },
 ];
