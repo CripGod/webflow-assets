@@ -126,8 +126,8 @@ interface Rig {
 
 // The schematic's resting viewing angle (radians). It loads here and holds
 // still — the reference exploded-diagram view — until the user drags it.
-const BASE_YAW = 0.52;   // horizontal rotation (y)
-const BASE_PITCH = 0.07; // vertical tilt (x)
+const BASE_YAW = 0.48;    // horizontal rotation (y) — a touch more face-on
+const BASE_PITCH = 0.035; // vertical tilt (x) — flatter, matches the reference
 
 export function HeroGL() {
   const { cfg } = useGen();
