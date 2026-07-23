@@ -76,12 +76,31 @@ data” in the account menu exports the whole document as JSON.
 - Free-tier projects pause after ~1 week of inactivity; the dashboard
   restores them with one click.
 
-## Hide the code: private repo + Vercel (~10 min, zero downtime)
+## Hide the code
 
-Appendix A's end-state is a **private** repository served by **Vercel**
-(which also hosts the server functions the Stripe/protected-export phases
-need). GitHub Pages cannot serve a private repo on a free plan, so do
-these in this order — Vercel goes live *before* the repo goes private:
+### Shortcut: on GitHub Pro or Team, go private today — no migration
+
+Paid GitHub plans can serve Pages from a **private** repository. If your
+account is on Pro/Team (check github.com/settings/billing):
+
+1. GitHub → Settings → General → Danger Zone → Change visibility →
+   **Private**. That's it — the Pages site keeps building and serving,
+   every workflow keeps running, and the source/history/docs stop being
+   world-readable immediately.
+2. Two things change quietly: builds on a private repo consume Actions
+   minutes (Pro includes 3,000/month; each deploy here uses ~2), and the
+   published site itself stays public — which is what we want; it's the
+   product.
+3. Vercel then becomes a **later** step, needed when server functions
+   arrive (Stripe checkout, protected exports) — the repo is already
+   Vercel-ready for that day. Note Vercel's free Hobby tier is
+   non-commercial; the business plan already budgets Vercel Pro ($20/mo)
+   for the commercial phase.
+
+### Free GitHub plan: Vercel first, then private (~10 min, zero downtime)
+
+GitHub Pages cannot serve a private repo on a free plan, so do these in
+this order — Vercel goes live *before* the repo goes private:
 
 1. **Import into Vercel:** vercel.com → sign in with GitHub → Add New →
    Project → import `CripGod/webflow-assets`. The repo ships a
