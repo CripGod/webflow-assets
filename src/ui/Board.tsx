@@ -20,9 +20,9 @@ const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
   { name: "Buttons", ids: ["primary", "secondary", "small", "ghost", "iconbtn"] },
   { name: "Containers", ids: ["panel", "header", "tab", "dropdown"] },
   { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "orb", "ring", "flipclock", "stopwatch", "timerdigits"] },
-  { name: "Controls", ids: ["toggle", "slider", "progress", "segbar", "vsbar", "hotbar", "input", "segment", "checkbox", "radio", "joystick"] },
+  { name: "Controls", ids: ["toggle", "slider", "progress", "segbar", "emblembar", "vsbar", "hotbar", "input", "segment", "checkbox", "radio", "joystick"] },
   { name: "Combat & spatial", ids: ["reticle", "minimap", "ammo", "lives", "bignum"] },
-  { name: "Racing", ids: ["speedo", "speedo2", "tacho", "circuit", "leaderboard", "laptimes", "telemetry", "startlights"] },
+  { name: "Racing", ids: ["speedo", "speedo2", "tacho", "circuit", "leaderboard", "laptimes", "telemetry"] },
   { name: "Card battler", ids: ["cardback", "pack"] },
 ];
 
@@ -58,7 +58,6 @@ const BOARD_TEMPLATES: Record<string, { kitId: KitComponentId; x: number; y: num
     { kitId: "iconbtn", x: 1720, y: 620, scale: 0.85 },
   ],
   "Racing HUD": [
-    { kitId: "startlights", x: 810, y: 50, scale: 0.8 },
     { kitId: "circuit", x: 60, y: 80 },
     { kitId: "leaderboard", x: 1460, y: 30, scale: 0.8 },
     { kitId: "telemetry", x: 1450, y: 330, scale: 0.85 },

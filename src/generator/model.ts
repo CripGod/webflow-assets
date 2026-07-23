@@ -765,7 +765,7 @@ export type KitComponentId =
   | "primary" | "secondary" | "small" | "ghost" | "iconbtn"
   | "chip" | "badge" | "tab" | "segment" | "header"
   | "checkbox" | "radio" | "toggle"
-  | "slider" | "progress" | "segbar" | "vsbar" | "hotbar" | "input" | "dropdown" | "panel"
+  | "slider" | "progress" | "segbar" | "emblembar" | "vsbar" | "hotbar" | "input" | "dropdown" | "panel"
   | "resource" | "datarow" | "slot" | "orb" | "ring" | "joystick"
   | "reticle" | "minimap" | "ammo" | "lives" | "bignum"
   | "flipclock" | "stopwatch" | "timerdigits"
@@ -790,6 +790,7 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   { id: "slider", name: "Slider" },
   { id: "progress", name: "Progress bar" },
   { id: "segbar", name: "Segmented bar" },
+  { id: "emblembar", name: "Emblem bar" },
   { id: "vsbar", name: "VS health bar" },
   { id: "hotbar", name: "Hotbar" },
   { id: "input", name: "Input field" },
@@ -817,7 +818,6 @@ export const KIT_COMPONENTS: { id: KitComponentId; name: string }[] = [
   // ("trophy" renders but is deregistered — off-brand for this kit)
   { id: "laptimes", name: "Lap comparison" },
   { id: "telemetry", name: "Telemetry" },
-  { id: "startlights", name: "Start lights" },
   { id: "cardback", name: "Card back" },
   { id: "pack", name: "Card pack" },
 ];
