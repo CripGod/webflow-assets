@@ -287,42 +287,44 @@ export const COMPOUND_ASSETS: Record<string, CompoundVectorAsset> = {
     viewBox: [0, 0, 200, 100],
     depthMode: "per-material-layer",
     /* The footprint is the EXACT union trace of the bodies: it reuses the
-       upper loop's crown/outer segments, dips into the authored notch at
-       J1 (10,34), follows the tail's outer edge through the fishtail V
-       (2.5,47 → 9,50 → 2.5,53), mirrors through J2 (10,66) and the lower
-       loop, and closes across the attachment tips (excused by the
-       attachmentZone under the frame). */
+       upper loop's inner-sweep/crown/outer segments, dips into the
+       junction notch at J1 (9,36), follows the tail's smooth outer lobe
+       (no mid notch — per direction), mirrors through J2 (9,64) and the
+       lower loop, and closes across the attachment span behind the plate
+       (excused by the attachmentZone under the frame). Every body is a
+       COMPLETE closed form that continues behind the center assembly —
+       nothing terminates at the frame edge. */
     footprint:
-      "M 54 36 C 52 22 44 8 33 3.5 C 21 -0.5 8 5 5.5 15 C 3.5 24 5 30.5 10 34 C 5 38 2.5 43 2.5 47 L 9 50 L 2.5 53 C 2.5 57 5 62 10 66 C 5 69.5 3.5 76 5.5 85 C 8 95 21 100.5 33 96.5 C 44 92 52 78 54 64 C 54.5 56 54.5 44 54 36 Z",
+      "M 72 34 C 68 20 52 6 38 3.5 C 24 1 9 6 6.5 15.5 C 4 24.5 4.5 31.5 9 36 C 4.5 40 3 44.8 3 50 C 3 55.2 4.5 60 9 64 C 4.5 68.5 4 75.5 6.5 84.5 C 9 94 24 99 38 96.5 C 52 94 68 80 72 66 C 73.5 56 73.5 44 72 34 Z",
     anchors: {
-      innerAttachment: { x: 54, y: 50 },
+      innerAttachment: { x: 50.5, y: 50 },
       opticalCenter: { x: 24, y: 50 },
     },
-    attachmentZone: { x: 42, y: 28, width: 15, height: 44 },
+    attachmentZone: { x: 42, y: 24, width: 32, height: 52 },
     layers: [
-      /* rear: fishtail dart between the loops */
+      /* rear: smooth complete tail dart, continuing behind the plate */
       { id: "tail", kind: "material", slot: "base", patternSurface: true, path:
-        "M 52 50 C 48 41 40 36 28 35.5 C 20 35.2 13 34.6 10 34 C 5 38 2.5 43 2.5 47 L 9 50 L 2.5 53 C 2.5 57 5 62 10 66 C 13 65.4 20 64.8 28 64.5 C 40 64 48 59 52 50 Z" },
+        "M 66 50 C 60 40.5 48 36 32 35.5 C 22 35.2 14 35.4 9 36 C 4.5 40 3 44.8 3 50 C 3 55.2 4.5 60 9 64 C 14 64.6 22 64.8 32 64.5 C 48 64 60 59.5 66 50 Z" },
       { id: "tailCrease", kind: "overlay", slot: "fold", clipTo: "tail", path:
-        "M 50 50 C 44 46 37 44 30 44 C 36 46.5 41 48.5 45 50 C 41 51.5 36 53.5 30 56 C 37 56 44 54 50 50 Z" },
+        "M 60 50 C 52 46 44 44 36 44.5 C 43 46.5 48 48.5 52 50 C 48 51.5 43 53.5 36 55.5 C 44 56 52 54 60 50 Z" },
       { id: "tailShine", kind: "detail", slot: "highlight", clipTo: "tail", path:
-        "M 6 43 C 9 39.5 14 37.5 19 38 C 14 39.5 10 42 7.5 45.5 C 7 44.7 6.5 43.8 6 43 Z" },
-      /* lower loop behind upper at the knot */
+        "M 7 44 C 10 40 15 38 21 38.5 C 15 40 11 42.5 8.5 46.5 C 8 45.6 7.5 44.8 7 44 Z" },
+      /* lower loop behind upper at the knot, complete behind the plate */
       { id: "lowerLoop", kind: "material", slot: "base", patternSurface: true, path:
-        "M 54 64 C 52 78 44 92 33 96.5 C 21 100.5 8 95 5.5 85 C 3.5 76 5 69.5 10 66 C 20 60 38 58 54 64 Z" },
+        "M 72 66 C 68 80 52 94 38 96.5 C 24 99 9 94 6.5 84.5 C 4 75.5 4.5 68.5 9 64 C 22 58.5 46 57.5 72 66 Z" },
       { id: "lowerCavity", kind: "overlay", slot: "cavity", clipTo: "lowerLoop", path:
-        "M 14 64 C 22 60.5 34 59 46 61 C 32 56 18 57.5 14 64 Z" },
+        "M 14 63 C 24 59 38 57.5 52 59.5 C 36 54 20 55.5 14 63 Z" },
       { id: "lowerFold", kind: "overlay", slot: "fold", clipTo: "lowerLoop", path:
-        "M 52 62.5 C 46 66 41 72 39 80 C 44 75.5 49 69.5 51 64.5 Z" },
+        "M 52 61 C 46 64.5 41 70.5 39 78.5 C 44 74 49 68 51 63 Z" },
       { id: "lowerShine", kind: "detail", slot: "highlight", clipTo: "lowerLoop", path:
         "M 8 86 C 12 93.5 22 97.5 31 95.5 C 23 94.5 14 91 10 84.5 C 9.3 85 8.6 85.5 8 86 Z" },
-      /* upper loop */
+      /* upper loop, complete behind the plate */
       { id: "upperLoop", kind: "material", slot: "base", patternSurface: true, path:
-        "M 54 36 C 52 22 44 8 33 3.5 C 21 -0.5 8 5 5.5 15 C 3.5 24 5 30.5 10 34 C 20 40 38 42 54 36 Z" },
+        "M 72 34 C 68 20 52 6 38 3.5 C 24 1 9 6 6.5 15.5 C 4 24.5 4.5 31.5 9 36 C 22 41.5 46 42.5 72 34 Z" },
       { id: "upperCavity", kind: "overlay", slot: "cavity", clipTo: "upperLoop", path:
-        "M 14 36 C 22 39.5 34 41 46 39 C 32 44 18 42.5 14 36 Z" },
+        "M 14 37 C 24 41 38 42.5 52 40.5 C 36 46 20 44.5 14 37 Z" },
       { id: "upperFold", kind: "overlay", slot: "fold", clipTo: "upperLoop", path:
-        "M 52 37.5 C 46 34 41 28 39 20 C 44 24.5 49 30.5 51 35.5 Z" },
+        "M 52 39 C 46 35 41 29 39 21 C 44 25.5 49 31.5 51 36.5 Z" },
       { id: "upperShine", kind: "detail", slot: "highlight", clipTo: "upperLoop", path:
         "M 8 14 C 12 6.5 22 2.5 31 4.5 C 23 5.5 14 9 10 15.5 C 9.3 15 8.6 14.5 8 14 Z" },
       /* front: the compact gathering collar, seated over the frame edge */

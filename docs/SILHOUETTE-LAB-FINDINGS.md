@@ -322,3 +322,15 @@ foreign-color depth, patterns still fabric-only, states and cap-aware
 sizes intact, Twin Grip regression-clean under the new chassis model.
 Copy-SVG remains the exact rendered string. No new assets until this pass
 is approved.
+
+## Follow-up (same pass): mid-notch removed, complete bodies
+
+Per direction on the candy wrapper: the tail's fishtail V at mid-height
+is gone — the tail is a smooth complete lobe, and the outer silhouette
+reads loop / junction notch / tail / junction notch / loop. Every ribbon
+body (loops, tail) is now a COMPLETE closed form continuing behind the
+center plate (attachment span to x≈73, closure excused by the widened
+attachmentZone) — nothing terminates at the frame edge, so swapping or
+resizing the center assembly can never expose a cut edge. Validator after
+the change: escape 0.00u, excess 0.00u, mirrored copies non-overlapping
+(left ends x73.5, right begins x126.5).
