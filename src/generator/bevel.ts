@@ -361,12 +361,12 @@ function offsetAttempt(ring: Pt[], delta: number, eps: number, mergeR: number, c
 }
 
 /** Effective wall width for a shape. The banner's tail geometry only reads
- *  clean between 9 and 33 (review-measured), so the renderer clamps what it
- *  consumes — stale or shared configs can't break the tails. `off` drops
+ *  clean between 13 and 33 (review-measured), so the renderer clamps what
+ *  it consumes — stale or shared configs can't break the tails. `off` drops
  *  the wall entirely: the face fills the whole silhouette. */
 export function effectiveWall(width: number, shape: Shape, off?: boolean): number {
   if (off) return 0;
-  return shape === "banner" ? Math.min(33, Math.max(9, width)) : width;
+  return shape === "banner" ? Math.min(33, Math.max(13, width)) : width;
 }
 
 /** Inner shape at true offset `delta` — falls back to the classic scaled
@@ -1781,7 +1781,8 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
       // theme's corners while middle cells stay squared
       const wellP = wellOf(w, h, inset);
       const clip = `<clipPath id="${gid}c"><path d="${wellP}"/></clipPath>`;
-      const grad = `<linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>`;
+      // cells shade top-to-bottom (candy lighting), never along the bar
+      const grad = `<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>`;
       const dim = state === "disabled" ? 0.35 : 0.95;
       let litCells = "", offCells = "";
       if (snap) {

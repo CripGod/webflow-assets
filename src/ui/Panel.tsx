@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Search as SearchIcon, X, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
 import { useGen } from "@/generator/store";
-import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize, DESIGN_KEYS, presetById } from "@/generator/model";
+import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize, DESIGN_KEYS, presetById, designDiff, mergeKitDesign } from "@/generator/model";
 import type { GenStateName, BlendMode, PatternType, KitComponentId } from "@/generator/model";
 import { ICON_LIBS, loadLib, libLoaded, searchLib, getDef, previewSvg } from "@/generator/icons";
 import { ensureFont } from "@/generator/fonts";
@@ -276,7 +276,10 @@ export function Panel() {
     const before = applyKitDesign(cfgMaster, kitDesigns[focus]);
     const merged = JSON.parse(JSON.stringify(before)) as GenConfig;
     fn(merged);
-    if (JSON.stringify(pickDesign(before)) !== JSON.stringify(pickDesign(merged))) setKitDesign(focus, pickDesign(merged));
+    // v70: pin only the paths this edit changed — the rest keeps following
+    // the parent design live, so the kit stays auto-updating
+    const d = designDiff(pickDesign(before), pickDesign(merged));
+    if (d) setKitDesign(focus, mergeKitDesign(kitDesigns[focus], d));
     // replay only the non-design portion onto the parent, design keys pinned
     const mClone = JSON.parse(JSON.stringify(cfgMaster)) as GenConfig;
     fn(mClone);
@@ -287,12 +290,14 @@ export function Panel() {
     if (!focus) { setPresetParent(id); return; }
     // a preset click while editing restyles ONLY the focused component
     const p = presetById(id);
-    const merged = JSON.parse(JSON.stringify(applyKitDesign(cfgMaster, kitDesigns[focus]))) as GenConfig;
+    const before = applyKitDesign(cfgMaster, kitDesigns[focus]);
+    const merged = JSON.parse(JSON.stringify(before)) as GenConfig;
     merged.effects = { ...p.effects };
     merged.bevel = { ...p.bevel };
     merged.shape = p.shape;
     applyPresetCandy(merged.candy, p);
-    setKitDesign(focus, pickDesign(merged));
+    const d = designDiff(pickDesign(before), pickDesign(merged));
+    if (d) setKitDesign(focus, mergeKitDesign(kitDesigns[focus], d));
     setKitShape(focus, p.shape);
   };
   const [iconQuery, setIconQuery] = useState("");
@@ -796,10 +801,10 @@ export function Panel() {
       {/* ── C · Structure — the object's build ────────────── */}
       <Section id="structure" title="Structure">
         {(() => {
-          /* the banner's tail geometry only reads clean between 9 and 33 —
+          /* the banner's tail geometry only reads clean between 13 and 33 —
              its slider is contained to that range (other shapes keep 2–34) */
           const effShape = focus ? (kitShapes[focus] ?? KIT_SHAPE[focus] ?? D.shape) : D.shape;
-          const wMin = effShape === "banner" ? 9 : 2, wMax = effShape === "banner" ? 33 : 34;
+          const wMin = effShape === "banner" ? 13 : 2, wMax = effShape === "banner" ? 33 : 34;
           return (
             <>
               <Slider label="Wall width" value={Math.min(wMax, Math.max(wMin, D.bevel.width))} min={wMin} max={wMax} unit="px"

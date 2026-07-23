@@ -699,6 +699,19 @@ function openEditor(sec: string) {
   window.setTimeout(() => document.querySelector(`[data-sec="${sec}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 90);
 }
 
+/** The honest list of effects in a design that nine-slice stretching cannot
+ *  carry — they're painted for ONE proportion, and the stretched middle
+ *  slice distorts them. Slices still scale cleanly without them; components
+ *  that need them intact should be rendered per-size from the app. */
+export function sliceRisks(c: GenConfig): string[] {
+  const cd = c.candy, r: string[] = [];
+  if (cd.gloss.on && cd.gloss.curve > 4 && cd.gloss.opacity > 0) r.push("Curved gloss sweep — its arc spans the whole face, so a stretched middle flattens the curve");
+  if (cd.pattern.type !== "none" && cd.pattern.opacity > 0) r.push(`${cd.pattern.type.charAt(0).toUpperCase() + cd.pattern.type.slice(1)} pattern — tiles ${cd.pattern.type === "stripes" ? "skew off their angle" : "stretch out of shape"} wherever the middle slice grows`);
+  if (cd.specular.on && cd.specular.intensity > 0) r.push("Specular highlight — placed for one proportion; it drifts and smears when the face stretches");
+  if (cd.texture.amount > 0) r.push("Surface grain — stretches into visible streaks in the scaling zones");
+  return r;
+}
+
 /** Banner rendered with its three-slice guides: fixed caps, stretch middle,
  *  text-safe area — computed from the real silhouette metadata. The demo
  *  scales itself into `fit` px so a very wide banner never dominates the
@@ -1185,14 +1198,16 @@ const exportActions = [
               <b><ShieldCheck size={14} strokeWidth={2.4} /> {a11yOpen ? audit.level : "See score"}</b><span>Accessibility</span>
             </button>
           </div>
-          <button className="kp-editkit" onClick={() => setPhase("master")} title="Open this kit in the editor — every control shapes it live"
-            style={{ background: cfg.effects.Bevel ?? "#0E9CC9", color: isDarkBg(cfg.effects.Bevel ?? "#0E9CC9") ? "#ffffff" : "#0d0f16" }}>
-            <PenTool size={16} strokeWidth={2.3} /> Edit this Kit
-          </button>
+          <div className="kp-actrow">
+            <button className="kp-editkit" onClick={() => setPhase("master")} title="Open this kit in the editor — every control shapes it live"
+              style={{ background: cfg.effects.Bevel ?? "#0E9CC9", color: isDarkBg(cfg.effects.Bevel ?? "#0E9CC9") ? "#ffffff" : "#0d0f16" }}>
+              <PenTool size={16} strokeWidth={2.3} /> Edit this Kit
+            </button>
+            <button className="kp-share" onClick={() => void shareKit()} title="Copy a link that opens this kit for anyone — view only">
+              {shared ? "Link copied ✓" : "Share kit"}
+            </button>
+          </div>
           {viewer ? <div className="kp-viewnote">Shared kit — view only. Ask the owner for the downloads.</div> : <ExportMenu actions={exportActions} />}
-          <button className="kp-share" onClick={() => void shareKit()} title="Copy a link that opens this kit for anyone — view only">
-            {shared ? "Link copied ✓" : "Share kit"}
-          </button>
           <div className="kp-roleline" aria-hidden="true">
             {roles.map((r) => <span className="kp-roledot" key={r}><i style={{ background: cfg.effects[r] }} />{r}</span>)}
           </div>
@@ -1687,6 +1702,11 @@ const exportActions = [
                     "speculars must stay inside the face), which is what triggers the notice.", "",
                     "## Nine-slice scaling", "See 9slice.json: caps are fixed (capScale × shell height), centers stretch.",
                     "The `content` insets are the text-safe area used by the generator itself.",
+                    ...(sliceRisks(st.cfg).length
+                      ? ["", "## Effects that do not survive stretching",
+                        ...sliceRisks(st.cfg).map((r) => `- ${r}`),
+                        "Render one-off components from the app when these must stay intact."]
+                      : []),
                   ].join("\n"),
                 });
               }
@@ -1729,6 +1749,13 @@ const exportActions = [
       {/* ── nine-slice & anatomy — the stretch contract, as its own chapter beat ── */}
       <Sec n="02" title="Nine-Slice & Anatomy" note="Corners fixed, edges stretch on one axis, the center stretches on both. Every silhouette ships this contract as data (9slice.json).">
         <p className="kp-note">Every silhouette is procedural three-slice geometry: caps are sized by height and never distort; only the middle stretches. Magenta dashes mark the fixed caps, green marks the text-safe area.</p>
+        {sliceRisks(cfg).length > 0 && (
+          <div className="kp-slicenote">
+            <b>Heads-up — this design carries effects a stretched slice can't keep:</b>
+            <ul>{sliceRisks(cfg).map((r) => <li key={r}>{r}</li>)}</ul>
+            <span>The exported slices scale cleanly without them. When a piece needs these effects intact at a specific size, render that one-off component straight from the app instead — it repaints every effect for the exact proportion.</span>
+          </div>
+        )}
         <div className="kp-slices">
           <SliceDemo cfg={cfg} label="GO" fit={300} />
           <SliceDemo cfg={cfg} label={label} fit={380} />
