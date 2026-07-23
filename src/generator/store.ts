@@ -235,6 +235,14 @@ interface GenStore {
   /** Shared-link viewer mode — hides downloads; never persisted. */
   viewer: boolean;
   hydrateShared: (p: Record<string, unknown>) => void;
+  /** The curated, portable kit snapshot — the single payload contract behind
+      both share links and named cloud projects (v76). */
+  kitPayload: () => Record<string, unknown>;
+  /** Load a kit payload into the store. `viewer:false` (opening your own
+      project) persists every field so the kit survives reload and flows into
+      the cloud workspace; `viewer:true` (a share / public link) is in-memory
+      read-only, exactly like a shared kit. */
+  loadKitPayload: (p: Record<string, unknown>, opts?: { viewer?: boolean }) => void;
   /** Global shine sweep over every kit piece. */
   shine: boolean;
   setShine: (v: boolean) => void;
@@ -624,13 +632,23 @@ export const useGen = create<GenStore>((set, get) => ({
   parentId: loadJson<KitComponentId | "button">("ui-generator-parent", "button"),
   setParent: (id) => { saveJson("ui-generator-parent", id); set({ parentId: id }); },
   viewer: false,
-  hydrateShared: (p) => {
+  kitPayload: () => {
     const st = get();
-    set({
-      cfg: (p.cfg as GenConfig) ?? st.cfg,
+    return {
+      v: 1, cfg: st.cfg, kitName: st.kitName, kitShapes: st.kitShapes, kitDesigns: st.kitDesigns,
+      kitTextFill: st.kitTextFill, kitLabels: st.kitLabels, kitIcons: st.kitIcons, kitSizes: st.kitSizes,
+      kitBar: st.kitBar, kitTextOy: st.kitTextOy, kitTextOx: st.kitTextOx,
+    };
+  },
+  loadKitPayload: (p, opts) => {
+    const st = get();
+    const viewer = opts?.viewer ?? true;
+    const cfg = (p.cfg as GenConfig) ?? st.cfg;
+    const next = {
+      cfg,
       kitName: (p.kitName as string) ?? st.kitName,
       kitShapes: (p.kitShapes as GenStore["kitShapes"]) ?? {},
-      kitDesigns: migrateKitDesigns((p.cfg as GenConfig) ?? st.cfg, (p.kitDesigns as GenStore["kitDesigns"]) ?? {}).forks,
+      kitDesigns: migrateKitDesigns(cfg, (p.kitDesigns as GenStore["kitDesigns"]) ?? {}).forks,
       kitTextFill: (p.kitTextFill as GenStore["kitTextFill"]) ?? {},
       kitLabels: (p.kitLabels as GenStore["kitLabels"]) ?? {},
       kitIcons: (p.kitIcons as GenStore["kitIcons"]) ?? {},
@@ -638,9 +656,26 @@ export const useGen = create<GenStore>((set, get) => ({
       kitBar: (p.kitBar as GenStore["kitBar"]) ?? {},
       kitTextOy: (p.kitTextOy as GenStore["kitTextOy"]) ?? {},
       kitTextOx: (p.kitTextOx as GenStore["kitTextOx"]) ?? {},
-      viewer: true, phase: "kit",
-    });
+    };
+    if (!viewer) {
+      // opening your own project: persist to the same keys the app boots from
+      // so it survives reload and the write-hook syncs it to the cloud workspace
+      // (kitSizes is session-only in this app, so it is set but not persisted).
+      markTouched();
+      saveJson(LS_KEY, next.cfg);
+      saveJson("ui-generator-kitname", next.kitName);
+      saveJson("ui-generator-kitshapes", next.kitShapes);
+      saveJson("ui-generator-kitdesigns", next.kitDesigns);
+      saveJson("ui-generator-kittextfill", next.kitTextFill);
+      saveJson("ui-generator-kitlabels", next.kitLabels);
+      saveJson("ui-generator-kiticons", next.kitIcons);
+      saveJson("ui-generator-kitbar", next.kitBar);
+      saveJson("ui-generator-kittextoy", next.kitTextOy);
+      saveJson("ui-generator-kittextox", next.kitTextOx);
+    }
+    set({ ...next, viewer, phase: "kit" });
   },
+  hydrateShared: (p) => get().loadKitPayload(p, { viewer: true }),
   shine: loadJson<boolean>("ui-generator-shine", false),
   setShine: (v) => { saveJson("ui-generator-shine", v); set({ shine: v }); },
   styleLib: loadJson<StyleItem[]>("ui-generator-styles", []),

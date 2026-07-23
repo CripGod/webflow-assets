@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { LogIn, LogOut, UserPlus, Mail, KeyRound, RefreshCw, FileDown, Cable, History } from "lucide-react";
+import { LogIn, LogOut, UserPlus, Mail, KeyRound, RefreshCw, FileDown, Cable, History, FolderOpen } from "lucide-react";
 import {
   cloudConfig, setCloudOverride, clearCloudOverride, onCloudStatus, cloudStatus,
   signIn, signUp, signInMagic, requestPasswordReset, setNewPassword, signOutCloud,
   syncNow, downloadMyData, hasLocalSnapshot, restoreLocalSnapshot, type CloudStatus,
 } from "@/generator/cloud";
+import { ProjectsPanel } from "./ProjectsPanel";
 
 export function useCloudStatus(): CloudStatus {
   const [s, setS] = useState<CloudStatus>(() => cloudStatus());
@@ -28,6 +29,7 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
   const [connOpen, setConnOpen] = useState(false);
   const [connUrl, setConnUrl] = useState("");
   const [connKey, setConnKey] = useState("");
+  const [showProjects, setShowProjects] = useState(false);
 
   const run = async (fn: () => Promise<string | null>, okNote: string) => {
     setBusy(true); setNote(null);
@@ -55,6 +57,7 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
 
   /* signed in */
   if (status.state === "synced" || status.state === "syncing" || status.state === "error") {
+    if (showProjects) return <ProjectsPanel onBack={() => setShowProjects(false)} onClose={onClose} />;
     return (
       <div className="menu-pop acct-pop">
         <div className="menu-note"><b>{status.email}</b></div>
@@ -63,6 +66,7 @@ export function AccountMenu({ onClose }: { onClose: () => void }) {
           {status.state === "syncing" && "Syncing…"}
           {status.state === "error" && `Cloud error — your work is safe locally. ${status.detail ?? ""}`}
         </div>
+        <button onClick={() => setShowProjects(true)}><FolderOpen size={15} strokeWidth={1.8} /> My projects</button>
         <button onClick={() => syncNow()}><RefreshCw size={15} strokeWidth={1.8} /> Sync now</button>
         <button onClick={() => downloadMyData()}><FileDown size={15} strokeWidth={1.8} /> Download my data</button>
         {hasLocalSnapshot() && (

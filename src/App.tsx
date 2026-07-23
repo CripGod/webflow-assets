@@ -3,12 +3,28 @@ import { TopBar } from "./ui/TopBar";
 import { Rail, Panel } from "./ui/Panel";
 import { CanvasView } from "./ui/CanvasView";
 import { useGen } from "./generator/store";
+import { loadPublicProject } from "./generator/cloud";
 
-/* v67 · shared kits: #share=<deflate+base64url of the kit state>. The link
-   opens straight into the Kit as a viewer — downloads stay with the owner
-   (real permissions come later). */
+/* Shared kits open straight into the Kit as a read-only viewer — downloads
+   stay with the owner (real permissions come later). Two link shapes:
+   · v67  #share=<deflate+base64url of the kit state>  (self-contained URL)
+   · v76  #p=<share_slug>  (a published cloud project, resolved from Supabase) */
 function useSharedKit() {
   useEffect(() => {
+    // v76: a published-project link — resolve the slug from the cloud
+    const mp = /#p=([A-Za-z0-9_-]+)/.exec(window.location.hash);
+    if (mp) {
+      (async () => {
+        try {
+          const doc = await loadPublicProject(mp[1]);
+          if (doc) useGen.getState().hydrateShared(doc as Record<string, unknown>);
+          else console.warn("shared project not found or cloud not configured");
+        } catch (e) {
+          console.warn("project link failed", e);
+        }
+      })();
+      return;
+    }
     const m = /#share=([A-Za-z0-9_-]+)/.exec(window.location.hash);
     if (!m) return;
     (async () => {

@@ -96,6 +96,27 @@ button { font-family: inherit; color: inherit; }
 .menu-pop button:disabled { opacity: 0.45; cursor: default; }
 [data-theme="dark"] .acct-in { background: var(--panel, #16181d); }
 
+/* my projects (v76) — named cloud kits */
+.proj-pop { min-width: 300px; }
+.proj-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px 2px; font-size: 13px; color: var(--ink); }
+.menu-pop button.proj-back { width: auto; padding: 4px; border-radius: 7px; color: var(--ink2); }
+.proj-save { display: flex; align-items: center; gap: 6px; padding: 4px 10px 2px; }
+.acct-in.proj-save-in { flex: 1; width: auto; margin: 6px 0; }
+.menu-pop button.proj-save-btn { width: auto; padding: 8px 11px; font-size: 12.5px; background: var(--soft); border-radius: 8px; }
+.menu-pop button.proj-save-btn:hover { background: var(--line2); }
+.proj-list { max-height: 320px; overflow-y: auto; padding: 2px 0; }
+.proj-row { padding: 8px 10px; border-radius: 9px; }
+.proj-row + .proj-row { border-top: 1px solid var(--line); }
+.proj-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; color: var(--accent, #6366f1); background: color-mix(in srgb, var(--accent, #6366f1) 12%, transparent); padding: 1px 6px; border-radius: 999px; text-transform: none; }
+.proj-meta { font-size: 11px; color: var(--ink3); padding: 1px 0 5px; }
+.acct-in.proj-rename { width: 100%; margin: 2px 0 6px; }
+.proj-actions { display: flex; flex-wrap: wrap; gap: 3px; }
+.menu-pop .proj-actions button { width: auto; gap: 5px; padding: 5px 8px; font-size: 12px; font-weight: 500; border: 1px solid var(--line2); border-radius: 7px; color: var(--ink2); }
+.menu-pop .proj-actions button:hover { background: var(--soft); color: var(--ink); }
+.menu-pop .proj-actions button.proj-del:hover { color: #dc2626; border-color: #dc2626; background: color-mix(in srgb, #dc2626 8%, transparent); }
+.menu-pop .proj-actions button:disabled { opacity: 0.4; }
+
 /* ── body ────────────────────────────────────────────────── */
 .body { display: grid; grid-template-columns: 84px 340px 1fr; min-height: 0; }
 

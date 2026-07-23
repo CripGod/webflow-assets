@@ -570,6 +570,140 @@ export async function signOutCloud(): Promise<void> {
   endSession();
 }
 
+/* ── named projects (v76): the projects table goes live ──────────────
+   A project is a portable, named snapshot of the KIT — the same curated
+   payload the share link carries (store.kitPayload) — stored one row per
+   project in public.projects. It is distinct from the auto-synced
+   workspace: the workspace is "your current desk", projects are "saved
+   files" you keep a library of, open, and (opt-in) publish behind a short
+   #p=<slug> link. RLS keeps every row owner-only unless is_public — the
+   anon key can read a public project by slug, nothing more. */
+
+export type CloudProject = {
+  id: string; name: string; is_public: boolean;
+  share_slug: string | null; updated_at: string; created_at: string;
+};
+
+const PROJECT_COLS = "id, name, is_public, share_slug, updated_at, created_at";
+
+/** Short, unguessable, human-safe slug (no 0/o/1/l ambiguity). */
+function makeSlug(): string {
+  const alpha = "abcdefghijkmnpqrstuvwxyz23456789"; // 32 symbols
+  const bytes = new Uint8Array(9);
+  crypto.getRandomValues(bytes);
+  let s = "";
+  for (const b of bytes) s += alpha[b & 31];
+  return s;
+}
+
+/** True only once signed in and reconciled — the account menu gates the
+    Projects UI on this so calls always carry a session. */
+export function projectsReady(): boolean {
+  return !!session;
+}
+
+export async function listProjects(): Promise<{ projects: CloudProject[]; error: string | null }> {
+  const client = await getClient();
+  if (!client || !session) return { projects: [], error: session ? "Cloud unavailable." : null };
+  const { data, error } = await client.from("projects")
+    .select(PROJECT_COLS).eq("user_id", session.user.id).order("updated_at", { ascending: false });
+  if (error) return { projects: [], error: error.message };
+  return { projects: (data ?? []) as CloudProject[], error: null };
+}
+
+export async function saveProject(name: string, doc: unknown): Promise<{ project: CloudProject | null; error: string | null }> {
+  const client = await getClient();
+  if (!client || !session) return { project: null, error: "Sign in to save projects." };
+  const clean = name.trim().slice(0, 120) || "Untitled kit";
+  const { data, error } = await client.from("projects")
+    .insert({ user_id: session.user.id, name: clean, doc }).select(PROJECT_COLS).maybeSingle();
+  if (error) return { project: null, error: error.message };
+  return { project: data as CloudProject, error: null };
+}
+
+/** Overwrite an existing project with a new kit snapshot ("save changes"). */
+export async function updateProjectDoc(id: string, doc: unknown): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in to save projects.";
+  const { error } = await client.from("projects")
+    .update({ doc, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", session.user.id);
+  return error?.message ?? null;
+}
+
+export async function renameProject(id: string, name: string): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in to rename projects.";
+  const clean = name.trim().slice(0, 120);
+  if (!clean) return "Give the project a name.";
+  const { error } = await client.from("projects")
+    .update({ name: clean, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", session.user.id);
+  return error?.message ?? null;
+}
+
+export async function deleteProject(id: string): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in to delete projects.";
+  const { error } = await client.from("projects").delete().eq("id", id).eq("user_id", session.user.id);
+  return error?.message ?? null;
+}
+
+/** Publish or unpublish. Publishing mints a stable share_slug (once) and
+    retries on the unlikely slug collision; unpublishing keeps the slug so
+    the same link re-activates if the owner republishes. */
+export async function setProjectPublic(id: string, isPublic: boolean): Promise<{ share_slug: string | null; error: string | null }> {
+  const client = await getClient();
+  if (!client || !session) return { share_slug: null, error: "Sign in to share projects." };
+  if (!isPublic) {
+    const { error } = await client.from("projects")
+      .update({ is_public: false, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", session.user.id);
+    return { share_slug: null, error: error?.message ?? null };
+  }
+  const { data: cur, error: readErr } = await client.from("projects")
+    .select("share_slug").eq("id", id).eq("user_id", session.user.id).maybeSingle();
+  if (readErr) return { share_slug: null, error: readErr.message };
+  const existing = (cur?.share_slug as string | null) ?? null;
+  if (existing) {
+    const { error } = await client.from("projects")
+      .update({ is_public: true, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", session.user.id);
+    return { share_slug: existing, error: error?.message ?? null };
+  }
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const slug = makeSlug();
+    const { error } = await client.from("projects")
+      .update({ is_public: true, share_slug: slug, updated_at: new Date().toISOString() })
+      .eq("id", id).eq("user_id", session.user.id);
+    if (!error) return { share_slug: slug, error: null };
+    if (!/duplicate|unique|23505/i.test(error.message)) return { share_slug: null, error: error.message };
+  }
+  return { share_slug: null, error: "Couldn't allocate a share link — try again." };
+}
+
+/** The owner's own project payload (for opening into the editor). */
+export async function loadProjectDoc(id: string): Promise<{ doc: unknown | null; error: string | null }> {
+  const client = await getClient();
+  if (!client || !session) return { doc: null, error: "Sign in to open projects." };
+  const { data, error } = await client.from("projects")
+    .select("doc").eq("id", id).eq("user_id", session.user.id).maybeSingle();
+  if (error) return { doc: null, error: error.message };
+  return { doc: data?.doc ?? null, error: null };
+}
+
+/** A public project by slug — readable by anyone (even signed-out) via the
+    is_public RLS path. Returns null when unconfigured or not found, so a
+    #p= link simply no-ops on a deployment without cloud. */
+export async function loadPublicProject(slug: string): Promise<unknown | null> {
+  const client = await getClient();
+  if (!client) return null;
+  const { data, error } = await client.from("projects")
+    .select("doc").eq("share_slug", slug).eq("is_public", true).maybeSingle();
+  if (error || !data) return null;
+  return data.doc ?? null;
+}
+
+export function publicProjectUrl(slug: string): string {
+  return `${window.location.origin}${window.location.pathname}#p=${slug}`;
+}
+
 /** Data rights: hand the user their complete saved document as JSON. */
 export function downloadMyData() {
   const blob = new Blob([JSON.stringify(collectDoc(), null, 2)], { type: "application/json" });

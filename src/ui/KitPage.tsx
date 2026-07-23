@@ -874,12 +874,7 @@ export function KitPage() {
   /* v67 · Share: the whole kit state rides the URL (deflate + base64url).
      Anyone can view; downloads stay with the owner — real permissions later. */
   const shareKit = async () => {
-    const st = useGen.getState();
-    const payload = {
-      v: 1, cfg: st.cfg, kitName: st.kitName, kitShapes: st.kitShapes, kitDesigns: st.kitDesigns,
-      kitTextFill: st.kitTextFill, kitLabels: st.kitLabels, kitIcons: st.kitIcons, kitSizes: st.kitSizes,
-      kitBar: st.kitBar, kitTextOy: st.kitTextOy, kitTextOx: st.kitTextOx,
-    };
+    const payload = useGen.getState().kitPayload();
     const stream = new Blob([JSON.stringify(payload)]).stream().pipeThrough(new CompressionStream("deflate-raw"));
     const buf = new Uint8Array(await new Response(stream).arrayBuffer());
     let bin = "";

@@ -6,6 +6,7 @@ where every boundary for the later phases already lives. It is updated
 whenever a commercial phase ships.
 
 ## Status: Phase 1 (accounts + cloud saves) — shipped
+## Update: named projects + opt-in showcase (v76) — shipped
 
 ```
 Browser (GitHub Pages, static Vite build)
@@ -18,7 +19,7 @@ Supabase (managed auth + Postgres, RLS everywhere)
    public.profiles                   ← 1:1 with users; plan_id pointer ('free')
    public.plans                      ← capability catalog as data (not code)
    public.workspaces                 ← the cloud save: whole ui-generator-* keyspace
-   public.projects                   ← named saves; private by default; share_slug reserved
+   public.projects                   ← named saves (LIVE, v76); private by default; share_slug publishes
    public.terms_acceptances          ← consent records (version, locale, 13+)
    public.organizations (+members)   ← reserved, deny-all RLS (studio phase)
 ```
@@ -71,6 +72,43 @@ Supabase (managed auth + Postgres, RLS everywhere)
   carries the real acceptance timestamp. Draft Terms/Privacy live at
   `public/legal/` and are linked from the sign-up checkbox.
 
+## Named projects + opt-in showcase (v76)
+
+Phase 1 gave every account one auto-synced document (the workspace — "your
+current desk"). v76 turns on the reserved `public.projects` boundary so an
+account keeps a **library** of named kits — "saved files" beside the desk —
+using only the schema and RLS that already shipped. No server functions, so
+this stays entirely on the free static tier.
+
+- **Payload contract, single-sourced.** A project stores the same curated
+  kit snapshot a share link carries — `store.kitPayload()` (cfg + per-
+  component forks, content, sizing, nudges). `shareKit()` and `saveProject()`
+  now build from that one function, so a project, a `#share=` URL, and a
+  published `#p=` link are byte-identical views of the same kit.
+- **Two load paths, one function.** `store.loadKitPayload(p, {viewer})`:
+  `viewer:true` (a share / public link) hydrates read-only in memory, exactly
+  like a shared kit; `viewer:false` (opening your own project) also persists
+  every field to the keys the app boots from, so the opened kit survives
+  reload and the write-hook syncs it into the workspace. Opening confirms
+  first — it replaces the kit on screen.
+- **CRUD in the single client boundary.** `cloud.ts` gains
+  `listProjects / saveProject / updateProjectDoc / renameProject /
+  deleteProject / setProjectPublic / loadProjectDoc / loadPublicProject`.
+  Every owner call carries `user_id = auth.uid()` and is double-guarded by
+  RLS; the account menu gates the Projects UI on a live session.
+- **Opt-in publish → `share_slug`.** Publishing a project mints a short,
+  unguessable slug once (retried on the unlikely collision) and copies a
+  `#p=<slug>` link. Anyone — even signed-out — can open it read-only via the
+  `is_public` RLS path; the anon key reads that one row and nothing else.
+  Unpublishing keeps the slug so the same link re-activates on republish.
+  This is the "move shares to `projects.share_slug`" upgrade the known-
+  limitations list called for; the self-contained `#share=` URL still works.
+
+Boundaries honored: projects are **private by default**, publishing is an
+explicit per-project act, `plan_id` is untouched (nothing here is gated), and
+no exporter moved — the first *paid* feature still waits for server authority
+(Vercel), never a client flag.
+
 ## Security posture (what is and is not protected)
 
 - The anon key is public by design; **all** access control is row-level
@@ -91,7 +129,7 @@ Supabase (managed auth + Postgres, RLS everywhere)
 | Stripe test mode, billing   | `plans` table; `profiles.plan_id`; annual-only decision     |
 | Entitlement service         | capabilities-as-data in `plans.capabilities` (jsonb)        |
 | Protected exports           | none client-side to remove later — exporters stay free now  |
-| Opt-in showcase             | `projects.is_public` (default false) + `share_slug`         |
+| Opt-in showcase             | SHIPPED (v76): named projects + `is_public`/`share_slug`     |
 | Studio / classroom seats    | `organizations`, `organization_members` (deny-all RLS)      |
 | Data rights                 | Download-my-data in the account menu; deletion via Supabase |
 
@@ -100,8 +138,11 @@ Supabase (managed auth + Postgres, RLS everywhere)
 - Sync is whole-document LWW: two devices editing simultaneously trade the
   document; the server keeps one previous revision. Fine for a single
   designer; revisit before teams.
-- Share links still encode the kit in the URL (pre-cloud mechanism);
-  moving shares to `projects.share_slug` is a natural Phase-5 upgrade.
+- Share links now have two shapes: the self-contained `#share=` URL (the
+  kit deflated into the link, works with no cloud) and, since v76, a
+  published project's short `#p=<share_slug>` link (resolved from the cloud
+  by slug). The `#p=` link needs a cloud-configured deployment to resolve;
+  where cloud is off it simply no-ops and `#share=` remains the fallback.
 - The repo is public and the frontend is on GitHub Pages. Appendix A's
   end-state wants a private repo + Vercel (for server functions and bundle
   privacy). The repo is now Vercel-ready (`vercel.json`, source maps off);
