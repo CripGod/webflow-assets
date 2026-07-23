@@ -993,7 +993,7 @@ const exportActions = [
         rk("segment", "Segment · First", {}, 0),
         rk("slider", "Slider · Low", {}, 0.15),
         rk("progress", "Progress · Full", {}, 1),
-        rk("progress", "Emblem bar · Docked", { dock: {} }, 0.55),
+        rk("emblembar", "Emblem bar", {}, 0.55),
         rk("segbar", "Segmented · 3 of 5", {}, 0.62),
         rk("segbar", "Segmented · Smooth", { bar: { segments: 8, snap: false } }, 0.55),
         rk("vsbar", "VS health bar", {}, 0.72),
@@ -1459,7 +1459,7 @@ const exportActions = [
           <Piece id="progress" caption="Progress" value={0.62} ambient />
         </div>
         <div className="kp-tray">
-          <Piece id="progress" caption="Emblem bar · docked socket" value={0.55} dock={{}} ambient />
+          <Piece id="emblembar" caption="Emblem bar · docked socket" value={0.55} ambient />
         </div>
         <div className="kp-tray">
           <Piece id="segbar" caption="Segmented · snaps to cells" value={0.62} ambient />
@@ -1639,9 +1639,8 @@ const exportActions = [
           <Piece id="telemetry" caption="Telemetry · throttle, brake, speed" scale={0.52} />
         </div>
         <div className="kp-tray kp-axis kp-race">
-          <Piece id="startlights" caption="Start lights · click to arm" value={0.99} scale={0.52} ambient />
         </div>
-        <div className="kp-meta"><span>Speed derives from the value — 0 to 280 across the sweep</span><span>Past 78% the dial enters the red zone and the readout takes the alarm tint</span><span>Kazuri Ring is drawn as a dimensional ribbon — elevation reads from the extruded walls</span><span>Graphs carry live engine data in real games — the traces here are specimens</span><span>Start lights arm pod by pod; zero is lights-out</span></div>
+        <div className="kp-meta"><span>Speed derives from the value — 0 to 280 across the sweep</span><span>Past 78% the dial enters the red zone and the readout takes the alarm tint</span><span>Kazuri Ring is drawn as a dimensional ribbon — elevation reads from the extruded walls</span><span>Graphs carry live engine data in real games — the traces here are specimens</span></div>
       </Sec>
 
       <Chapter n="03" id="parts" label="Build Parts" blurb="The construction vocabulary: parts, containers, assemblies and motion — with downloads." />

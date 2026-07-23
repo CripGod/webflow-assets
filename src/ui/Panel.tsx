@@ -1057,6 +1057,11 @@ export function Panel() {
           <Slider label="Size" value={kitRow.subSize} min={50} max={160} unit="%" onChange={(v) => setKitRow({ subSize: v })} />
           <Slider label="Tracking" value={kitRow.subTrack} min={-5} max={20} unit="" onChange={(v) => setKitRow({ subTrack: v })} />
           <Slider label="Vertical" value={kitRow.subDy} min={-40} max={40} unit="px" onChange={(v) => setKitRow({ subDy: v })} />
+          <label className="check"><input type="checkbox" checked={(kitRow.subColor ?? null) === null}
+            onChange={(e) => setKitRow({ subColor: e.target.checked ? null : "#B7C6DA" })} /> Soft white — the kit's default</label>
+          {kitRow.subColor != null && (
+            <Well label="Line 2 color" value={kitRow.subColor} onChange={(v) => setKitRow({ subColor: v })} />
+          )}
           <div className="sublabel">Leading</div>
           <Slider label="Leading" value={kitRow.lineGap ?? 0} min={-30} max={80} unit="px" onChange={(v) => setKitRow({ lineGap: v })} />
           <Slider label="Block shift" value={kitRow.blockDy ?? 0} min={-24} max={24} unit="px" onChange={(v) => setKitRow({ blockDy: v })} />

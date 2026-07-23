@@ -363,6 +363,8 @@ export interface RowCfg {
   blockDy?: number;
   /** Show the second text line at all (default true). */
   subOn?: boolean;
+  /** Second line's own color; null follows the kit's soft white. */
+  subColor?: string | null;
 }
 export function defaultRow(): RowCfg {
   return {

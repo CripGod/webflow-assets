@@ -1477,7 +1477,7 @@ export interface KitOpts {
    *  group and slot toggles. Explicit label/sub/value still win per instance. */
   row?: {
     title?: string; sub?: string; subOn?: boolean;
-    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number; lineGap?: number; blockDy?: number;
+    titleSize?: number; subSize?: number; titleDy?: number; subDy?: number; lineGap?: number; blockDy?: number; subColor?: string | null;
     titleTrack?: number; subTrack?: number;
     avatar?: boolean; progress?: boolean; action?: boolean; value?: number;
   };
@@ -1731,6 +1731,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          <path d="${roundRect(bx - 2, by + bh * 0.08, fillW + 2, bh * 0.34, bh * 0.17)}" fill="#FFFFFF" opacity="0.3"/>${sfx.over}</g>` : ""}` +
         candyKnob(knobX, knobY, kr, knobC)), bx, trackW);
     }
+    case "emblembar": // first-class docked bar — progress with the socket built in
     case "progress": {
       const w = 520 * k, h = 64 * k;
       const track = build(cfg, state, { x: 39, y: 30, h, fs: 0, iconSize: 0 }, { iconDef: null, label: "", fixedW: w, shapeOverride: sov });
@@ -1761,8 +1762,11 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${bevel}"/><stop offset="1" stop-color="${glow}"/></linearGradient>${pfx.defs}<clipPath id="${gid}w"><path d="${mercP}"/></clipPath></defs>
          ${fw > 1 ? `<g clip-path="url(#${gid}w)">${pfx.open}${mercFill}${pfx.close}
          ${mercGloss}${pfx.over}</g>` : ""}`), bx, trackW);
-      // emblem bar: the docked socket rides the track end, over the fill
-      if (opts.dock) out = applyDock(out, opts.dock, 39, w, 30 + h / 2, h * 1.9);
+      // emblem bar: the docked socket rides the track end, over the fill —
+      // always on for the first-class component (its icon override drives
+      // the emblem), opt-in via bar settings for a plain progress bar
+      const dockO = opts.dock ?? (id === "emblembar" ? { icon: opts.icon, side: "left" as const } : undefined);
+      if (dockO) out = applyDock(out, dockO, 39, w, 30 + h / 2, h * 1.9);
       return out;
     }
     case "segbar": {
@@ -1911,7 +1915,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
           <rect x="${(bx + trackW - halfW * vR + bh * 0.2).toFixed(1)}" y="${(by + bh * 0.06).toFixed(1)}" width="${(halfW * vR + gapPad + inset - bh * 0.2).toFixed(1)}" height="${(bh * 0.3).toFixed(1)}" rx="${(bh * 0.15).toFixed(1)}" fill="#FFFFFF" opacity="0.28"/>` : ""}
         </g>` +
         candyKnob(cxV, 30 + h / 2, h * 0.46, knobC) +
-        `<text x="${cxV.toFixed(1)}" y="${(30 + h / 2 + 1).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(30 * k * typeK).toFixed(1)}" font-weight="800" font-style="italic" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">VS</text>`;
+        `<text x="${(cxV + typeOxK * k).toFixed(1)}" y="${(30 + h / 2 + 1 + typeOyK * k).toFixed(1)}" font-family="'${font}', Inter, sans-serif" font-size="${(30 * k * typeK).toFixed(1)}" font-weight="800" font-style="italic" fill="${darken(bevel, 0.6)}" text-anchor="middle" dominant-baseline="central">VS</text>`;
       return stampTrack(inject(track, parts), bx, trackW);
     }
     case "hotbar": {
@@ -2082,7 +2086,7 @@ export function renderKit(cfg: GenConfig, id: KitComponentId, size: KitSize, sta
            its depth treatment) plus the subtitle's cap height — big display
            type can never crash into line two (universal no-overlap law) */
         (!subOn ? "" :
-          `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + lineAdv + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="rgba(255,255,255,0.55)">${esc(sub)}</text>`) +
+          `<text x="${tx.toFixed(1)}" y="${(30 + inset + 16 * k + lineAdv + ((R2.subDy ?? 0) + (R2.lineGap ?? 0) + (R2.blockDy ?? 0) + (opts.textOy ?? 0)) * k).toFixed(1)}" font-family="Inter, sans-serif" font-size="${fsS.toFixed(1)}" font-weight="600" letter-spacing="${((R2.subTrack ?? 0) / 100).toFixed(3)}em" fill="${R2.subColor ?? "rgba(255,255,255,0.55)"}">${esc(sub)}</text>`) +
         `</g>` +
         (showBar
           ? (() => { const rfx = barFx(gid2, tx, barY, fillW2, 10 * k, 5 * k); return `<defs>${rfx.defs}</defs><path d="${roundRect(tx, barY, barW, 10 * k, 5 * k)}" fill="${wellFill}" opacity="0.9"/>` +
