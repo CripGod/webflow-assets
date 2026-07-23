@@ -210,8 +210,8 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 .bgopt.on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--ink); }
 
 /* ── canvas + right state stack ─────────────────────────── */
-.canvas-wrap { padding: 0; min-width: 0; display: grid; grid-template-columns: 1fr 272px; gap: 0; min-height: 0; }
-.canvas-wrap:not(.kitmode) .stack { padding: 18px 18px 18px 6px; }
+.canvas-wrap { padding: 0; min-width: 0; display: grid; grid-template-columns: 1fr 120px; gap: 0; min-height: 0; }
+.canvas-wrap:not(.kitmode) .stack { padding: 16px 12px 16px 4px; }
 .canvas-wrap.kitmode { padding: 0; grid-template-columns: 1fr; }
 /* the canvas column wraps the scroller AND the floating toolbar, so the
    toolbar stays put while a long page (the Kit sheet) scrolls under it */
@@ -227,12 +227,15 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 .hero-slot { min-height: 480px; display: grid; place-items: center; }
 .hero-slot svg { display: block; max-width: 100%; height: auto; }
 
-.stack { display: flex; flex-direction: column; gap: 16px; overflow-y: auto; padding-bottom: 4px; }
+.stack { display: flex; flex-direction: column; gap: 9px; overflow-y: auto; padding-bottom: 4px; }
 .stack::-webkit-scrollbar { width: 8px; }
 .stack::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 8px; }
-.scard { border: 1px solid var(--line); border-radius: var(--r-card); background: #fff; padding: 16px 16px 14px; }
-.scard-title { font-size: 13px; font-weight: 500; color: var(--ink2); margin-bottom: 12px; }
-.scard-body svg { width: 100%; height: auto; display: block; }
+.scard { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 6px 7px 8px; }
+.scard-title { font-size: 10px; font-weight: 600; color: var(--ink2); margin-bottom: 5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .01em; }
+/* fixed-size thumbnail: the preview scales to fit a stable box, so switching
+   component or shape never reflows the states column (kills the layout jump) */
+.scard-body { height: 56px; display: grid; place-items: center; overflow: hidden; }
+.scard-body svg { width: auto; height: auto; max-width: 100%; max-height: 100%; display: block; }
 
 .zoolbar {
   position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
