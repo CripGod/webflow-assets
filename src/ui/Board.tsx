@@ -20,7 +20,7 @@ const ASSET_GROUPS: { name: string; ids: KitComponentId[] }[] = [
   { name: "Buttons", ids: ["primary", "secondary", "small", "ghost", "iconbtn"] },
   { name: "Containers", ids: ["panel", "header", "tab", "dropdown"] },
   { name: "HUD", ids: ["resource", "chip", "badge", "datarow", "slot", "orb", "ring", "flipclock", "stopwatch", "timerdigits"] },
-  { name: "Controls", ids: ["toggle", "slider", "progress", "segbar", "input", "segment", "checkbox", "radio", "joystick"] },
+  { name: "Controls", ids: ["toggle", "slider", "progress", "segbar", "vsbar", "hotbar", "input", "segment", "checkbox", "radio", "joystick"] },
   { name: "Combat & spatial", ids: ["reticle", "minimap", "ammo", "lives", "bignum"] },
   { name: "Racing", ids: ["speedo", "speedo2", "tacho", "circuit", "leaderboard", "laptimes", "telemetry", "startlights"] },
 ];

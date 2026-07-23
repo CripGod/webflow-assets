@@ -4,6 +4,29 @@ import { Rail, Panel } from "./ui/Panel";
 import { CanvasView } from "./ui/CanvasView";
 import { useGen } from "./generator/store";
 
+/* v67 · shared kits: #share=<deflate+base64url of the kit state>. The link
+   opens straight into the Kit as a viewer — downloads stay with the owner
+   (real permissions come later). */
+function useSharedKit() {
+  useEffect(() => {
+    const m = /#share=([A-Za-z0-9_-]+)/.exec(window.location.hash);
+    if (!m) return;
+    (async () => {
+      try {
+        const b64 = m[1].replace(/-/g, "+").replace(/_/g, "/");
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+        const json = await new Response(stream).text();
+        useGen.getState().hydrateShared(JSON.parse(json));
+      } catch (e) {
+        console.warn("share link failed", e);
+      }
+    })();
+  }, []);
+}
+
 /* When something inside a handler throws, React can leave the UI looking fine
    while every click silently dies — the "app craps out" report. Surface it. */
 function useCrashBanner() {
@@ -20,6 +43,7 @@ function useCrashBanner() {
 
 export function App() {
   const { panelW, setPanelW, undo, redo, theme, phase } = useGen();
+  useSharedKit();
   const dragFrom = useRef<{ x: number; w: number } | null>(null);
   // The Kit is a reading surface — the inspector column steps aside entirely
   // and the guideline sheet becomes the hero. The rail still navigates.

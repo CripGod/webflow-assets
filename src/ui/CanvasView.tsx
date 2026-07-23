@@ -11,7 +11,7 @@ import { BoardView } from "./Board";
 const CAP: Record<GenStateName, string> = { default: "Default", hover: "Hover", pressed: "Pressed", disabled: "Disabled" };
 
 export function CanvasView() {
-  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, kitShapes, kitSizes, kitTextOy, kitTextOx, kitTextFill, kitIcons, kitLabels, kitDesigns, kitRow, kitKind, kitBar, boards, activeBoard, setBoardBg } = useGen();
+  const { cfg, update, zoom, setZoom, panMode, setPanMode, gridStyle, setGridStyle, phase, selectedState, setSelectedState, canvasMode, setCanvasMode, bgImage, setBgImage, focus, setFocus, parentId, kitShapes, kitSizes, kitTextOy, kitTextOx, kitTextFill, kitIcons, kitLabels, kitDesigns, kitRow, kitKind, kitBar, boards, activeBoard, setBoardBg } = useGen();
   const actBd = boards.find((b) => b.id === activeBoard);
   const [gridPop, setGridPop] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -41,8 +41,8 @@ export function CanvasView() {
   const fBar = focus === "progress" || focus === "segbar" ? kitBar[focus] : undefined;
   const fDock = fBar?.dock ? { icon: resolveKitIcon(kitIcons[focus!], undefined), side: fBar.dockSide ?? "left" as const } : undefined;
   const heroSvg = useMemo(
-    () => (focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, textOx: fOx, icon: resolveKitIcon(kitIcons[focus], undefined), label: kitLabels[focus], dock: fDock, bar: fBar, row: focus === "datarow" ? kitRow : undefined, kind: focus === "panel" ? (kitKind ?? undefined) : undefined }) : renderBevel(cfg, displayed)),
-    [cfg, displayed, focus, kitShapes, fSize, fOy, fOx, kitRow, kitKind, kitBar, kitTextFill, kitIcons, kitLabels, kitDesigns]
+    () => (focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, displayed, focus === "toggle" && displayed === "pressed" ? 0 : undefined, kitShapes[focus], { textOy: fOy, textOx: fOx, icon: resolveKitIcon(kitIcons[focus], undefined), label: kitLabels[focus], dock: fDock, bar: fBar, row: focus === "datarow" ? kitRow : undefined, kind: focus === "panel" ? (kitKind ?? undefined) : undefined }) : parentId !== "button" ? renderKit(cfg, parentId, "l", displayed, undefined, kitShapes[parentId], { label: kitLabels[parentId], icon: resolveKitIcon(kitIcons[parentId], undefined) }) : renderBevel(cfg, displayed)),
+    [cfg, displayed, focus, parentId, kitShapes, fSize, fOy, fOx, kitRow, kitKind, kitBar, kitTextFill, kitIcons, kitLabels, kitDesigns]
   );
   // Fixed order, selected included — the stack never reshuffles.
   const sideStates = STATE_NAMES.filter(
@@ -241,7 +241,7 @@ export function CanvasView() {
             <button className={`scard clickable${s === selectedState ? " sel" : ""}`} key={s}
               onClick={() => setSelectedState(s)} title={`Edit ${cap}`} aria-pressed={s === selectedState}>
               <div className="scard-title">{cap}{s === selectedState ? " · editing" : ""}</div>
-              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, s, v, kitShapes[focus], { textOy: fOy, textOx: fOx, icon: resolveKitIcon(kitIcons[focus], undefined), label: kitLabels[focus], dock: fDock, bar: fBar, row: focus === "datarow" ? kitRow : undefined }) : renderBevel(cfg, s) }} />
+              <div className="scard-body" dangerouslySetInnerHTML={{ __html: focus ? renderKit(applyKitTextFill(applyKitDesign(cfg, kitDesigns[focus]), kitTextFill[focus]), focus, fSize, s, v, kitShapes[focus], { textOy: fOy, textOx: fOx, icon: resolveKitIcon(kitIcons[focus], undefined), label: kitLabels[focus], dock: fDock, bar: fBar, row: focus === "datarow" ? kitRow : undefined }) : parentId !== "button" ? renderKit(cfg, parentId, "l", s, v, kitShapes[parentId], { label: kitLabels[parentId], icon: resolveKitIcon(kitIcons[parentId], undefined) }) : renderBevel(cfg, s) }} />
             </button>
           ))}
         </div>
