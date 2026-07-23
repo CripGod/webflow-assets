@@ -948,9 +948,9 @@ export const KIT_SHAPE: Partial<Record<KitComponentId, Shape>> = {
   telemetry: "kenneyRect",
   cardback: "round",         // portrait card — rounded rect reads as a card
   pack: "round",
-  speedo: "round",           // v71 · gauges wear real housings — round shells
-  speedo2: "round",
-  tacho: "round",
+  speedo: "pill",            // v72 · instruments live in CIRCULAR enclosures —
+  speedo2: "pill",           // a pill on a square box is a perfect circle
+  tacho: "pill",
 };
 
 /* Stock glyphs for kit components — canonical Lucide paths, embedded so the
