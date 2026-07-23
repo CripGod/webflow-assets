@@ -185,3 +185,43 @@ create policy "terms_select_own" on public.terms_acceptances
 
 -- organizations / organization_members: RLS enabled, zero policies —
 -- intentionally inaccessible until the studio phase designs access.
+
+-- ── admin flag + shared presets (admin-curated style library) ────────
+-- is_admin gates who may publish shared presets. It is set OUT OF BAND
+-- (SQL / dashboard) — a column-level revoke below makes it impossible for a
+-- client to grant itself admin, even though it may edit its own profile row.
+alter table public.profiles add column if not exists is_admin boolean not null default false;
+revoke update (is_admin) on public.profiles from anon, authenticated;
+
+-- Shared presets: everyone reads them (they appear in the Presets panel for
+-- every user, signed in or not); only admins may write. The payload is a full
+-- GenConfig (same shape a local user preset stores), plus a thumbnail.
+create table if not exists public.presets (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null check (char_length(name) between 1 and 80),
+  cfg        jsonb not null,
+  thumb      text,
+  sort       int not null default 0,
+  created_by uuid references auth.users (id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.presets enable row level security;
+
+drop policy if exists "presets_read_all" on public.presets;
+create policy "presets_read_all" on public.presets for select using (true);
+
+-- writes require the caller's profile to be flagged admin
+drop policy if exists "presets_admin_insert" on public.presets;
+create policy "presets_admin_insert" on public.presets for insert
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+drop policy if exists "presets_admin_update" on public.presets;
+create policy "presets_admin_update" on public.presets for update
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+drop policy if exists "presets_admin_delete" on public.presets;
+create policy "presets_admin_delete" on public.presets for delete
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+
+-- Make yourself an admin (run once, AFTER that account has signed up so its
+-- profile row exists):
+--   update public.profiles set is_admin = true where email = 'chevon@me.com';

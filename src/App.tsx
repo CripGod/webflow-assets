@@ -3,7 +3,22 @@ import { TopBar } from "./ui/TopBar";
 import { Rail, Panel } from "./ui/Panel";
 import { CanvasView } from "./ui/CanvasView";
 import { useGen } from "./generator/store";
-import { loadPublicProject } from "./generator/cloud";
+import { loadPublicProject, onCloudStatus } from "./generator/cloud";
+
+/* Admin-curated shared presets load for everyone once cloud is reachable, and
+   reload when the signed-in identity changes (so admin controls appear). */
+function useCloudPresets() {
+  useEffect(() => {
+    let lastKey = "__init__";
+    return onCloudStatus((s) => {
+      const key = s.state === "off" ? "off" : (s.email ?? "signedout");
+      if (key !== lastKey && (s.state === "synced" || s.state === "signedout" || s.state === "off")) {
+        lastKey = key;
+        void useGen.getState().loadCloudPresets();
+      }
+    });
+  }, []);
+}
 
 /* Shared kits open straight into the Kit as a read-only viewer — downloads
    stay with the owner (real permissions come later). Two link shapes:
@@ -60,6 +75,7 @@ function useCrashBanner() {
 export function App() {
   const { panelW, setPanelW, undo, redo, theme, phase } = useGen();
   useSharedKit();
+  useCloudPresets();
   const dragFrom = useRef<{ x: number; w: number } | null>(null);
   // The Kit is a reading surface — the inspector column steps aside entirely
   // and the guideline sheet becomes the hero. The rail still navigates.

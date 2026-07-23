@@ -109,6 +109,19 @@ explicit per-project act, `plan_id` is untouched (nothing here is gated), and
 no exporter moved — the first *paid* feature still waits for server authority
 (Vercel), never a client flag.
 
+## Admin role + shared presets (v77)
+
+An `is_admin` flag on `profiles` gates the first **server-enforced** capability:
+an admin-curated shared-preset library (`public.presets`). Presets are
+world-readable — they appear in the Presets panel for every visitor, signed in
+or not — and **admin-writable only**, enforced by RLS (the insert/update/delete
+policies require the caller's profile to be `is_admin`), never a client flag.
+`is_admin` is set out of band (SQL / dashboard); a column-level
+`revoke update (is_admin)` makes self-promotion impossible even though a user
+may edit their own profile row. The client's admin check is UI gating only.
+This is the exact shape the paid-entitlement phase will follow: the capability
+lives in the database, the server enforces it, the client only reflects it.
+
 ## Security posture (what is and is not protected)
 
 - The anon key is public by design; **all** access control is row-level
