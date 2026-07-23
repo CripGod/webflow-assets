@@ -76,6 +76,39 @@ data” in the account menu exports the whole document as JSON.
 - Free-tier projects pause after ~1 week of inactivity; the dashboard
   restores them with one click.
 
+## Hide the code: private repo + Vercel (~10 min, zero downtime)
+
+Appendix A's end-state is a **private** repository served by **Vercel**
+(which also hosts the server functions the Stripe/protected-export phases
+need). GitHub Pages cannot serve a private repo on a free plan, so do
+these in this order — Vercel goes live *before* the repo goes private:
+
+1. **Import into Vercel:** vercel.com → sign in with GitHub → Add New →
+   Project → import `CripGod/webflow-assets`. The repo ships a
+   `vercel.json`, so build settings are automatic.
+2. **Set the production branch:** Project → Settings → Git → Production
+   Branch → `claude/game-ui-generator-khedvc` (the branch that's live
+   today). Every push there now deploys automatically.
+3. **Environment variables:** Project → Settings → Environment Variables →
+   add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (same two values
+   as the GitHub secrets). Redeploy.
+4. **Point Supabase at the new home:** Authentication → URL Configuration
+   → set Site URL (and a redirect URL) to your `https://….vercel.app`
+   domain. Add a custom domain in Vercel later if you want one.
+5. **Flip the repo private:** GitHub → Settings → General → Danger Zone →
+   Change visibility → Private. GitHub Pages stops serving; Vercel keeps
+   deploying (its GitHub app retains access to private repos).
+6. Optional cleanup: disable GitHub Pages in repo settings and delete the
+   two `VITE_SUPABASE_*` GitHub secrets — Vercel owns the build now.
+
+What this actually protects: the source, comments, git history, and the
+commercial planning docs in `docs/` — all currently world-readable —
+become private. What it cannot protect (Appendix A's own honesty rule):
+the minified bundle the browser runs remains inspectable; true protection
+for premium assets arrives when exports move into Vercel server functions
+in the Stripe phase. Production source maps are already disabled in
+`vite.config.ts`.
+
 ## What this deliberately does not do yet
 
 Per the business plan's phasing: no Stripe/billing, no entitlement
