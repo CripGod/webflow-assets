@@ -53,12 +53,25 @@ for (const [id, label] of [["grape-jelly", "JELLY"], ["neon-versus", "JELLY"], [
   }
 }
 
-// 2 · every picker preset at default state (thumbs)
+// 2 · every picker preset at default state (thumbs) — the app's exact
+// setPreset recipe: shape + bevel + effects + fresh candy + text retint.
+import { defaultCandy, darken } from "../src/generator/model";
+function retintText(c: any) {
+  const bevel = c.effects.Bevel ?? "#0E9CC9";
+  const glow = c.effects.Glow ?? darken(bevel, -0.4);
+  c.type.outline.color = darken(bevel, 0.5);
+  if (c.type.outline.color2) c.type.outline.color2 = darken(bevel, 0.7);
+  c.type.shadow.color = darken(bevel, 0.62);
+  c.type.glow.color = glow;
+}
 console.log("presets:", PRESETS.map((p: any) => p.id).join(", "));
 for (const p of PRESETS as any[]) {
   try {
     const cfg = defaultConfig();
-    applyPresetCandy(cfg.candy, presetById(p.id));
+    const pr = presetById(p.id);
+    cfg.presetId = p.id; cfg.shape = pr.shape; cfg.bevel = { ...pr.bevel }; cfg.effects = { ...pr.effects };
+    const candy = defaultCandy(); applyPresetCandy(candy, pr); cfg.candy = candy;
+    retintText(cfg);
     renderSet(p.id + "--thumb", cfg, "PLAY", ["default"]);
   } catch (e) {
     console.log(`ERR thumb ${p.id}: ${(e as Error).message.slice(0, 120)}`);
