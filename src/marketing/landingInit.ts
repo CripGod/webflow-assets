@@ -315,12 +315,11 @@ export function initLanding(deps: LandingDeps) {
       };
       let attractTimer = null, reelI = 0;
       const startAttract = () => {
-        if (reduceMotion) return;
         userControlled = false;
         stStatus.textContent = t("prev"); stStatus.classList.remove("is-user");
         playCtl.classList.add("is-on"); pauseCtl.classList.remove("is-on");
         clearInterval(attractTimer);
-        attractTimer = setInterval(() => { reelI = (reelI + 1) % REEL.length; applyReelEntry(REEL[reelI]); }, 2800);
+        attractTimer = setInterval(() => { reelI = (reelI + 1) % REEL.length; applyReelEntry(REEL[reelI]); }, reduceMotion ? 6000 : 2800);
       };
       const takeOver = () => {
         if (userControlled) return;
