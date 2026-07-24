@@ -172,7 +172,7 @@ export function defaultCandy(): CandyTokens {
     innerEdge: { strength: 45, width: 3 },
     innerGlow: { opacity: 55, size: 55, color: null },
     aura: { color: null },
-    gloss: { on: true, height: 42, curve: 26, opacity: 72, softness: 95, layer: "above", fill: "gradient", tint: "#3391b2", tint2: "#DFF7FF" },
+    gloss: { on: true, height: 42, curve: 26, opacity: 72, softness: 95, layer: "below", fill: "gradient", tint: "#3391b2", tint2: "#DFF7FF" },
     specular: { on: true, mode: "anime", size: 32, stretch: 10, intensity: 38, softness: 0, angle: 0, gap: 300, ox: 33, oy: -30 },
     bloom: { opacity: 45, size: 60 },
     contact: { opacity: 32 },
