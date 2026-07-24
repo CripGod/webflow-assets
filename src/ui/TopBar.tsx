@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { CheckCircle2, CloudOff, CloudUpload, Download, Image, Copy, RotateCcw, FileDown, FileUp, FileJson, User, Moon, Sun, Gamepad2, Sparkles, ChevronDown } from "lucide-react";
 import { useGen, hydrate, getDefault } from "@/generator/store";
-import { AccountMenu, useCloudStatus } from "./AccountMenu";
+import { useCloudStatus } from "@/shell/useCloudStatus";
+import { openAuth } from "@/shell/authOverlay";
+import { navigate } from "@/shell/router";
 import { renderBevel } from "@/generator/bevel";
 import { downloadSvg, downloadPng, downloadHtml, downloadSettings, downloadGameKit, copyText } from "@/generator/exportUtils";
 
@@ -13,23 +15,22 @@ function Logo() {
   return <img className="logo" src={logoUrl} alt="PatternBreak" />;
 }
 
-/* A quiet toolbar: brand at the left, an empty center (help now lives in
-   tooltips), and one tight cluster of global actions on the right —
-   save-status, shine, theme, account, and Export. */
+/* A quiet toolbar: brand at the left (now the way back to the front door),
+   an empty center (help lives in tooltips), and one tight cluster of global
+   actions on the right — save-status, shine, theme, account, and Export.
+   The account button opens the shell's AuthOverlay; the old inline
+   AccountMenu popover is retired. */
 export function TopBar() {
   const { cfg, saveStatus, selectedState, theme, setTheme, replaceConfig, shine, setShine } = useGen();
   const cloud = useCloudStatus();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [acctOpen, setAcctOpen] = useState(false);
   const [, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const acctRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-      if (acctRef.current && !acctRef.current.contains(e.target as Node)) setAcctOpen(false);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -57,10 +58,10 @@ export function TopBar() {
 
   return (
     <header className="top">
-      <div className="brand">
+      <button className="brand" onClick={() => navigate("#/")} title="Back to home" aria-label="Back to home">
         <Logo />
         <span className="name">UI Kit Maker</span>
-      </div>
+      </button>
 
       {/* empty center — help now lives in tooltips, not a narrator bar */}
       <div className="top-spacer" />
@@ -88,13 +89,10 @@ export function TopBar() {
           {theme === "dark" ? <Sun size={17} strokeWidth={1.9} /> : <Moon size={17} strokeWidth={1.9} />}
         </button>
 
-        <div ref={acctRef} style={{ position: "relative" }}>
-          <button className={`acct${cloud.state === "synced" ? " on" : ""}`} onClick={() => setAcctOpen(!acctOpen)}
-            aria-label="Account" title={cloud.email ? `Account — ${cloud.email}` : "Account"}>
-            <User size={17} strokeWidth={1.9} />
-          </button>
-          {acctOpen && <AccountMenu onClose={() => setAcctOpen(false)} />}
-        </div>
+        <button className={`acct${cloud.state === "synced" ? " on" : ""}`} onClick={() => openAuth("signin")}
+          aria-label="Account" title={cloud.email ? `Account — ${cloud.email}` : "Account"}>
+          <User size={17} strokeWidth={1.9} />
+        </button>
 
         <div ref={menuRef} style={{ position: "relative" }}>
           <button className="exportbtn" onClick={() => setMenuOpen(!menuOpen)} aria-label="Export and settings" aria-haspopup="menu" aria-expanded={menuOpen}>
