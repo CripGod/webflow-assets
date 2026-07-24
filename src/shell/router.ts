@@ -19,7 +19,7 @@
 
 import { useEffect, useState } from "react";
 
-export type RouteName = "landing" | "app";
+export type RouteName = "landing" | "app" | "terms" | "privacy";
 export type Route = { name: RouteName; viewer: boolean; signin: boolean };
 
 export function parseHash(hash: string): Route {
@@ -29,6 +29,8 @@ export function parseHash(hash: string): Route {
   }
   const path = hash.replace(/^#/, "");
   if (path === "/app") return { name: "app", viewer: false, signin: false };
+  if (path === "/terms") return { name: "terms", viewer: false, signin: false };
+  if (path === "/privacy") return { name: "privacy", viewer: false, signin: false };
   if (path === "/signin") return { name: "landing", viewer: false, signin: true };
   // "", "/", unknown routes, and Supabase auth hashes → landing.
   return { name: "landing", viewer: false, signin: false };
