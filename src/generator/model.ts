@@ -376,8 +376,6 @@ export interface IconDef { lib: string; name: string; viewBox: string; inner: st
 
 export interface IconCfg {
   show: boolean;
-  /** Icon-only pieces mirror the text treatment — fill, outline, effects. */
-  inherit?: boolean;
   def: IconDef | null;
   placement: "left" | "right";
   only: boolean;              // icon-only (hides the label)

@@ -1334,6 +1334,7 @@ export function Panel() {
             </button>
           ))}
         </div>
+        <div className="helper">Icon effects are the icon's own — independent of the Type effects above, so what you set here is exactly what icons do.</div>
       </Section>
 
 
@@ -1347,9 +1348,6 @@ export function Panel() {
           </span>
         }
         summary={<span>{cfg.icon.show && cfg.icon.def ? cfg.icon.def.name : "off"}</span>}>
-        <label className="checkrow"><input type="checkbox" checked={cfg.icon.inherit ?? true}
-          onChange={(e) => update((c) => { c.icon.inherit = e.target.checked; })} /> Inherit text treatment on icon-only pieces</label>
-        <div className="helper">Icon buttons, checks and medallions mirror the label's fill (including gradients), outline and effects. Edit those under <b>Typography</b> — the icons follow. Untick to style icons independently below.</div>
         <label className="fieldbox" style={{ minWidth: 0 }}>
           <span className="fl">Icon library</span>
           <select value={browseLib} aria-label="Icon library" onChange={(e) => setBrowseLib(e.target.value)}>
