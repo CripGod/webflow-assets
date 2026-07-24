@@ -29,7 +29,7 @@
 
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 
-export const TERMS_VERSION = "draft-2026-07-23";
+export const TERMS_VERSION = "v1-2026-07-23";
 
 const SYNC_PREFIX = "ui-generator";
 const K_URL = "forge-cloud-url";        // owner override: Supabase project URL
