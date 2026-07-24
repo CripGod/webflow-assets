@@ -507,8 +507,8 @@ export const LANDING_HTML = `</head>
         <span><strong>UI Kit Maker</strong> by PatternBreak</span>
       </div>
       <div class="footer-links">
-        <a href="#terms">Terms</a>
-        <a href="#privacy">Privacy</a>
+        <a href="#/terms">Terms</a>
+        <a href="#/privacy">Privacy</a>
         <a href="#github">GitHub</a>
       </div>
       <p class="footer-lic" id="footLic"></p>

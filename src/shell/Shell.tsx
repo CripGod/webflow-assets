@@ -3,6 +3,7 @@ import { useRoute } from "./router";
 import { useAuthOverlay, openAuth } from "./authOverlay";
 import { useCloudStatus } from "./useCloudStatus";
 import { Landing } from "@/marketing/Landing";
+import { LegalPage } from "@/marketing/LegalPage";
 
 /* The editor is the heavy chunk (engine + roughjs + three + icon libs). It is
    lazy so the landing route paints without pulling any of it. The dev-only
@@ -59,6 +60,8 @@ export function Shell() {
         <Suspense fallback={<RouteLoading />}>
           <App />
         </Suspense>
+      ) : route.name === "terms" || route.name === "privacy" ? (
+        <LegalPage doc={route.name} />
       ) : (
         <Landing />
       )}
