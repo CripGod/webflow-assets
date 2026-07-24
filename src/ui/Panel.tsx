@@ -198,15 +198,21 @@ function FxToggle({ label, on, onToggle, children }: {
 /* Progressive disclosure — fine-tuning folds behind a NAMED reveal, so heavy
    sections lead with the controls that define the look. The name says what is
    inside before it opens; nothing is generic "advanced". */
+/* Fold state survives section collapse (module map, keyed by label), and an
+   active search force-opens every fold — folded controls must stay findable
+   by the panel search, which matches rendered text. */
+const ADV_OPEN = new Map<string, boolean>();
 function Adv({ label, active, children }: { label: string; active?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(ADV_OPEN.get(label) ?? false);
+  const searching = useGen((s) => s.panelQuery.trim().length > 0);
+  const expanded = open || searching;
   return (
-    <div className={`adv${open ? " open" : ""}`}>
-      <button className="advhead" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <div className={`adv${expanded ? " open" : ""}`}>
+      <button className="advhead" aria-expanded={expanded} onClick={() => { ADV_OPEN.set(label, !open); setOpen(!open); }}>
         <ChevronRight size={14} strokeWidth={2.2} className="advchev" /> {label}
-        {active && !open && <span className="advdot" title="Something in here is set away from its default" />}
+        {active && !expanded && <span className="advdot" title="Something in here is set away from its default" />}
       </button>
-      {open && <div className="advbody">{children}</div>}
+      {expanded && <div className="advbody">{children}</div>}
     </div>
   );
 }
@@ -227,9 +233,16 @@ function NameAction({ icon, label, title, defaultName, placeholder, onCommit }: 
     const n = name.trim();
     if (!n || busy) return;
     setBusy(true);
-    const err = await onCommit(n);
-    setBusy(false);
-    if (err) window.alert(err); else setOpen(false);
+    try {
+      const err = await onCommit(n);
+      if (err) window.alert(err); else setOpen(false);
+    } catch (e) {
+      // a rejected commit (network drop, failed chunk load) must never
+      // strand the field disabled — surface it and leave the name typed
+      window.alert(String(e).slice(0, 200));
+    } finally {
+      setBusy(false);
+    }
   };
   if (!open) return (
     <button className="resetstate" title={title} onClick={() => { setName(defaultName ?? ""); setOpen(true); }}>{icon} {label}</button>
@@ -237,12 +250,15 @@ function NameAction({ icon, label, title, defaultName, placeholder, onCommit }: 
   return (
     <div className="namerow">
       <input ref={inputRef} className="tinput" value={name} placeholder={placeholder ?? "Name…"} maxLength={80} aria-label={label}
-        onChange={(e) => setName(e.target.value)} disabled={busy}
-        onKeyDown={(e) => { if (e.key === "Enter") void commit(); if (e.key === "Escape") setOpen(false); }} />
+        onChange={(e) => setName(e.target.value)} readOnly={busy}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) void commit();
+          if (e.key === "Escape" && !busy) setOpen(false);
+        }} />
       <button className="chipbtn" title="Save" aria-label={`${label} — confirm`} disabled={busy || !name.trim()} onClick={() => void commit()}>
         <CheckCircle2 size={14} strokeWidth={2.2} />
       </button>
-      <button className="chipbtn" title="Cancel" aria-label={`${label} — cancel`} onClick={() => setOpen(false)}>
+      <button className="chipbtn" title="Cancel" aria-label={`${label} — cancel`} disabled={busy} onClick={() => setOpen(false)}>
         <X size={14} strokeWidth={2.2} />
       </button>
     </div>
@@ -1055,7 +1071,7 @@ export function Panel() {
           <Well label="Gloss bottom" value={C.gloss.tint2}
             onChange={(v) => update((c) => { c.candy.gloss.tint2 = v; })} />
         )}
-        <Adv label="Fine-tune gloss">
+        <Adv label="Fine-tune gloss" active={(C.gloss.blend ?? "normal") !== "normal" || C.gloss.layer !== "below"}>
           <label className="fieldbox" style={{ minWidth: 0 }}>
             <span className="fl">Gloss blend mode</span>
             <select value={C.gloss.blend ?? "normal"} aria-label="Gloss blend mode" onChange={(e) => update((c) => { c.candy.gloss.blend = e.target.value as BlendMode; })}>
@@ -1089,7 +1105,7 @@ export function Panel() {
           <Slider label="Size" value={C.specular.size} min={4} max={100} unit="px" onChange={(v) => update((c) => { c.candy.specular.size = v; })} />
           <Slider label="Shape" value={C.specular.stretch} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.stretch = v; })} />
           <Slider label="Intensity" value={C.specular.intensity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.intensity = v; })} />
-          <Adv label="Fine-tune specular">
+          <Adv label="Fine-tune specular" active={(C.specular.blend ?? "normal") !== "normal"}>
             {C.specular.mode !== "anime" && (
               <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
             )}
