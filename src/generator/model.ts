@@ -172,7 +172,7 @@ export function defaultCandy(): CandyTokens {
     innerEdge: { strength: 45, width: 3 },
     innerGlow: { opacity: 55, size: 55, color: null },
     aura: { color: null },
-    gloss: { on: true, height: 42, curve: 26, opacity: 72, softness: 95, layer: "above", fill: "gradient", tint: "#3391b2", tint2: "#DFF7FF" },
+    gloss: { on: true, height: 42, curve: 26, opacity: 72, softness: 95, layer: "below", fill: "gradient", tint: "#3391b2", tint2: "#DFF7FF" },
     specular: { on: true, mode: "anime", size: 32, stretch: 10, intensity: 38, softness: 0, angle: 0, gap: 300, ox: 33, oy: -30 },
     bloom: { opacity: 45, size: 60 },
     contact: { opacity: 32 },
@@ -376,8 +376,6 @@ export interface IconDef { lib: string; name: string; viewBox: string; inner: st
 
 export interface IconCfg {
   show: boolean;
-  /** Icon-only pieces mirror the text treatment — fill, outline, effects. */
-  inherit?: boolean;
   def: IconDef | null;
   placement: "left" | "right";
   only: boolean;              // icon-only (hides the label)
@@ -704,13 +702,14 @@ export function hslHex(h: number, s: number, l: number): string {
    accent temperature. */
 type Harmony = "analogous" | "complementary" | "split" | "triadic" | "monochrome";
 
-export function randomizeConfig(c: GenConfig): GenConfig {
+export function randomizeConfig(c: GenConfig, excludePresetIds: string[] = []): GenConfig {
   const r = (min: number, max: number) => Math.round(min + Math.random() * (max - min));
   // v67: a third of rolls jump to a different preset CONSTRUCTION first
   // (shape, bevel, candy build) so randomize explores the whole wardrobe,
   // then the palette work below recolors it
   if (Math.random() < 0.34) {
-    const pr = PRESETS[Math.floor(Math.random() * PRESETS.length)];
+    const pool = PRESETS.filter((p) => !excludePresetIds.includes(p.id));
+    const pr = (pool.length ? pool : PRESETS)[Math.floor(Math.random() * (pool.length || PRESETS.length))];
     c = { ...c, shape: pr.shape, bevel: { ...pr.bevel } };
     const nc = JSON.parse(JSON.stringify(c.candy)) as CandyTokens;
     applyPresetCandy(nc, pr);

@@ -109,6 +109,32 @@ explicit per-project act, `plan_id` is untouched (nothing here is gated), and
 no exporter moved — the first *paid* feature still waits for server authority
 (Vercel), never a client flag.
 
+## Admin role + shared presets (v77)
+
+An `is_admin` flag on `profiles` gates the first **server-enforced** capability:
+an admin-curated shared-preset library (`public.presets`). Presets are
+world-readable — they appear in the Presets panel for every visitor, signed in
+or not — and **admin-writable only**, enforced by RLS (the insert/update/delete
+policies require the caller's profile to be `is_admin`), never a client flag.
+`is_admin` is set out of band (SQL / dashboard); a column-level
+`revoke update (is_admin)` makes self-promotion impossible even though a user
+may edit their own profile row. The client's admin check is UI gating only.
+This is the exact shape the paid-entitlement phase will follow: the capability
+lives in the database, the server enforces it, the client only reflects it.
+
+Starter presets (the styles that ship in the bundle — formerly "built-in")
+are admin-curatable too: `public.app_settings` (world-readable, admin-writable
+key/value, same RLS shape as presets) holds `hidden_starter_presets`, the ids
+an admin retired. Retired starters disappear from the Presets panel for every
+visitor and are excluded from randomize rolls; an admin-only "Restore removed
+starters" button clears the list. Cloud off → empty list → all starters show.
+
+Curation is a full edit loop: applying a shared preset marks it as the
+Overwrite target (a fresh publish adopts itself as the target), and the
+admin's "Overwrite" action saves the current look back into that preset in
+place — same RLS-gated update path, name kept, thumbnail re-rendered by the
+one shared snapshot recipe publish uses.
+
 ## Security posture (what is and is not protected)
 
 - The anon key is public by design; **all** access control is row-level

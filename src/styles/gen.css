@@ -16,6 +16,8 @@ button { font-family: inherit; color: inherit; }
   --line: #e8eaee; --line2: #dcdfe5;
   --ink: #17181c; --ink2: #5f6673; --ink3: #9aa1ac;
   --soft: #f5f6f8; --card: #fff;
+  /* the one canonical accent — frontdoor.css and the app both read it here */
+  --accent: #6366f1;
   --r-ctl: 12px; --r-card: 16px;
   --shadow-pop: 0 2px 4px rgba(20,22,28,.06), 0 12px 32px rgba(20,22,28,.12);
 }
@@ -27,10 +29,20 @@ button { font-family: inherit; color: inherit; }
   display: flex; align-items: center; gap: 20px; padding: 0 28px;
   border-bottom: 1px solid var(--line); background: #fff;
 }
-.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.brand .logo { width: 46px; height: 46px; flex: none; }
-.brand .name { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
+/* the brand is a button now — it walks back to the front door */
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; text-align: left; }
+.brand .logo { width: 32px; height: 32px; flex: none; }
+.brand .name { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; color: var(--ink); }
 .top-spacer { flex: 1; }
+/* quiet toolbar: one tight cluster of global actions on the right */
+.topcluster { display: flex; align-items: center; gap: 5px; }
+.topcluster .saved { margin-right: 4px; font-size: 13px; }
+.exportbtn {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: 3px; padding: 7px 12px;
+  border: 1px solid var(--line2); border-radius: 9px; background: var(--card); color: var(--ink);
+  font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.exportbtn:hover { background: var(--soft); border-color: var(--line); }
 
 .fieldbox {
   position: relative; border: 1px solid var(--line2); border-radius: var(--r-ctl);
@@ -210,8 +222,8 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 .bgopt.on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--ink); }
 
 /* ── canvas + right state stack ─────────────────────────── */
-.canvas-wrap { padding: 0; min-width: 0; display: grid; grid-template-columns: 1fr 272px; gap: 0; min-height: 0; }
-.canvas-wrap:not(.kitmode) .stack { padding: 18px 18px 18px 6px; }
+.canvas-wrap { padding: 0; min-width: 0; display: grid; grid-template-columns: 1fr 120px; gap: 0; min-height: 0; }
+.canvas-wrap:not(.kitmode) .stack { padding: 16px 12px 16px 4px; }
 .canvas-wrap.kitmode { padding: 0; grid-template-columns: 1fr; }
 /* the canvas column wraps the scroller AND the floating toolbar, so the
    toolbar stays put while a long page (the Kit sheet) scrolls under it */
@@ -227,12 +239,15 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 .hero-slot { min-height: 480px; display: grid; place-items: center; }
 .hero-slot svg { display: block; max-width: 100%; height: auto; }
 
-.stack { display: flex; flex-direction: column; gap: 16px; overflow-y: auto; padding-bottom: 4px; }
+.stack { display: flex; flex-direction: column; gap: 9px; overflow-y: auto; padding-bottom: 4px; }
 .stack::-webkit-scrollbar { width: 8px; }
 .stack::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 8px; }
-.scard { border: 1px solid var(--line); border-radius: var(--r-card); background: #fff; padding: 16px 16px 14px; }
-.scard-title { font-size: 13px; font-weight: 500; color: var(--ink2); margin-bottom: 12px; }
-.scard-body svg { width: 100%; height: auto; display: block; }
+.scard { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 6px 7px 8px; }
+.scard-title { font-size: 10px; font-weight: 600; color: var(--ink2); margin-bottom: 5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .01em; }
+/* fixed-size thumbnail: the preview scales to fit a stable box, so switching
+   component or shape never reflows the states column (kills the layout jump) */
+.scard-body { height: 56px; display: grid; place-items: center; overflow: hidden; }
+.scard-body svg { width: auto; height: auto; max-width: 100%; max-height: 100%; display: block; }
 
 .zoolbar {
   position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
@@ -355,6 +370,24 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 /* ── v7: state editing, hot hero, fx chips, editable map ── */
 .statebadge { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink2); background: var(--soft); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; }
 .resetstate { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line2); background: #fff; border-radius: 9px; height: 30px; padding: 0 11px; font-size: 12px; font-weight: 500; color: var(--ink2); cursor: pointer; align-self: flex-start; }
+/* related actions sit side by side instead of stacking full-width */
+.actionrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.actionrow .resetstate { align-self: auto; }
+.actionrow .fileadd { margin-top: 0; }
+
+/* fine-tuning folds behind a named reveal — sections lead with character.
+   The dot marks a closed fold whose contents sit away from default. */
+.adv { display: flex; flex-direction: column; gap: 14px; }
+.advhead { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; padding: 0; font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer; align-self: flex-start; }
+.advhead:hover { color: var(--ink); }
+.advchev { transition: transform .15s ease; }
+.adv.open .advchev { transform: rotate(90deg); }
+.advbody { display: flex; flex-direction: column; gap: 14px; }
+.advdot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent, #6366f1); }
+
+/* naming happens in place of the button it replaces */
+.namerow { display: flex; align-items: center; gap: 6px; flex: 1 1 100%; min-width: 0; }
+.namerow .tinput { flex: 1; min-width: 0; height: 30px; }
 .resetstate:hover { background: var(--soft); color: var(--ink); }
 .fxrow { display: flex; gap: 8px; flex-wrap: wrap; }
 .fxchip { height: 30px; padding: 0 13px; border-radius: 15px; border: 1px solid var(--line2); background: #fff; font-size: 12.5px; font-weight: 600; color: var(--ink2); cursor: pointer; transition: background .15s; }
@@ -430,6 +463,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   --line: #26282e; --line2: #33363e;
   --ink: #ecedf1; --ink2: #a6adba; --ink3: #6f7683;
   --soft: #23252b; --card: #1b1c21;
+  --accent: #818cf8; /* a step brighter so it carries on dark panels */
 }
 [data-theme="dark"] body { background: #131418; color: var(--ink); }
 [data-theme="dark"] .top, [data-theme="dark"] .menu-pop, [data-theme="dark"] .zoolbar,
@@ -528,6 +562,8 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
 }
 .presetcard:hover { border-color: #c3c8d0; }
 .presetcard.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.presetcard.shared { border-color: color-mix(in srgb, var(--accent, #6366f1) 45%, var(--line2)); }
+.presetcard.shared .presetname { color: var(--accent, #6366f1); }
 .presetcard .presetart { width: 100%; display: grid; place-items: center; overflow: hidden; }
 .presetcard .presetart svg { width: 100%; height: auto; max-height: 74px; display: block; }
 .presetcard .presetname { font-size: 12px; font-weight: 600; color: var(--ink2); }
@@ -913,8 +949,11 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
    (addShine); CSS sweeps it across the viewBox on a calm loop. Percentages
    resolve against the svg viewBox via transform-box, so one rule fits every
    component width. */
-.kit-shine { transform-box: view-box; animation: kit-shine 3.2s cubic-bezier(.33,.1,.3,1) infinite; }
-@keyframes kit-shine { 0% { transform: translateX(0); } 42% { transform: translateX(175%); } 100% { transform: translateX(175%); } }
+.kit-shine { transform-box: view-box; animation: kit-shine var(--shine-dur, 11s) cubic-bezier(.33,.1,.3,1) var(--shine-delay, 0s) infinite; }
+/* a brief glint, then a long rest — each piece carries its own --shine-delay
+   and --shine-dur (set per-piece in KitPage) so the sweep never fires in
+   unison across the screen. */
+@keyframes kit-shine { 0% { transform: translateX(0); } 9%, 100% { transform: translateX(175%); } }
 @media (prefers-reduced-motion: reduce) {
   .kp-mostage, .mo-pulse, .mo-bounce, .mo-glow, .mo-shake, .mo-pop, .mo-press, .mo-slidein, .mo-rise, .kp-ringpulse, .kit-shine, .kp-tnodezone.current::after { animation: none !important; }
   .kit-shine { opacity: 0; }
@@ -1230,7 +1269,7 @@ button.kp-fact { cursor: pointer; }
   position: absolute; top: 2px; right: 4px; display: none; width: 16px; height: 16px; line-height: 14px;
   border-radius: 6px; background: var(--soft); color: var(--ink); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer;
 }
-.shapecard:hover .shapedel { display: block; }
+.shapecard:hover .shapedel, .presetcard:hover .shapedel { display: block; }
 
 @media (max-width: 1080px) {
   .kp-hero2 { grid-template-columns: 1fr; }
@@ -1949,17 +1988,9 @@ button.inv2-slot:hover { border-color: var(--inv-acc); color: var(--st-ink); }
 /* parent-eligibility error */
 .parenterr { color: #F5A66B; border-left: 2px solid #F5A66B; padding-left: 8px; }
 
-/* global shine sweep — a soft specular band gliding over every live piece */
-.kp-shine .kp-live { position: relative; overflow: hidden; }
-.kp-shine .kp-live::after {
-  content: ""; position: absolute; inset: -30% -60%; pointer-events: none;
-  background: linear-gradient(115deg, transparent 42%, rgba(255,255,255,0.16) 50%, rgba(255,255,255,0.34) 52%, rgba(255,255,255,0.16) 54%, transparent 62%);
-  transform: translateX(-70%);
-  animation: kpShine 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  mix-blend-mode: screen;
-}
-@keyframes kpShine { 0% { transform: translateX(-70%); } 55% { transform: translateX(70%); } 100% { transform: translateX(70%); } }
-@media (prefers-reduced-motion: reduce) { .kp-shine .kp-live::after { animation: none; display: none; } }
+/* The global shine now routes through the clipped SVG band (addShine +
+   .kit-shine), so it is masked to the component face and staggered per piece.
+   The old unclipped card-overlay sweep (.kp-shine .kp-live::after) is retired. */
 
 /* claim celebration: white-hot ignition + themed particle burst */
 .fx-igniting { position: relative; }

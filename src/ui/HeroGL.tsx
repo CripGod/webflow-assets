@@ -124,6 +124,11 @@ interface Rig {
   disposables: { dispose(): void }[];
 }
 
+// The schematic's resting viewing angle (radians). It loads here and holds
+// still — the reference exploded-diagram view — until the user drags it.
+const BASE_YAW = 0.48;    // horizontal rotation (y) — a touch more face-on
+const BASE_PITCH = 0.035; // vertical tilt (x) — flatter, matches the reference
+
 export function HeroGL() {
   const { cfg } = useGen();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -162,7 +167,7 @@ export function HeroGL() {
 
     const group = new THREE.Group();
     group.position.set(-1.12, 0.05, 0);
-    group.rotation.set(0.07, 0.52, 0);
+    group.rotation.set(BASE_PITCH, BASE_YAW, 0);
     scene.add(group);
 
     const disposables: { dispose(): void }[] = [];
@@ -268,9 +273,9 @@ export function HeroGL() {
     const railBot = mk("line", { stroke: "currentColor", "stroke-width": "1", opacity: "0.5" });
     const railTicks = [0, 1, 2, 3].map(() => mk("line", { stroke: "currentColor", "stroke-width": "1", opacity: "0.5" }));
     const railTopText = mk("text", { fill: "currentColor", "font-size": "12", "letter-spacing": "0.08em", "text-anchor": "middle", opacity: "0.75" });
-    railTopText.textContent = "128.00";
+    railTopText.textContent = "128.0";
     const railBotText = mk("text", { fill: "currentColor", "font-size": "12", "letter-spacing": "0.08em", "text-anchor": "middle", opacity: "0.75" });
-    railBotText.textContent = "96.00";
+    railBotText.textContent = "96.0";
 
     let W = 10, H = 10;
     const fit = () => {
@@ -281,8 +286,17 @@ export function HeroGL() {
       overlay.setAttribute("viewBox", `0 0 ${W} ${H}`);
     };
     fit();
-    const ro = new ResizeObserver(() => { fit(); alignSats(); });
+    // below this width the right-side satellites (icon token / progress / panel)
+    // clip against the edge — hide them so the diagram stays clean
+    const SAT_MIN_W = 760;
+    const updateSats = () => {
+      const show = wrap.clientWidth >= SAT_MIN_W;
+      satGroup.visible = show;
+      satLabelRefs.current.forEach((lab) => { if (lab) lab.style.display = show ? "" : "none"; });
+    };
+    const ro = new ResizeObserver(() => { fit(); alignSats(); updateSats(); });
     ro.observe(wrap);
+    updateSats();
 
     const v = new THREE.Vector3();
     const proj = (local: THREE.Vector3, host: THREE.Object3D) => {
@@ -403,6 +417,16 @@ export function HeroGL() {
     let dragging = false, lastX = 0, lastY = 0, velX = 0, velY = 0;
     let userYaw = 0, userPitch = 0;
     const clampP = (p2: number) => Math.max(-0.55, Math.min(0.7, p2));
+    // the last angle you drag the schematic to persists as its default
+    const ANGLE_KEY = "ui-generator-schematic-angle";
+    let savedSig = "";
+    try {
+      const a = JSON.parse(localStorage.getItem(ANGLE_KEY) || "null");
+      if (a && typeof a.yaw === "number" && typeof a.pitch === "number") {
+        userYaw = a.yaw; userPitch = clampP(a.pitch);
+        savedSig = userYaw.toFixed(3) + "," + userPitch.toFixed(3);
+      }
+    } catch { /* ignore */ }
     const onDown = (e: PointerEvent) => {
       dragging = true; lastX = e.clientX; lastY = e.clientY; velX = 0; velY = 0;
       wrap.classList.add("kp-gldrag");
@@ -436,9 +460,19 @@ export function HeroGL() {
         userYaw += velX;
         userPitch = clampP(userPitch + velY);
         velX *= 0.94; velY *= 0.94;
+        // once it settles, remember this angle as the new default
+        if (Math.abs(velX) < 0.0002 && Math.abs(velY) < 0.0002) {
+          const sig = userYaw.toFixed(3) + "," + userPitch.toFixed(3);
+          if (sig !== savedSig) {
+            savedSig = sig;
+            try { localStorage.setItem(ANGLE_KEY, JSON.stringify({ yaw: userYaw, pitch: userPitch })); } catch { /* ignore */ }
+          }
+        }
       }
-      group.rotation.y = 0.52 + Math.sin(t * 0.19) * 0.11 + userYaw;
-      group.rotation.x = 0.07 + Math.sin(t * 0.13) * 0.025 + userPitch;
+      // rests at a fixed viewing angle on load (no auto-wobble) — the schematic
+      // loads square to the reference view; user drag still rotates it freely
+      group.rotation.y = BASE_YAW + userYaw;
+      group.rotation.x = BASE_PITCH + userPitch;
       layerMeshes.forEach((pl, i) => { pl.position.y = pl.userData.baseY * (1 + Math.sin(t * 0.5 + i * 0.9) * 0.045); });
       glowMat.opacity = 0.7 + Math.sin(t * 0.9) * 0.22;
       sats.forEach((m2, i) => { m2.position.y = m2.userData.baseY + Math.sin(t * 0.42 + i * 1.9) * 0.05; });

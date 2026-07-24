@@ -982,9 +982,6 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   const SP = C.specular;
   const spSize = SP.size * K;
   const spOp = (SP.intensity / 100) * (disabled ? 0.25 : 1);
-  const spX = faceCx + lx * fw * 0.34 + (SP.ox / 100) * fw * 0.4;
-  const spY = faceCy + ly * fh * 0.3 + (SP.oy / 100) * fh * 0.4;
-  const spRot = clamp((90 - A) * 0.35, -40, 40) + SP.angle;
   const spAspect = clamp(SP.stretch / 100, 0.1, 1);
   const soft01 = clamp(SP.softness / 100, 0, 1);
   const effSoft = SP.mode === "hard" ? Math.min(soft01, 0.15)
@@ -993,31 +990,65 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     : soft01;
   const spRx = SP.mode === "line" ? spSize * 2.1 : spSize;
   const spRy = SP.mode === "line" ? Math.max(1.6, spSize * 0.6 * spAspect) : Math.max(2, spSize * spAspect);
+  /* v80: every streak mode rides the silhouette. The mark is a stroke of an
+     inset copy of the shell outline (so it bends with pills, crests and
+     wavy shapes by construction), cut to a streak by a soft horizontal
+     window mask. ox travels ±42% of the face — edge to edge; oy maps to how
+     deep below the shell edge the band sits. Sweep keeps its full ring. */
+  const bandCx = faceCx + lx * fw * 0.22 + (SP.ox / 100) * fw * 0.85;
+  const bandInset = bwF * 0.55 + 2 + clamp((SP.oy + 50) / 100, 0, 1) * fh * 0.30;
+  const bandW = Math.max(2, spRy * 1.7);
+  const bandY = y + bandInset + bandW / 2; // approximate top-edge depth for satellites
+  const litTop = ly <= 0.15; // key light above (or near-horizontal) lights the top arc
   let specular = "";
+  let specularMaskDefs = "";
   if (SP.on && spOp > 0.01 && spSize > 0.5) {
-    if (SP.mode === "anime") {
-      // stylized crisp double-bar highlight: one long swoosh + one short block
-      const bh = Math.max(3, spSize * 0.9 * Math.max(spAspect, 0.28));
-      const b1w = spSize * 2.2, b2w = Math.max(bh, spSize * 0.66);
-      const gapPx = b2w * 0.5 * (SP.gap / 100);
-      specular = `<g transform="rotate(${spRot.toFixed(1)} ${spX.toFixed(1)} ${spY.toFixed(1)})" opacity="${spOp.toFixed(2)}">
-        <rect x="${(spX - b1w / 2 - b2w * 0.75).toFixed(1)}" y="${(spY - bh / 2).toFixed(1)}" width="${b1w.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${hiC}"/>
-        <rect x="${(spX + b1w / 2 - b2w * 0.75 + gapPx).toFixed(1)}" y="${(spY - bh / 2).toFixed(1)}" width="${b2w.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${hiC}"/>
-      </g>`;
-    } else if (SP.mode === "sweep") {
+    if (SP.mode === "sweep") {
       // reflective event hugging the shell's edge curve on the lit side
       const swW = Math.max(2, spSize * 0.32);
       const sweepP = insetShape(shape, outer, x, y, w, h, bwF * 0.55, Math.max(0, D.bevel.softness - 4));
       specular = `<path d="${sweepP}" fill="none" stroke="url(#${id}sw)" stroke-width="${swW.toFixed(1)}" opacity="${spOp.toFixed(2)}"/>`;
     } else {
-      const main = `<ellipse cx="${spX.toFixed(1)}" cy="${spY.toFixed(1)}" rx="${spRx.toFixed(1)}" ry="${spRy.toFixed(1)}" fill="url(#${id}sp)" opacity="${spOp.toFixed(2)}"/>`;
+      const bandP = insetShape(shape, outer, x, y, w, h, bandInset, Math.max(0, D.bevel.softness - 4));
+      // half-plane clip keeps the band on the lit arc only
+      const halfY1 = litTop ? y - 80 : faceCy + bandW * 0.4;
+      const halfY2 = litTop ? faceCy + bandW * 0.4 : y + h + 80;
+      const feather = SP.mode === "anime" ? 0.1 : clamp(0.16 + effSoft * 0.34, 0.1, 0.5);
+      // window gradient(s) in user space; SP.angle tilts the cut ends
+      const win = (gid: string, cx2: number, halfW: number) => `<linearGradient id="${gid}" gradientUnits="userSpaceOnUse"
+        x1="${(cx2 - halfW).toFixed(1)}" y1="0" x2="${(cx2 + halfW).toFixed(1)}" y2="0"
+        gradientTransform="rotate(${(SP.angle * 0.5).toFixed(1)} ${cx2.toFixed(1)} ${bandY.toFixed(1)})">
+        <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+        <stop offset="${feather.toFixed(2)}" stop-color="#fff" stop-opacity="1"/>
+        <stop offset="${(1 - feather).toFixed(2)}" stop-color="#fff" stop-opacity="1"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      </linearGradient>`;
+      const maskRect = (gid: string) => `<rect x="${(x - 40).toFixed(1)}" y="${halfY1.toFixed(1)}" width="${(w + 80).toFixed(1)}" height="${(halfY2 - halfY1).toFixed(1)}" fill="url(#${gid})"/>`;
+      let windows = "";
+      if (SP.mode === "anime") {
+        // stylized crisp double-bar: one long swoosh + one short block chasing it
+        const b2w = Math.max(3, spSize * 0.66);
+        const gapPx = b2w * 0.5 * (SP.gap / 100);
+        const longC = bandCx - b2w * 0.75, longR = spSize * 1.1;
+        const shortC = longC + longR + gapPx + b2w / 2;
+        specularMaskDefs = win(`${id}spw1`, longC, longR) + win(`${id}spw2`, shortC, b2w / 2);
+        windows = maskRect(`${id}spw1`) + maskRect(`${id}spw2`);
+      } else {
+        const halfW = spRx * (SP.mode === "line" ? 1.15 : 1.9);
+        specularMaskDefs = win(`${id}spw1`, bandCx, halfW);
+        windows = maskRect(`${id}spw1`);
+      }
+      specularMaskDefs += `<mask id="${id}spm">${windows}</mask>`;
+      const band = `<path d="${bandP}" fill="none" stroke="${hiC}" stroke-width="${bandW.toFixed(1)}" opacity="${spOp.toFixed(2)}" mask="url(#${id}spm)"/>`;
+      // dual/hard keep their small companion accents, floating off the band
       const dualGap = SP.gap / 100;
+      const satDir = litTop ? 1 : -1;
       const sat = SP.mode === "dual"
-        ? `<ellipse cx="${(spX - spRx * 1.8 * dualGap).toFixed(1)}" cy="${(spY + spRy * 2.2 * dualGap).toFixed(1)}" rx="${(spRx * 0.42).toFixed(1)}" ry="${(spRy * 0.5).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.8).toFixed(2)}"/>`
+        ? `<ellipse cx="${(bandCx - spRx * 1.8 * dualGap).toFixed(1)}" cy="${(bandY + satDir * spRy * 2.6 * dualGap).toFixed(1)}" rx="${(spRx * 0.42).toFixed(1)}" ry="${(spRy * 0.5).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.8).toFixed(2)}"/>`
         : SP.mode === "hard"
-          ? `<ellipse cx="${(spX - spRx * 1.6).toFixed(1)}" cy="${(spY + spRy * 1.9).toFixed(1)}" rx="${(spRx * 0.3).toFixed(1)}" ry="${(spRy * 0.4).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.6).toFixed(2)}"/>`
+          ? `<ellipse cx="${(bandCx - spRx * 1.6).toFixed(1)}" cy="${(bandY + satDir * spRy * 2.2).toFixed(1)}" rx="${(spRx * 0.3).toFixed(1)}" ry="${(spRy * 0.4).toFixed(1)}" fill="url(#${id}sp)" opacity="${(spOp * 0.6).toFixed(2)}"/>`
           : "";
-      specular = `<g transform="rotate(${spRot.toFixed(1)} ${spX.toFixed(1)} ${spY.toFixed(1)})">${main}${sat}</g>`;
+      specular = band + sat;
     }
   }
 
@@ -1106,12 +1137,15 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   if (iFx.shadow) iFilters.push(`drop-shadow(0 2px 1.5px rgba(0,0,0,0.4))`);
   if (iFx.glow && !disabled) iFilters.push(`drop-shadow(0 0 5px ${glowC}) drop-shadow(0 0 12px ${hexRgba(glowC, 0.6)})`);
   const iconFilter = iFilters.length ? iFilters.join(" ") : undefined;
-  // explicit kit icons (icon button) inherit the typography treatment:
-  // same fill resolution and the same effect filter as the label
-  const inheritTypo = (cfg.icon.inherit ?? true) && opts.iconDef !== undefined && !!iconDef && !showText;
+  // explicit kit icons (icon button) inherit the typography COLOR treatment
+  // (fill/gradient/outline) unless a custom color is set. Effects, opacity
+  // and rotation are always the icon's own controls — never the type's —
+  // so what the Icons panel shows is exactly what icons do.
+  const inheritTypo = !cfg.icon.color && opts.iconDef !== undefined && !!iconDef && !showText;
   const iconColor = disabled ? "#A7AAB4"
+    : cfg.icon.color ? P(cfg.icon.color)
     : inheritTypo ? (T2.fillMode === "auto" ? autoLabel : P(T2.fill))
-    : cfg.icon.color ? P(cfg.icon.color) : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
+    : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
 
 
   /* layout — content centers inside the text-safe area, not against the full
@@ -1237,6 +1271,7 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
     <stop offset="${clamp(0.92 - effSoft * 0.35, 0.2, 0.95).toFixed(2)}" stop-color="${hiC}" stop-opacity="${(0.5 - effSoft * 0.25).toFixed(2)}"/>
     <stop offset="1" stop-color="${hiC}" stop-opacity="0"/>
   </radialGradient>
+  ${specularMaskDefs}
   ${SP.mode === "sweep" ? `<linearGradient id="${id}sw" ${axis}>
     <stop offset="0" stop-color="${hiC}" stop-opacity="0"/>
     <stop offset="${(0.5 + 0.22 * (1 - effSoft)).toFixed(2)}" stop-color="${hiC}" stop-opacity="0"/>
@@ -1292,11 +1327,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${showText && T2.stripes?.on ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tst)" opacity="${clamp((T2.stripes.opacity ?? 30) / 100, 0, 1).toFixed(2)}" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
       ${glintsLayer}
       ${iconDef ? (inheritTypo
-        ? `<g${prims.length ? ` filter="url(#${id}tf)"` : ""}>${
+        ? `<g${iconFilter ? ` style="filter:${iconFilter}"` : ""}${cfg.icon.opacity < 100 ? ` opacity="${(cfg.icon.opacity / 100).toFixed(2)}"` : ""}>${
             T2.outline.on && !disabled
-              ? iconGroup(iconDef, iconX, iconY, iconSize, T2.outline.color2 ? `url(#${id}og)` : P(T2.outline.color), { strokeWidth: cfg.icon.strokeWidth / 10 + T2.outline.width * 0.85 })
+              ? iconGroup(iconDef, iconX, iconY, iconSize, T2.outline.color2 ? `url(#${id}og)` : P(T2.outline.color), { strokeWidth: cfg.icon.strokeWidth / 10 + T2.outline.width * 0.85, rotation: cfg.icon.rotation })
               : ""
-          }${iconGroup(iconDef, iconX, iconY, iconSize, !disabled && T2.fillMode === "gradient" ? `url(#${id}tg)` : iconColor, { strokeWidth: cfg.icon.strokeWidth / 10 })}</g>`
+          }${iconGroup(iconDef, iconX, iconY, iconSize, !disabled && T2.fillMode === "gradient" ? `url(#${id}tg)` : iconColor, { strokeWidth: cfg.icon.strokeWidth / 10, rotation: cfg.icon.rotation })}</g>`
         : iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
             strokeWidth: cfg.icon.strokeWidth / 10,
             opacity: (cfg.icon.opacity / 100),

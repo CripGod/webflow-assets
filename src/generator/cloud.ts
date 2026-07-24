@@ -704,6 +704,95 @@ export function publicProjectUrl(slug: string): string {
   return `${window.location.origin}${window.location.pathname}#p=${slug}`;
 }
 
+/* ── admin + shared presets ──────────────────────────────────────────
+   Shared presets are an admin-curated style library that shows in the
+   Presets panel for every user. is_admin lives on the profile and is set
+   out-of-band (SQL); RLS enforces that only admins may write presets — the
+   client's admin check below is UI gating only, never the security boundary. */
+
+export type CloudPreset = {
+  id: string; name: string; cfg: unknown; thumb: string | null; sort: number; created_at: string;
+};
+
+/** Is the signed-in user an admin? Reads their own profile row (RLS-scoped). */
+export async function amIAdmin(): Promise<boolean> {
+  const client = await getClient();
+  if (!client || !session) return false;
+  const { data, error } = await client.from("profiles").select("is_admin").eq("id", session.user.id).maybeSingle();
+  return !error && !!data?.is_admin;
+}
+
+/** Every shared preset — readable by anyone (even signed-out) when cloud is
+    configured. Returns [] when unconfigured, so the local build is unaffected. */
+export async function listCloudPresets(): Promise<CloudPreset[]> {
+  const client = await getClient();
+  if (!client) return [];
+  const { data, error } = await client.from("presets")
+    .select("id, name, cfg, thumb, sort, created_at")
+    .order("sort", { ascending: true }).order("created_at", { ascending: true });
+  if (error) return [];
+  return (data ?? []) as CloudPreset[];
+}
+
+/** Publish a config as a shared preset (admin only — RLS enforces). */
+export async function publishCloudPreset(name: string, cfg: unknown, thumb: string | null): Promise<{ preset: CloudPreset | null; error: string | null }> {
+  const client = await getClient();
+  if (!client || !session) return { preset: null, error: "Sign in as an admin to publish presets." };
+  const { data, error } = await client.from("presets")
+    .insert({ name: name.trim().slice(0, 80) || "Preset", cfg, thumb, created_by: session.user.id })
+    .select("id, name, cfg, thumb, sort, created_at").maybeSingle();
+  if (error) return { preset: null, error: error.message };
+  return { preset: data as CloudPreset, error: null };
+}
+
+/** Overwrite a shared preset's look in place (admin only — RLS enforces).
+    The name stays; only the recipe and thumbnail move. */
+export async function updateCloudPreset(id: string, cfg: unknown, thumb: string | null): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in as an admin to edit presets.";
+  const { error } = await client.from("presets")
+    .update({ cfg, thumb, updated_at: new Date().toISOString() }).eq("id", id);
+  return error?.message ?? null;
+}
+
+export async function renameCloudPreset(id: string, name: string): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in to edit presets.";
+  const clean = name.trim().slice(0, 80);
+  if (!clean) return "Give the preset a name.";
+  const { error } = await client.from("presets").update({ name: clean, updated_at: new Date().toISOString() }).eq("id", id);
+  return error?.message ?? null;
+}
+
+export async function deleteCloudPreset(id: string): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in to delete presets.";
+  const { error } = await client.from("presets").delete().eq("id", id);
+  return error?.message ?? null;
+}
+
+/* Starter presets ship in the bundle, but an admin can retire them for every
+   visitor: the retired ids live in app_settings (world-readable, admin-
+   writable — same RLS shape as presets). Cloud off → empty list → all show. */
+const HIDDEN_STARTERS_KEY = "hidden_starter_presets";
+
+export async function listHiddenStarters(): Promise<string[]> {
+  const client = await getClient();
+  if (!client) return [];
+  const { data, error } = await client.from("app_settings")
+    .select("value").eq("key", HIDDEN_STARTERS_KEY).maybeSingle();
+  if (error || !Array.isArray(data?.value)) return [];
+  return (data.value as unknown[]).filter((x): x is string => typeof x === "string");
+}
+
+export async function setHiddenStarters(ids: string[]): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in as an admin to curate starter presets.";
+  const { error } = await client.from("app_settings")
+    .upsert({ key: HIDDEN_STARTERS_KEY, value: ids, updated_at: new Date().toISOString() });
+  return error?.message ?? null;
+}
+
 /** Data rights: hand the user their complete saved document as JSON. */
 export function downloadMyData() {
   const blob = new Blob([JSON.stringify(collectDoc(), null, 2)], { type: "application/json" });

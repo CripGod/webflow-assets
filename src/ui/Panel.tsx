@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Search as SearchIcon, X, Settings, HelpCircle, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Dices, Layers, Type, LayoutGrid, Search, Search as SearchIcon, X, Settings, Plus, Minus, RotateCcw, Hammer, PenTool, Trash2, Copy, ArrowUpDown, LibraryBig, CheckCircle2, Shapes, Palette, Sun, Box, Lock, LockOpen, Upload, Globe, Star } from "lucide-react";
 import { useGen } from "@/generator/store";
 import { PRESETS, EFFECT_ROLES, ROLE_HINT, STATE_NAMES, GAME_FONTS, TEXT_PRESETS, SPECULAR_MODES, PATTERN_TYPES, SHAPES, ICONS_ENABLED, KIT_COMPONENTS, KIT_SHAPE, BLEND_MODES, defaultStates, applyKitDesign, applyTextPreset, darken, registerCustomFont, pickDesign, fontByName, clampWeight , defaultBarFx, effKitSize, DESIGN_KEYS, presetById, designDiff, mergeKitDesign } from "@/generator/model";
 import type { GenStateName, BlendMode, PatternType, KitComponentId } from "@/generator/model";
@@ -61,7 +61,7 @@ const GROUPS: Record<string, string[]> = {
 };
 
 export function Rail() {
-  const { sectionFilter, setSectionFilter, phase, setPhase, helpOn, setHelpOn } = useGen();
+  const { sectionFilter, setSectionFilter, phase, setPhase } = useGen();
   const items = [
     { id: "states", Icon: Globe, label: "Global & states" },
     { id: "style", Icon: Layers, label: "Style preset" },
@@ -108,8 +108,6 @@ export function Rail() {
       ))}
       <span className="gap" />
       <button title="Settings" aria-label="Settings"><Settings size={22} strokeWidth={1.7} /></button>
-      <button title="Help — live hints in the top bar while you roll over controls" aria-label="Help"
-        className={helpOn ? "on" : ""} onClick={() => setHelpOn(!helpOn)}><HelpCircle size={22} strokeWidth={1.7} /></button>
     </nav>
   );
 }
@@ -197,6 +195,76 @@ function FxToggle({ label, on, onToggle, children }: {
   );
 }
 
+/* Progressive disclosure — fine-tuning folds behind a NAMED reveal, so heavy
+   sections lead with the controls that define the look. The name says what is
+   inside before it opens; nothing is generic "advanced". */
+/* Fold state survives section collapse (module map, keyed by label), and an
+   active search force-opens every fold — folded controls must stay findable
+   by the panel search, which matches rendered text. */
+const ADV_OPEN = new Map<string, boolean>();
+function Adv({ label, active, children }: { label: string; active?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(ADV_OPEN.get(label) ?? false);
+  const searching = useGen((s) => s.panelQuery.trim().length > 0);
+  const expanded = open || searching;
+  return (
+    <div className={`adv${expanded ? " open" : ""}`}>
+      <button className="advhead" aria-expanded={expanded} onClick={() => { ADV_OPEN.set(label, !open); setOpen(!open); }}>
+        <ChevronRight size={14} strokeWidth={2.2} className="advchev" /> {label}
+        {active && !expanded && <span className="advdot" title="Something in here is set away from its default" />}
+      </button>
+      {expanded && <div className="advbody">{children}</div>}
+    </div>
+  );
+}
+
+/* Naming happens in place — the button becomes a small name field with
+   confirm/cancel, replacing the browser prompt() dialog. Enter commits,
+   Escape backs out; an async commit can veto with an error message. */
+function NameAction({ icon, label, title, defaultName, placeholder, onCommit }: {
+  icon: React.ReactNode; label: string; title?: string; defaultName?: string; placeholder?: string;
+  onCommit: (name: string) => void | Promise<string | null>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (open) { inputRef.current?.focus(); inputRef.current?.select(); } }, [open]);
+  const commit = async () => {
+    const n = name.trim();
+    if (!n || busy) return;
+    setBusy(true);
+    try {
+      const err = await onCommit(n);
+      if (err) window.alert(err); else setOpen(false);
+    } catch (e) {
+      // a rejected commit (network drop, failed chunk load) must never
+      // strand the field disabled — surface it and leave the name typed
+      window.alert(String(e).slice(0, 200));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) return (
+    <button className="resetstate" title={title} onClick={() => { setName(defaultName ?? ""); setOpen(true); }}>{icon} {label}</button>
+  );
+  return (
+    <div className="namerow">
+      <input ref={inputRef} className="tinput" value={name} placeholder={placeholder ?? "Name…"} maxLength={80} aria-label={label}
+        onChange={(e) => setName(e.target.value)} readOnly={busy}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) void commit();
+          if (e.key === "Escape" && !busy) setOpen(false);
+        }} />
+      <button className="chipbtn" title="Save" aria-label={`${label} — confirm`} disabled={busy || !name.trim()} onClick={() => void commit()}>
+        <CheckCircle2 size={14} strokeWidth={2.2} />
+      </button>
+      <button className="chipbtn" title="Cancel" aria-label={`${label} — cancel`} disabled={busy} onClick={() => setOpen(false)}>
+        <X size={14} strokeWidth={2.2} />
+      </button>
+    </div>
+  );
+}
+
 function AngleDial({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const fromEvent = (e: React.PointerEvent) => {
@@ -256,7 +324,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update: updateParent, setPreset: setPresetParent, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
+  const { cfg: cfgMaster, update: updateParent, setPreset: setPresetParent, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, cloudPresets, isAdmin, applyCloudPreset, publishPreset, removeCloudPresetById, hiddenStarters, hideStarterPreset, restoreStarterPresets, activeCloudPreset, overwriteActivePreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
   const actBd = boards.find((b) => b.id === activeBoard);
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const { parentId, setParent } = useGen();
@@ -275,11 +343,34 @@ export function Panel() {
     if (!focus) { updateParent(fn); return; }
     const before = applyKitDesign(cfgMaster, kitDesigns[focus]);
     const merged = JSON.parse(JSON.stringify(before)) as GenConfig;
-    fn(merged);
-    // v70: pin only the paths this edit changed — the rest keeps following
-    // the parent design live, so the kit stays auto-updating
-    const d = designDiff(pickDesign(before), pickDesign(merged));
-    if (d) setKitDesign(focus, mergeKitDesign(kitDesigns[focus], d));
+    if (selectedState !== "default") {
+      /* Editing a non-default state of a focused piece: route the design edit
+         into that state's fork — the same routing the store's update does —
+         because the controls READ from the fork (D = stateDesigns[sel]). The
+         old path wrote to the piece's default layer, which the fork masked:
+         the control looked dead. Fork on first touch; Default stays put. */
+      if (!merged.stateDesigns) merged.stateDesigns = {};
+      if (!merged.stateDesigns[selectedState]) merged.stateDesigns[selectedState] = pickDesign(merged);
+      const sd = merged.stateDesigns[selectedState]!;
+      const t = Object.assign({}, merged, {
+        effects: sd.effects, face: sd.face, bevel: sd.bevel, candy: sd.candy,
+        lighting: sd.lighting, shadow: sd.shadow, transparency: sd.transparency, type: sd.type,
+      }) as GenConfig;
+      Object.defineProperty(t, "shape", { get: () => sd.shape, set: (v) => { sd.shape = v; }, enumerable: true, configurable: true });
+      fn(t);
+      sd.effects = t.effects; sd.face = t.face; sd.bevel = t.bevel; sd.candy = t.candy;
+      sd.lighting = t.lighting; sd.shadow = t.shadow; sd.transparency = t.transparency; sd.type = t.type;
+      if (JSON.stringify(before.stateDesigns ?? {}) !== JSON.stringify(merged.stateDesigns)) {
+        // the piece's state forks pin wholesale — that's their storage grain
+        setKitDesign(focus, { ...(kitDesigns[focus] ?? {}), stateDesigns: merged.stateDesigns });
+      }
+    } else {
+      fn(merged);
+      // v70: pin only the paths this edit changed — the rest keeps following
+      // the parent design live, so the kit stays auto-updating
+      const d = designDiff(pickDesign(before), pickDesign(merged));
+      if (d) setKitDesign(focus, mergeKitDesign(kitDesigns[focus], d));
+    }
     // replay only the non-design portion onto the parent, design keys pinned
     const mClone = JSON.parse(JSON.stringify(cfgMaster)) as GenConfig;
     fn(mClone);
@@ -497,19 +588,21 @@ export function Panel() {
         )}
         <Slider label="Lift" value={adj.lift} min={-10} max={10} unit="px" onChange={(v) => update((c) => { c.states[selectedState].lift = v; })} />
         <Slider label="Opacity" value={adj.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.states[selectedState].opacity = v; })} />
-        <button className="resetstate" onClick={() => update((c) => { c.states[selectedState] = defaultStates()[selectedState]; })}>
-          <RotateCcw size={13} strokeWidth={2} /> Reset {STATE_LABEL[selectedState]}
-        </button>
-        <button className="resetstate" title="Make Hover, Pressed and Disabled mirror the Default design again — a clean base after exploring"
-          onClick={inheritDefaults}>
-          <Copy size={13} strokeWidth={2} /> Apply Default to all states
-        </button>
-        {selectedState !== "default" && (
-          <button className="resetstate makedefault" title={`Promote this exact ${STATE_LABEL[selectedState]} look — design and adjustments — to be the new Default. Nothing gets lost.`}
-            onClick={makeStateDefault}>
-            <Star size={13} strokeWidth={2} /> Make {STATE_LABEL[selectedState]} the new Default
+        <div className="actionrow">
+          <button className="resetstate" onClick={() => update((c) => { c.states[selectedState] = defaultStates()[selectedState]; })}>
+            <RotateCcw size={13} strokeWidth={2} /> Reset {STATE_LABEL[selectedState]}
           </button>
-        )}
+          <button className="resetstate" title="Make Hover, Pressed and Disabled mirror the Default design again — a clean base after exploring"
+            onClick={inheritDefaults}>
+            <Copy size={13} strokeWidth={2} /> Apply Default to all states
+          </button>
+          {selectedState !== "default" && (
+            <button className="resetstate makedefault" title={`Promote this exact ${STATE_LABEL[selectedState]} look — design and adjustments — to be the new Default. Nothing gets lost.`}
+              onClick={makeStateDefault}>
+              <Star size={13} strokeWidth={2} /> Make {STATE_LABEL[selectedState]} the new Default
+            </button>
+          )}
+        </div>
         {selectedState !== "default" && cfg.stateDesigns?.[selectedState] && (
           <div className="helper">This state has its own design — edits here never touch Default. Happy accident? <b>Make {STATE_LABEL[selectedState]} the new Default</b> keeps it.</div>
         )}
@@ -527,20 +620,40 @@ export function Panel() {
                 onClick={(e) => { e.stopPropagation(); removeUserPreset(u.id); }}>×</span>
             </button>
           ))}
-          {presetArt().map((p) => (
-            <button key={p.id} className={`presetcard${cfg.presetId === p.id ? " on" : ""}`} title={p.name}
+          {cloudPresets.map((p) => (
+            <button key={p.id} className={`presetcard shared${kitName === p.name ? " on" : ""}`} title={`${p.name} — shared preset`}
+              onClick={() => applyCloudPreset(p.id)}>
+              {p.thumb ? <span className="presetart" dangerouslySetInnerHTML={{ __html: p.thumb }} /> : <span className="presetart" />}
+              <span className="presetname">{p.name}</span>
+              {isAdmin && (
+                <span className="shapedel" role="button" aria-label={`Delete shared preset ${p.name}`} title="Delete for everyone (admin)"
+                  onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete the shared preset “${p.name}” for everyone?`)) void removeCloudPresetById(p.id); }}>×</span>
+              )}
+            </button>
+          ))}
+          {presetArt().filter((p) => !hiddenStarters.includes(p.id)).map((p) => (
+            <button key={p.id} className={`presetcard${cfg.presetId === p.id ? " on" : ""}`} title={`${p.name} — starter preset`}
               onClick={() => setPreset(p.id)}>
               <span className="presetart" dangerouslySetInnerHTML={{ __html: p.svg }} />
               <span className="presetname">{p.name}</span>
+              {isAdmin && (
+                <span className="shapedel" role="button" aria-label={`Remove starter preset ${p.name}`} title="Remove for everyone (admin) — restorable below"
+                  onClick={(e) => { e.stopPropagation(); if (window.confirm(`Remove the starter preset “${p.name}” for everyone? You can restore all removed starters later.`)) void hideStarterPreset(p.id).then((err) => { if (err) window.alert(err); }); }}>×</span>
+              )}
             </button>
           ))}
         </div>
         <div className="helper">Each style is a different candy construction — shell, gloss and depth, not just a palette.</div>
-        <button className="resetstate" onClick={randomize}>
-          <Dices size={14} strokeWidth={2} /> Randomize everything
-        </button>
-        <div className="sublabel">My styles</div>
-        {styleLib.length > 0 && (
+        <div className="actionrow">
+          <button className="resetstate" onClick={randomize}>
+            <Dices size={14} strokeWidth={2} /> Randomize everything
+          </button>
+          <NameAction icon={<Copy size={13} strokeWidth={2} />} label="Save current look as a style"
+            defaultName={cfg.content.label || "My style"} placeholder="Style name"
+            onCommit={(n) => { saveStyle(n); }} />
+        </div>
+        {styleLib.length > 0 && (<>
+          <div className="sublabel">My styles</div>
           <div className="stylegrid">
             {styleLib.map((st) => (
               <div key={st.id} className="stylecard">
@@ -557,11 +670,32 @@ export function Panel() {
               </div>
             ))}
           </div>
-        )}
-        <button className="resetstate" onClick={() => saveStyle(window.prompt("Name this style:", cfg.content.label || "My style") || "My style")}>
-          <Copy size={13} strokeWidth={2} /> Save current look as a style
-        </button>
-        <div className="helper">A style is the whole material recipe — colors, surface, lighting, type, state designs. Applying one restyles every component; silhouettes stay put.</div>
+          <div className="helper">A style is the whole material recipe — colors, surface, lighting, type, state designs. Applying one restyles every component; silhouettes stay put.</div>
+        </>)}
+        {isAdmin && (<>
+          <div className="sublabel">Shared library — admin</div>
+          <div className="actionrow">
+            <NameAction icon={<Globe size={14} strokeWidth={2} />} label="Publish current…"
+              title="Publish the current style as a shared preset — every user will see it"
+              placeholder="Preset name — every visitor sees it"
+              onCommit={(n) => publishPreset(n)} />
+            {activeCloudPreset && (
+              <button className="resetstate" onClick={() => {
+                if (window.confirm(`Overwrite the shared preset “${activeCloudPreset.name}” with the current look — for everyone?`)) void overwriteActivePreset().then((err) => { if (err) window.alert(err); });
+              }}>
+                <Upload size={14} strokeWidth={2} /> Overwrite “{activeCloudPreset.name}”
+              </button>
+            )}
+            {hiddenStarters.length > 0 && (
+              <button className="resetstate" onClick={() => {
+                if (window.confirm(`Restore all ${hiddenStarters.length} removed starter preset${hiddenStarters.length === 1 ? "" : "s"} for everyone?`)) void restoreStarterPresets().then((err) => { if (err) window.alert(err); });
+              }}>
+                <RotateCcw size={14} strokeWidth={2} /> Restore starters ({hiddenStarters.length})
+              </button>
+            )}
+          </div>
+          <div className="helper">Shared presets show for every visitor. Apply one, tweak it, then Overwrite to save the changes back into it.</div>
+        </>)}
       </Section>
 
       {/* ── A2 · Silhouette — pure geometry, material stays ── */}
@@ -604,6 +738,8 @@ export function Panel() {
             ))}
           </div>
         )}
+        <div className="helper">Silhouette is pure geometry — switching it keeps your material, lighting, colors and type exactly as they are.</div>
+        <div className="actionrow">
         <label className="fileadd">
           <Upload size={13} strokeWidth={2} /> Import silhouette (SVG)
           <input type="file" accept=".svg,image/svg+xml" hidden onChange={(e) => {
@@ -631,6 +767,10 @@ export function Panel() {
             });
           }} />
         </label>
+        <button className="resetstate" onClick={() => setOutlines(true)} title="Judge silhouettes as plain geometry — before materials flatter them">
+          <Shapes size={13} strokeWidth={2} /> Outline view — compare raw geometry
+        </button>
+        </div>
         {shapeErr && <div className="helper" role="alert">{shapeErr}</div>}
         <div className="helper">
           Import spec: a plain flat vector — one closed, <b>filled</b> path (no strokes, groups,
@@ -640,11 +780,6 @@ export function Panel() {
           over arc segments — arcs can distort under stretch. Boolean-union overlapping
           shapes before export; counter-holes are fine.
         </div>
-        {focus && <div className="helper">Picking a silhouette here reshapes only <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the style stays global.</div>}
-        <button className="resetstate" onClick={() => setOutlines(true)} title="Judge silhouettes as plain geometry — before materials flatter them">
-          <Shapes size={13} strokeWidth={2} /> Outline view — compare raw geometry
-        </button>
-        <div className="helper">Silhouette is pure geometry — switching it keeps your material, lighting, colors and type exactly as they are.</div>
       </Section>
 
       {/* ── v57/58: Component content — this piece's text and glyph ── */}
@@ -659,10 +794,17 @@ export function Panel() {
           </>)}
           {iconSwappable && (<>
           <div className="sublabel">Icon</div>
-          <div className="helper">Swap the glyph on <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and every export follow. Remove it and the text recenters. Weight lives under <b>Typography → Icon weight</b>.</div>
-          <button className={`resetstate${kitIcons[focus] === "none" ? " on" : ""}`} onClick={() => setKitIcon(focus, kitIcons[focus] === "none" ? null : "none")}>
-            <Trash2 size={13} strokeWidth={2} /> {kitIcons[focus] === "none" ? "Icon removed — bring it back" : "Remove the icon"}
-          </button>
+          <div className="helper">Swap the glyph on <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and every export follow. Remove it and the text recenters. Size, color, weight & effects live under <b>Typography → Icons</b>.</div>
+          <div className="actionrow">
+            <button className={`resetstate${kitIcons[focus] === "none" ? " on" : ""}`} onClick={() => setKitIcon(focus, kitIcons[focus] === "none" ? null : "none")}>
+              <Trash2 size={13} strokeWidth={2} /> {kitIcons[focus] === "none" ? "Icon removed — bring it back" : "Remove the icon"}
+            </button>
+            {kitIcons[focus] && kitIcons[focus] !== "none" && (
+              <button className="resetstate" onClick={() => setKitIcon(focus, null)}>
+                <RotateCcw size={13} strokeWidth={2} /> Back to the stock glyph
+              </button>
+            )}
+          </div>
           <label className="fieldbox" style={{ minWidth: 0 }}>
             <span className="fl">Icon library</span>
             <select value={browseLib} aria-label="Icon library" onChange={(e) => setBrowseLib(e.target.value)}>
@@ -689,11 +831,6 @@ export function Panel() {
               );
             })}
           </div>
-          {kitIcons[focus] && kitIcons[focus] !== "none" && (
-            <button className="resetstate" onClick={() => setKitIcon(focus, null)}>
-              <RotateCcw size={13} strokeWidth={2} /> Back to the stock glyph
-            </button>
-          )}
           </>)}
         </Section>
       )}
@@ -861,10 +998,11 @@ export function Panel() {
           <Slider label="Grain size" value={C.texture.scale} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.scale = v; })} />
         )}
 
-        <div className="sublabel">Transparency</div>
-        <Slider label="Frame" value={D.transparency.frame} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.frame = v; })} />
-        <Slider label="Interior" value={D.transparency.interior} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.interior = v; })} />
-        <Slider label="Text" value={D.transparency.content} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.content = v; })} />
+        <Adv label="Transparency" active={D.transparency.frame < 100 || D.transparency.interior < 100 || D.transparency.content < 100}>
+          <Slider label="Frame" value={D.transparency.frame} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.frame = v; })} />
+          <Slider label="Interior" value={D.transparency.interior} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.interior = v; })} />
+          <Slider label="Text" value={D.transparency.content} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.content = v; })} />
+        </Adv>
       </Section>
 
       {/* ── E · Lighting ──────────────────────────────────── */}
@@ -885,13 +1023,6 @@ export function Panel() {
           <label className="checkrow"><input type="checkbox" checked={cfg.barFx?.grad2.vertical ?? true}
             onChange={(e) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.vertical = e.target.checked; })} /> Vertical sweep</label>
         </FxToggle>
-        <div className="sublabel">Dragger ball</div>
-        <label className="check"><input type="checkbox" checked={(cfg.knob?.color ?? null) === null}
-          onChange={(e) => update((c) => { c.knob = { color: e.target.checked ? null : (c.effects.Bevel ?? "#0E9CC9") }; })} /> Knob color from Color map</label>
-        {(cfg.knob?.color ?? null) !== null && (
-          <Well label="Knob color" value={cfg.knob!.color!} onChange={(v) => update((c) => { c.knob = { color: v }; })} />
-        )}
-        <div className="helper">The candy ball on sliders, toggles and joysticks. Following the Color map keeps it on the Bevel role.</div>
         <FxToggle label="Fill glow" on={cfg.barFx?.glow.on ?? false}
           onToggle={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.on = v; })}>
           <Well label="Color" value={cfg.barFx?.glow.color ?? "#8FF0FF"} onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.color = v; })} />
@@ -902,6 +1033,13 @@ export function Panel() {
           onToggle={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.shadow.on = v; })}>
           <Slider label="Opacity" value={cfg.barFx?.shadow.opacity ?? 40} min={0} max={90} unit="%" onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.shadow.opacity = v; })} />
         </FxToggle>
+        <div className="sublabel">Dragger ball</div>
+        <label className="check"><input type="checkbox" checked={(cfg.knob?.color ?? null) === null}
+          onChange={(e) => update((c) => { c.knob = { color: e.target.checked ? null : (c.effects.Bevel ?? "#0E9CC9") }; })} /> Knob color from Color map</label>
+        {(cfg.knob?.color ?? null) !== null && (
+          <Well label="Knob color" value={cfg.knob!.color!} onChange={(v) => update((c) => { c.knob = { color: v }; })} />
+        )}
+        <div className="helper">The candy ball on sliders, toggles and joysticks. Following the Color map keeps it on the Bevel role.</div>
       </Section>
 
       <Section id="lighting" title="Lighting" summary={<span>{D.lighting.angle}°</span>}>
@@ -934,13 +1072,6 @@ export function Panel() {
         <Slider label="Curvature" value={C.gloss.curve} min={-40} max={60} unit="px" onChange={(v) => update((c) => { c.candy.gloss.curve = v; })} />
         <Slider label="Gloss opacity" value={C.gloss.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.gloss.opacity = v; })} />
         <Slider label="Softness" value={C.gloss.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.gloss.softness = v; })} />
-        <label className="fieldbox" style={{ minWidth: 0 }}>
-          <span className="fl">Gloss blend mode</span>
-          <select value={C.gloss.blend ?? "normal"} aria-label="Gloss blend mode" onChange={(e) => update((c) => { c.candy.gloss.blend = e.target.value as BlendMode; })}>
-            {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
-          </select>
-          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-        </label>
         <div className="ctl">
           <label>Gloss fill</label>
           <div className="segmini" role="radiogroup" aria-label="Gloss fill">
@@ -963,16 +1094,25 @@ export function Panel() {
           <Well label="Gloss bottom" value={C.gloss.tint2}
             onChange={(v) => update((c) => { c.candy.gloss.tint2 = v; })} />
         )}
-        <div className="ctl">
-          <label>Layering</label>
-          <div className="segmini" role="radiogroup" aria-label="Gloss layering">
-            {([["below", "Below text"], ["above", "Above text"]] as const).map(([v, t]) => (
-              <button key={v} className={C.gloss.layer === v ? "on" : ""} role="radio" aria-checked={C.gloss.layer === v}
-                onClick={() => update((c) => { c.candy.gloss.layer = v; })}>{t}</button>
-            ))}
+        <Adv label="Fine-tune gloss" active={(C.gloss.blend ?? "normal") !== "normal" || C.gloss.layer !== "below"}>
+          <label className="fieldbox" style={{ minWidth: 0 }}>
+            <span className="fl">Gloss blend mode</span>
+            <select value={C.gloss.blend ?? "normal"} aria-label="Gloss blend mode" onChange={(e) => update((c) => { c.candy.gloss.blend = e.target.value as BlendMode; })}>
+              {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+          </label>
+          <div className="ctl">
+            <label>Layering</label>
+            <div className="segmini" role="radiogroup" aria-label="Gloss layering">
+              {([["below", "Below text"], ["above", "Above text"]] as const).map(([v, t]) => (
+                <button key={v} className={C.gloss.layer === v ? "on" : ""} role="radio" aria-checked={C.gloss.layer === v}
+                  onClick={() => update((c) => { c.candy.gloss.layer = v; })}>{t}</button>
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="helper">Above text seals the label under the candy shell; below keeps it crisp and UI-like.</div>
+          <div className="helper">Above text seals the label under the candy shell; below keeps it crisp and UI-like.</div>
+        </Adv>
         </>)}
         <div className="sublabel">Specular</div>
         <label className="check"><input type="checkbox" checked={C.specular.on} onChange={(e) => update((c) => { c.candy.specular.on = e.target.checked; })} /> Specular reflections</label>
@@ -988,24 +1128,27 @@ export function Panel() {
           <Slider label="Size" value={C.specular.size} min={4} max={100} unit="px" onChange={(v) => update((c) => { c.candy.specular.size = v; })} />
           <Slider label="Shape" value={C.specular.stretch} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.stretch = v; })} />
           <Slider label="Intensity" value={C.specular.intensity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.intensity = v; })} />
-          {C.specular.mode !== "anime" && (
-            <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
-          )}
-          <label className="fieldbox" style={{ minWidth: 0 }}>
-            <span className="fl">Specular blend mode</span>
-            <select value={C.specular.blend ?? "normal"} aria-label="Specular blend mode" onChange={(e) => update((c) => { c.candy.specular.blend = e.target.value as BlendMode; })}>
-              {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-            <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-          </label>
-          {(C.specular.mode === "dual" || C.specular.mode === "anime") && (
-            <Slider label="Spacing" value={C.specular.gap} min={50} max={300} unit="%" onChange={(v) => update((c) => { c.candy.specular.gap = v; })} />
-          )}
-          {C.specular.mode !== "sweep" && (<>
-            <Slider label="Angle" value={C.specular.angle} min={-80} max={80} unit="°" onChange={(v) => update((c) => { c.candy.specular.angle = v; })} />
-            <Slider label="Nudge X" value={C.specular.ox} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.ox = v; })} />
-            <Slider label="Nudge Y" value={C.specular.oy} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.oy = v; })} />
-          </>)}
+          <Adv label="Fine-tune specular" active={(C.specular.blend ?? "normal") !== "normal"}>
+            {C.specular.mode !== "anime" && (
+              <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
+            )}
+            <label className="fieldbox" style={{ minWidth: 0 }}>
+              <span className="fl">Specular blend mode</span>
+              <select value={C.specular.blend ?? "normal"} aria-label="Specular blend mode" onChange={(e) => update((c) => { c.candy.specular.blend = e.target.value as BlendMode; })}>
+                {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+            </label>
+            {(C.specular.mode === "dual" || C.specular.mode === "anime") && (
+              <Slider label="Spacing" value={C.specular.gap} min={50} max={300} unit="%" onChange={(v) => update((c) => { c.candy.specular.gap = v; })} />
+            )}
+            {C.specular.mode !== "sweep" && (<>
+              <Slider label="Angle" value={C.specular.angle} min={-80} max={80} unit="°" onChange={(v) => update((c) => { c.candy.specular.angle = v; })} />
+              <Slider label="Nudge X" value={C.specular.ox} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.ox = v; })} />
+              <Slider label="Nudge Y" value={C.specular.oy} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.oy = v; })} />
+              <div className="helper">The mark rides the silhouette's lit edge — Nudge X travels it edge to edge, Nudge Y sets how deep below the shell it sits, Angle tilts the cut of its ends.</div>
+            </>)}
+          </Adv>
         </>)}
         <div className="sublabel">Lower bloom</div>
         <Slider label="Bloom" value={C.bloom.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.bloom.opacity = v; })} />
@@ -1289,8 +1432,23 @@ export function Panel() {
           <div className="helper">Crisp vector highlights riding the letterforms — a specular slab clipped to the glyphs plus star glints. They follow the master Lighting angle; the nudges shift the whole treatment in % of the letter height.</div>
         </FxToggle>
         <div className="sublabel">Icons</div>
-        <Slider label="Icon weight" value={cfg.icon.strokeWidth} min={8} max={40} unit="" onChange={(v) => update((c) => { c.icon.strokeWidth = v; })} />
-        <div className="helper">Icons inherit the type voice — this weight drives every stroked glyph across the kit (buttons, counters, slots, rows). 24 is the neutral middle.</div>
+        <Slider label="Size" value={cfg.icon.size} min={40} max={170} unit="%" onChange={(v) => update((c) => { c.icon.size = v; })} />
+        <Slider label="Weight" value={cfg.icon.strokeWidth} min={5} max={40} unit="/10" onChange={(v) => update((c) => { c.icon.strokeWidth = v; })} />
+        <Slider label="Opacity" value={cfg.icon.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.icon.opacity = v; })} />
+        <Slider label="Rotation" value={cfg.icon.rotation} min={0} max={360} unit="°" onChange={(v) => update((c) => { c.icon.rotation = v; })} />
+        <label className="check"><input type="checkbox" checked={cfg.icon.color === null}
+          onChange={(e) => update((c) => { c.icon.color = e.target.checked ? null : "#FFFFFF"; })} /> Inherit type color</label>
+        {cfg.icon.color !== null && <Well label="Custom color" value={cfg.icon.color} onChange={(v) => update((c) => { c.icon.color = v; })} />}
+        <div className="sublabel">Icon effects</div>
+        <div className="fxrow">
+          {(["shadow", "glow", "emboss"] as const).map((f) => (
+            <button key={f} className={`fxchip${cfg.icon.fx[f] ? " on" : ""}`} aria-pressed={cfg.icon.fx[f]}
+              onClick={() => update((c) => { c.icon.fx[f] = !c.icon.fx[f]; })}>
+              {f[0].toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="helper">Every glyph in the kit (buttons, counters, slots, rows) follows this one treatment — swap a specific component's glyph in <b>Component content</b>. Color inherits the type until you set your own; the effects are always the icon's own, independent of Type.</div>
       </Section>
 
 
@@ -1304,9 +1462,6 @@ export function Panel() {
           </span>
         }
         summary={<span>{cfg.icon.show && cfg.icon.def ? cfg.icon.def.name : "off"}</span>}>
-        <label className="checkrow"><input type="checkbox" checked={cfg.icon.inherit ?? true}
-          onChange={(e) => update((c) => { c.icon.inherit = e.target.checked; })} /> Inherit text treatment on icon-only pieces</label>
-        <div className="helper">Icon buttons, checks and medallions mirror the label's fill (including gradients), outline and effects. Edit those under <b>Typography</b> — the icons follow. Untick to style icons independently below.</div>
         <label className="fieldbox" style={{ minWidth: 0 }}>
           <span className="fl">Icon library</span>
           <select value={browseLib} aria-label="Icon library" onChange={(e) => setBrowseLib(e.target.value)}>
@@ -1390,7 +1545,7 @@ export function Panel() {
             </div>
           ))}
         </div>
-        <div className="helper">Click a thumbnail to load it into the editor. Send to board to sketch layouts.</div>
+        {library.length > 0 && <div className="helper">Click a thumbnail to load it into the editor. Send to board to sketch layouts.</div>}
       </Section>
 
       {/* ── States shown ──────────────────────────────────── */}

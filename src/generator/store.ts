@@ -4,6 +4,7 @@ import { defaultConfig, defaultCandy, applyPresetCandy, randomizeConfig, presetB
 import type { UserShape } from "./model";
 import { renderBevel } from "./bevel";
 import { getDef } from "./icons";
+import { listCloudPresets, amIAdmin, publishCloudPreset, updateCloudPreset, deleteCloudPreset, listHiddenStarters, setHiddenStarters, type CloudPreset } from "./cloud";
 import siteDefaultJson from "./site-default.json";
 import bubblePopJson from "./preset-bubble-pop.json";
 import neonVersusJson from "./preset-neon-versus.json";
@@ -26,6 +27,18 @@ export function retintText(c: GenConfig) {
   c.type.shadow.color = darken(bevel, 0.62);
   c.type.glow.color = glow;
   // custom solid/gradient fills are the user's — never overwritten
+}
+
+/* One snapshot recipe for shared presets — publish and overwrite must agree:
+   the stored cfg is the current look verbatim; the thumbnail is the same
+   glow-free "PLAY" card a local user preset gets. */
+function presetSnapshot(srcCfg: GenConfig): { cfg: GenConfig; thumb: string } {
+  const clone = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)));
+  const cfg = clone(srcCfg) as GenConfig;
+  const tc = clone(cfg) as GenConfig;
+  for (const st of Object.values(tc.states)) st.glow = 0;
+  tc.content.label = "PLAY"; tc.icon.show = false;
+  return { cfg, thumb: renderBevel(tc, "default") };
 }
 
 const LS_KEY = "ui-generator-v10"; // v10: specular modes, solid extrusion, gloss layering
@@ -286,6 +299,21 @@ interface GenStore {
   saveUserPreset: (name: string) => void;
   applyUserPreset: (id: string) => void;
   removeUserPreset: (id: string) => void;
+  /** Admin-curated shared presets loaded from the cloud (visible to everyone). */
+  cloudPresets: CloudPreset[];
+  /** Whether the signed-in user may publish/edit shared presets. */
+  isAdmin: boolean;
+  loadCloudPresets: () => Promise<void>;
+  applyCloudPreset: (id: string) => void;
+  publishPreset: (name: string) => Promise<string | null>;
+  removeCloudPresetById: (id: string) => Promise<void>;
+  /** The shared preset most recently applied — the Overwrite target. */
+  activeCloudPreset: { id: string; name: string } | null;
+  overwriteActivePreset: () => Promise<string | null>;
+  /** Starter-preset ids an admin retired for every visitor (cloud-stored). */
+  hiddenStarters: string[];
+  hideStarterPreset: (id: string) => Promise<string | null>;
+  restoreStarterPresets: () => Promise<string | null>;
   /** Imported flat-vector silhouettes — see the spec in the Silhouette panel. */
   userShapes: UserShape[];
   addUserShape: (u: UserShape) => void;
@@ -643,6 +671,7 @@ export const useGen = create<GenStore>((set, get) => ({
   loadKitPayload: (p, opts) => {
     const st = get();
     const viewer = opts?.viewer ?? true;
+    set({ activeCloudPreset: null }); // a loaded kit isn't a shared preset — no Overwrite target
     const cfg = (p.cfg as GenConfig) ?? st.cfg;
     const next = {
       cfg,
@@ -779,11 +808,65 @@ export const useGen = create<GenStore>((set, get) => ({
     next.canvas = get().cfg.canvas; // presets restyle the component, never the stage
     get().replaceConfig(next);
     get().setKitName(u.name);
+    set({ activeCloudPreset: null });
   },
   removeUserPreset: (id) => {
     const userPresets = get().userPresets.filter((x) => x.id !== id);
     saveJson("ui-generator-userpresets", userPresets);
     set({ userPresets });
+  },
+  cloudPresets: [],
+  isAdmin: false,
+  loadCloudPresets: async () => {
+    const [presets, admin, hidden] = await Promise.all([listCloudPresets(), amIAdmin(), listHiddenStarters()]);
+    set({ cloudPresets: presets, isAdmin: admin, hiddenStarters: hidden });
+    const act = get().activeCloudPreset;
+    if (act && !presets.some((p) => p.id === act.id)) set({ activeCloudPreset: null });
+  },
+  applyCloudPreset: (id) => {
+    const p = get().cloudPresets.find((x) => x.id === id);
+    if (!p) return;
+    const clone = (typeof structuredClone === "function" ? structuredClone : (x: unknown) => JSON.parse(JSON.stringify(x)));
+    const next = clone(p.cfg) as GenConfig;
+    next.canvas = get().cfg.canvas; // shared presets restyle the component, never the stage
+    get().replaceConfig(next);
+    get().setKitName(p.name);
+    set({ activeCloudPreset: { id: p.id, name: p.name } });
+  },
+  publishPreset: async (name) => {
+    const { cfg, thumb } = presetSnapshot(get().cfg);
+    const { preset, error } = await publishCloudPreset(name, cfg, thumb);
+    if (error) return error;
+    // the fresh publish becomes the Overwrite target — tweak-and-save flows on
+    if (preset) set({ activeCloudPreset: { id: preset.id, name: preset.name } });
+    await get().loadCloudPresets();
+    return null;
+  },
+  removeCloudPresetById: async (id) => {
+    await deleteCloudPreset(id);
+    await get().loadCloudPresets();
+  },
+  activeCloudPreset: null,
+  overwriteActivePreset: async () => {
+    const target = get().activeCloudPreset;
+    if (!target) return "Apply a shared preset first — then Overwrite saves your tweaks back into it.";
+    const { cfg, thumb } = presetSnapshot(get().cfg);
+    const err = await updateCloudPreset(target.id, cfg, thumb);
+    if (err) return err;
+    await get().loadCloudPresets();
+    return null;
+  },
+  hiddenStarters: [],
+  hideStarterPreset: async (id) => {
+    const next = [...new Set([...get().hiddenStarters, id])];
+    const err = await setHiddenStarters(next);
+    if (!err) set({ hiddenStarters: next });
+    return err;
+  },
+  restoreStarterPresets: async () => {
+    const err = await setHiddenStarters([]);
+    if (!err) set({ hiddenStarters: [] });
+    return err;
   },
   kitName: loadJson<string | null>("ui-generator-kitname", null),
   setKitName: (v) => { markTouched(); saveJson("ui-generator-kitname", v); set({ kitName: v }); },
@@ -974,6 +1057,7 @@ export const useGen = create<GenStore>((set, get) => ({
     set({ panelW: v });
   },
   setPreset: (id) => {
+    set({ activeCloudPreset: null }); // a starter takes over — Overwrite retargets on next apply
     // Bubble Pop ships as a fully authored look (Chevon's bubblepopdefault) —
     // picking it loads that complete design rather than re-mixing tokens
     if (PRESET_DEFAULTS[id]) {
@@ -992,7 +1076,7 @@ export const useGen = create<GenStore>((set, get) => ({
     });
   },
   randomize: () => {
-    const next = randomizeConfig(get().cfg);
+    const next = randomizeConfig(get().cfg, get().hiddenStarters);
     const roll = (n: number) => Math.floor(Math.random() * n);
     get().update((c) => {
       c.effects = next.effects; // lighting stays put — rolled light angles tilted the speculars askew
@@ -1000,7 +1084,9 @@ export const useGen = create<GenStore>((set, get) => ({
       // and candy build from a random preset — so randomize explores the
       // whole wardrobe instead of recoloring one outfit
       if (Math.random() < 0.34) {
-        const pr = PRESETS[roll(PRESETS.length)];
+        // retired starters stay retired — rolls draw from the visible wardrobe
+        const pool = PRESETS.filter((p) => !get().hiddenStarters.includes(p.id));
+        const pr = pool.length ? pool[roll(pool.length)] : PRESETS[roll(PRESETS.length)];
         c.shape = pr.shape;
         c.bevel = { ...pr.bevel };
         applyPresetCandy(c.candy, pr);
@@ -1031,7 +1117,7 @@ export const useGen = create<GenStore>((set, get) => ({
   setGridStyle: (v) => set({ gridStyle: v }),
   setSectionFilter: (v) => set({ sectionFilter: v }),
   randomizeColors: () => {
-    const next = randomizeConfig(get().cfg);
+    const next = randomizeConfig(get().cfg, get().hiddenStarters);
     get().update((c) => { c.effects = next.effects; retintText(c); });
   },
   toggle: (s) => set((st) => ({ open: { ...st.open, [s]: !st.open[s] } })),
