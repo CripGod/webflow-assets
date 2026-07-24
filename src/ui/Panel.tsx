@@ -254,7 +254,7 @@ function FontPicker({ value, customFonts, onPick }: { value: string; customFonts
 }
 
 export function Panel() {
-  const { cfg: cfgMaster, update: updateParent, setPreset: setPresetParent, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, cloudPresets, isAdmin, applyCloudPreset, publishPreset, removeCloudPresetById, hiddenStarters, hideStarterPreset, restoreStarterPresets, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
+  const { cfg: cfgMaster, update: updateParent, setPreset: setPresetParent, randomize, randomizeColors, selectedState, setSelectedState, sectionFilter, phase, setPhase, inheritDefaults, makeStateDefault, library, addToLibrary, removeFromLibrary, loadFromLibrary, addToBoard, focus, setFocus, kitShapes, setKitShape, kitDesigns, setKitDesign, kitSizes, kitTextOy, setKitTextOy, kitTextOx, setKitTextOx, kitTextFill, setKitTextFill, kitRow, setKitRow, styleLib, saveStyle, applyStyle, removeStyle, userShapes, addUserShape, removeUserShape, userPresets, applyUserPreset, removeUserPreset, cloudPresets, isAdmin, applyCloudPreset, publishPreset, removeCloudPresetById, hiddenStarters, hideStarterPreset, restoreStarterPresets, activeCloudPreset, overwriteActivePreset, kitName, canvasMode, boards, activeBoard, setBoardBg, kitIcons, setKitIcon, kitLabels, setKitLabel, kitBar, setKitBar, refreshLibraryItem, replaceConfig, resetAll, panelQuery, setPanelQuery } = useGen();
   const actBd = boards.find((b) => b.id === activeBoard);
   const cfg = focus && kitDesigns[focus] ? applyKitDesign(cfgMaster, kitDesigns[focus]) : cfgMaster;
   const { parentId, setParent } = useGen();
@@ -495,19 +495,21 @@ export function Panel() {
         )}
         <Slider label="Lift" value={adj.lift} min={-10} max={10} unit="px" onChange={(v) => update((c) => { c.states[selectedState].lift = v; })} />
         <Slider label="Opacity" value={adj.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.states[selectedState].opacity = v; })} />
-        <button className="resetstate" onClick={() => update((c) => { c.states[selectedState] = defaultStates()[selectedState]; })}>
-          <RotateCcw size={13} strokeWidth={2} /> Reset {STATE_LABEL[selectedState]}
-        </button>
-        <button className="resetstate" title="Make Hover, Pressed and Disabled mirror the Default design again — a clean base after exploring"
-          onClick={inheritDefaults}>
-          <Copy size={13} strokeWidth={2} /> Apply Default to all states
-        </button>
-        {selectedState !== "default" && (
-          <button className="resetstate makedefault" title={`Promote this exact ${STATE_LABEL[selectedState]} look — design and adjustments — to be the new Default. Nothing gets lost.`}
-            onClick={makeStateDefault}>
-            <Star size={13} strokeWidth={2} /> Make {STATE_LABEL[selectedState]} the new Default
+        <div className="actionrow">
+          <button className="resetstate" onClick={() => update((c) => { c.states[selectedState] = defaultStates()[selectedState]; })}>
+            <RotateCcw size={13} strokeWidth={2} /> Reset {STATE_LABEL[selectedState]}
           </button>
-        )}
+          <button className="resetstate" title="Make Hover, Pressed and Disabled mirror the Default design again — a clean base after exploring"
+            onClick={inheritDefaults}>
+            <Copy size={13} strokeWidth={2} /> Apply Default to all states
+          </button>
+          {selectedState !== "default" && (
+            <button className="resetstate makedefault" title={`Promote this exact ${STATE_LABEL[selectedState]} look — design and adjustments — to be the new Default. Nothing gets lost.`}
+              onClick={makeStateDefault}>
+              <Star size={13} strokeWidth={2} /> Make {STATE_LABEL[selectedState]} the new Default
+            </button>
+          )}
+        </div>
         {selectedState !== "default" && cfg.stateDesigns?.[selectedState] && (
           <div className="helper">This state has its own design — edits here never touch Default. Happy accident? <b>Make {STATE_LABEL[selectedState]} the new Default</b> keeps it.</div>
         )}
@@ -549,26 +551,16 @@ export function Panel() {
           ))}
         </div>
         <div className="helper">Each style is a different candy construction — shell, gloss and depth, not just a palette.</div>
-        {isAdmin && (
-          <button className="resetstate" onClick={() => {
-            const name = window.prompt("Publish the current style as a shared preset — every user will see it. Name:");
-            if (name && name.trim()) void publishPreset(name.trim()).then((err) => { if (err) window.alert(err); });
-          }}>
-            <Globe size={14} strokeWidth={2} /> Publish current as shared preset
+        <div className="actionrow">
+          <button className="resetstate" onClick={randomize}>
+            <Dices size={14} strokeWidth={2} /> Randomize everything
           </button>
-        )}
-        {isAdmin && hiddenStarters.length > 0 && (
-          <button className="resetstate" onClick={() => {
-            if (window.confirm(`Restore all ${hiddenStarters.length} removed starter preset${hiddenStarters.length === 1 ? "" : "s"} for everyone?`)) void restoreStarterPresets().then((err) => { if (err) window.alert(err); });
-          }}>
-            <RotateCcw size={14} strokeWidth={2} /> Restore removed starters ({hiddenStarters.length})
+          <button className="resetstate" onClick={() => saveStyle(window.prompt("Name this style:", cfg.content.label || "My style") || "My style")}>
+            <Copy size={13} strokeWidth={2} /> Save current look as a style
           </button>
-        )}
-        <button className="resetstate" onClick={randomize}>
-          <Dices size={14} strokeWidth={2} /> Randomize everything
-        </button>
-        <div className="sublabel">My styles</div>
-        {styleLib.length > 0 && (
+        </div>
+        {styleLib.length > 0 && (<>
+          <div className="sublabel">My styles</div>
           <div className="stylegrid">
             {styleLib.map((st) => (
               <div key={st.id} className="stylecard">
@@ -585,11 +577,34 @@ export function Panel() {
               </div>
             ))}
           </div>
-        )}
-        <button className="resetstate" onClick={() => saveStyle(window.prompt("Name this style:", cfg.content.label || "My style") || "My style")}>
-          <Copy size={13} strokeWidth={2} /> Save current look as a style
-        </button>
-        <div className="helper">A style is the whole material recipe — colors, surface, lighting, type, state designs. Applying one restyles every component; silhouettes stay put.</div>
+          <div className="helper">A style is the whole material recipe — colors, surface, lighting, type, state designs. Applying one restyles every component; silhouettes stay put.</div>
+        </>)}
+        {isAdmin && (<>
+          <div className="sublabel">Shared library — admin</div>
+          <div className="actionrow">
+            <button className="resetstate" onClick={() => {
+              const name = window.prompt("Publish the current style as a shared preset — every user will see it. Name:");
+              if (name && name.trim()) void publishPreset(name.trim()).then((err) => { if (err) window.alert(err); });
+            }}>
+              <Globe size={14} strokeWidth={2} /> Publish current…
+            </button>
+            {activeCloudPreset && (
+              <button className="resetstate" onClick={() => {
+                if (window.confirm(`Overwrite the shared preset “${activeCloudPreset.name}” with the current look — for everyone?`)) void overwriteActivePreset().then((err) => { if (err) window.alert(err); });
+              }}>
+                <Upload size={14} strokeWidth={2} /> Overwrite “{activeCloudPreset.name}”
+              </button>
+            )}
+            {hiddenStarters.length > 0 && (
+              <button className="resetstate" onClick={() => {
+                if (window.confirm(`Restore all ${hiddenStarters.length} removed starter preset${hiddenStarters.length === 1 ? "" : "s"} for everyone?`)) void restoreStarterPresets().then((err) => { if (err) window.alert(err); });
+              }}>
+                <RotateCcw size={14} strokeWidth={2} /> Restore starters ({hiddenStarters.length})
+              </button>
+            )}
+          </div>
+          <div className="helper">Shared presets show for every visitor. Apply one, tweak it, then Overwrite to save the changes back into it.</div>
+        </>)}
       </Section>
 
       {/* ── A2 · Silhouette — pure geometry, material stays ── */}
