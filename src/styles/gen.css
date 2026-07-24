@@ -1247,7 +1247,7 @@ button.kp-fact { cursor: pointer; }
   position: absolute; top: 2px; right: 4px; display: none; width: 16px; height: 16px; line-height: 14px;
   border-radius: 6px; background: var(--soft); color: var(--ink); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer;
 }
-.shapecard:hover .shapedel { display: block; }
+.shapecard:hover .shapedel, .presetcard:hover .shapedel { display: block; }
 
 @media (max-width: 1080px) {
   .kp-hero2 { grid-template-columns: 1fr; }
