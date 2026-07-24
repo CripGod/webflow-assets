@@ -3000,6 +3000,14 @@ html[data-theme="light"] .fd-landing .af-sl i::after { background: #fff; box-sha
 .fd-landing .studio2.step2 #pvKit::-webkit-scrollbar-thumb { background: rgba(178, 107, 255, .4); border-radius: 8px; }
 .fd-landing .studio2.step2 #pvKit::-webkit-scrollbar-track { background: transparent; }
 .fd-landing .studio2.step3 .pv-board { min-height: 0; }
+.fd-landing /* board hero: tabs/PNG/share row removed — the stage takes its space */
+    #b2Tabs { display: none; }
+.fd-landing .pv-board { grid-template-rows: 1fr; }
+.fd-landing .b2-lib { grid-row: 1; }
+.fd-landing /* master centering that survives every layout state and browser: center
+       by margins, .fd-landing not by the parent's display mode */
+    .master-wrap { width: fit-content; margin-inline: auto; }
+.fd-landing .master-svg { display: flex; justify-content: center; }
     @media (max-width: 900px) {
 .fd-landing .steps-grid { grid-template-columns: 1fr; }
 .fd-landing .hud-corner { display: none; }
