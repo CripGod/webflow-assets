@@ -59,10 +59,6 @@ export const LANDING_HTML = `</head>
             <a class="cta primary" href="#generator" data-cta="open-generator">Open the generator →</a>
             <button class="cta" type="button" data-cta="sign-in">Sign in</button>
           </div>
-          <div class="micro2 reveal-in e5">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>
-            <span id="microTxt">This button is live — go on, mess it up.</span>
-          </div>
           <div class="trust2 reveal-in e6">
             <div class="trust2-item">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
@@ -80,13 +76,13 @@ export const LANDING_HTML = `</head>
         </div>
 
         <div class="studio2 reveal-in e3" id="studio2" aria-label="Live UI button studio">
+          <div class="st2-narr"><span id="narrTxt"></span><button class="cust-btn" id="custBtn" type="button" hidden>⛭ <span id="custTxt">CUSTOMIZE</span></button></div>
           <div class="st2-preview" id="previewField">
             <span class="pv-ctl">
               <span class="st2-status" id="stStatus" aria-live="polite">LIVE PREVIEW</span>
               <button class="st2-tb" id="playCtl" type="button" aria-label="Resume the preview loop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></button>
               <button class="st2-tb" id="pauseCtl" type="button" aria-label="Pause the preview loop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h3v14H8zM13 5h3v14h-3z" fill="currentColor"/></svg></button>
             </span>
-            <div class="st2-narr"><span id="narrTxt"></span><button class="cust-btn" id="custBtn" type="button" hidden>⛭ <span id="custTxt">CUSTOMIZE</span></button></div>
             <div class="pv-steps" id="pvSteps" role="group" aria-label="Onboarding steps">
               <button type="button" data-step="1" class="on">01 MASTER</button>
               <button type="button" data-step="2" disabled>02 KIT</button>
