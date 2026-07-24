@@ -647,6 +647,8 @@ export function Panel() {
             ))}
           </div>
         )}
+        <div className="helper">Silhouette is pure geometry — switching it keeps your material, lighting, colors and type exactly as they are.</div>
+        <div className="actionrow">
         <label className="fileadd">
           <Upload size={13} strokeWidth={2} /> Import silhouette (SVG)
           <input type="file" accept=".svg,image/svg+xml" hidden onChange={(e) => {
@@ -674,6 +676,10 @@ export function Panel() {
             });
           }} />
         </label>
+        <button className="resetstate" onClick={() => setOutlines(true)} title="Judge silhouettes as plain geometry — before materials flatter them">
+          <Shapes size={13} strokeWidth={2} /> Outline view — compare raw geometry
+        </button>
+        </div>
         {shapeErr && <div className="helper" role="alert">{shapeErr}</div>}
         <div className="helper">
           Import spec: a plain flat vector — one closed, <b>filled</b> path (no strokes, groups,
@@ -683,11 +689,6 @@ export function Panel() {
           over arc segments — arcs can distort under stretch. Boolean-union overlapping
           shapes before export; counter-holes are fine.
         </div>
-        {focus && <div className="helper">Picking a silhouette here reshapes only <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the style stays global.</div>}
-        <button className="resetstate" onClick={() => setOutlines(true)} title="Judge silhouettes as plain geometry — before materials flatter them">
-          <Shapes size={13} strokeWidth={2} /> Outline view — compare raw geometry
-        </button>
-        <div className="helper">Silhouette is pure geometry — switching it keeps your material, lighting, colors and type exactly as they are.</div>
       </Section>
 
       {/* ── v57/58: Component content — this piece's text and glyph ── */}
@@ -703,9 +704,16 @@ export function Panel() {
           {iconSwappable && (<>
           <div className="sublabel">Icon</div>
           <div className="helper">Swap the glyph on <b>{KIT_COMPONENTS.find((c) => c.id === focus)?.name}</b> — the kit page, the Board and every export follow. Remove it and the text recenters. Size, color, weight & effects live under <b>Typography → Icons</b>.</div>
-          <button className={`resetstate${kitIcons[focus] === "none" ? " on" : ""}`} onClick={() => setKitIcon(focus, kitIcons[focus] === "none" ? null : "none")}>
-            <Trash2 size={13} strokeWidth={2} /> {kitIcons[focus] === "none" ? "Icon removed — bring it back" : "Remove the icon"}
-          </button>
+          <div className="actionrow">
+            <button className={`resetstate${kitIcons[focus] === "none" ? " on" : ""}`} onClick={() => setKitIcon(focus, kitIcons[focus] === "none" ? null : "none")}>
+              <Trash2 size={13} strokeWidth={2} /> {kitIcons[focus] === "none" ? "Icon removed — bring it back" : "Remove the icon"}
+            </button>
+            {kitIcons[focus] && kitIcons[focus] !== "none" && (
+              <button className="resetstate" onClick={() => setKitIcon(focus, null)}>
+                <RotateCcw size={13} strokeWidth={2} /> Back to the stock glyph
+              </button>
+            )}
+          </div>
           <label className="fieldbox" style={{ minWidth: 0 }}>
             <span className="fl">Icon library</span>
             <select value={browseLib} aria-label="Icon library" onChange={(e) => setBrowseLib(e.target.value)}>
@@ -732,11 +740,6 @@ export function Panel() {
               );
             })}
           </div>
-          {kitIcons[focus] && kitIcons[focus] !== "none" && (
-            <button className="resetstate" onClick={() => setKitIcon(focus, null)}>
-              <RotateCcw size={13} strokeWidth={2} /> Back to the stock glyph
-            </button>
-          )}
           </>)}
         </Section>
       )}
@@ -928,13 +931,6 @@ export function Panel() {
           <label className="checkrow"><input type="checkbox" checked={cfg.barFx?.grad2.vertical ?? true}
             onChange={(e) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.grad2.vertical = e.target.checked; })} /> Vertical sweep</label>
         </FxToggle>
-        <div className="sublabel">Dragger ball</div>
-        <label className="check"><input type="checkbox" checked={(cfg.knob?.color ?? null) === null}
-          onChange={(e) => update((c) => { c.knob = { color: e.target.checked ? null : (c.effects.Bevel ?? "#0E9CC9") }; })} /> Knob color from Color map</label>
-        {(cfg.knob?.color ?? null) !== null && (
-          <Well label="Knob color" value={cfg.knob!.color!} onChange={(v) => update((c) => { c.knob = { color: v }; })} />
-        )}
-        <div className="helper">The candy ball on sliders, toggles and joysticks. Following the Color map keeps it on the Bevel role.</div>
         <FxToggle label="Fill glow" on={cfg.barFx?.glow.on ?? false}
           onToggle={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.on = v; })}>
           <Well label="Color" value={cfg.barFx?.glow.color ?? "#8FF0FF"} onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.glow.color = v; })} />
@@ -945,6 +941,13 @@ export function Panel() {
           onToggle={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.shadow.on = v; })}>
           <Slider label="Opacity" value={cfg.barFx?.shadow.opacity ?? 40} min={0} max={90} unit="%" onChange={(v) => update((c) => { const b = c.barFx ?? (c.barFx = defaultBarFx()); b.shadow.opacity = v; })} />
         </FxToggle>
+        <div className="sublabel">Dragger ball</div>
+        <label className="check"><input type="checkbox" checked={(cfg.knob?.color ?? null) === null}
+          onChange={(e) => update((c) => { c.knob = { color: e.target.checked ? null : (c.effects.Bevel ?? "#0E9CC9") }; })} /> Knob color from Color map</label>
+        {(cfg.knob?.color ?? null) !== null && (
+          <Well label="Knob color" value={cfg.knob!.color!} onChange={(v) => update((c) => { c.knob = { color: v }; })} />
+        )}
+        <div className="helper">The candy ball on sliders, toggles and joysticks. Following the Color map keeps it on the Bevel role.</div>
       </Section>
 
       <Section id="lighting" title="Lighting" summary={<span>{D.lighting.angle}°</span>}>
@@ -1332,14 +1335,13 @@ export function Panel() {
           <div className="helper">Crisp vector highlights riding the letterforms — a specular slab clipped to the glyphs plus star glints. They follow the master Lighting angle; the nudges shift the whole treatment in % of the letter height.</div>
         </FxToggle>
         <div className="sublabel">Icons</div>
-        <div className="helper">The kit-wide icon treatment — every glyph (buttons, counters, slots, rows) follows this. Swap a specific component's glyph in <b>Component content</b>.</div>
         <Slider label="Size" value={cfg.icon.size} min={40} max={170} unit="%" onChange={(v) => update((c) => { c.icon.size = v; })} />
         <Slider label="Weight" value={cfg.icon.strokeWidth} min={5} max={40} unit="/10" onChange={(v) => update((c) => { c.icon.strokeWidth = v; })} />
+        <Slider label="Opacity" value={cfg.icon.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.icon.opacity = v; })} />
+        <Slider label="Rotation" value={cfg.icon.rotation} min={0} max={360} unit="°" onChange={(v) => update((c) => { c.icon.rotation = v; })} />
         <label className="check"><input type="checkbox" checked={cfg.icon.color === null}
           onChange={(e) => update((c) => { c.icon.color = e.target.checked ? null : "#FFFFFF"; })} /> Inherit type color</label>
         {cfg.icon.color !== null && <Well label="Custom color" value={cfg.icon.color} onChange={(v) => update((c) => { c.icon.color = v; })} />}
-        <Slider label="Opacity" value={cfg.icon.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.icon.opacity = v; })} />
-        <Slider label="Rotation" value={cfg.icon.rotation} min={0} max={360} unit="°" onChange={(v) => update((c) => { c.icon.rotation = v; })} />
         <div className="sublabel">Icon effects</div>
         <div className="fxrow">
           {(["shadow", "glow", "emboss"] as const).map((f) => (
@@ -1349,7 +1351,7 @@ export function Panel() {
             </button>
           ))}
         </div>
-        <div className="helper">Icon effects are the icon's own — independent of the Type effects above, so what you set here is exactly what icons do.</div>
+        <div className="helper">Every glyph in the kit (buttons, counters, slots, rows) follows this one treatment — swap a specific component's glyph in <b>Component content</b>. Color inherits the type until you set your own; the effects are always the icon's own, independent of Type.</div>
       </Section>
 
 
@@ -1446,7 +1448,7 @@ export function Panel() {
             </div>
           ))}
         </div>
-        <div className="helper">Click a thumbnail to load it into the editor. Send to board to sketch layouts.</div>
+        {library.length > 0 && <div className="helper">Click a thumbnail to load it into the editor. Send to board to sketch layouts.</div>}
       </Section>
 
       {/* ── States shown ──────────────────────────────────── */}
