@@ -195,6 +195,60 @@ function FxToggle({ label, on, onToggle, children }: {
   );
 }
 
+/* Progressive disclosure — fine-tuning folds behind a NAMED reveal, so heavy
+   sections lead with the controls that define the look. The name says what is
+   inside before it opens; nothing is generic "advanced". */
+function Adv({ label, active, children }: { label: string; active?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`adv${open ? " open" : ""}`}>
+      <button className="advhead" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChevronRight size={14} strokeWidth={2.2} className="advchev" /> {label}
+        {active && !open && <span className="advdot" title="Something in here is set away from its default" />}
+      </button>
+      {open && <div className="advbody">{children}</div>}
+    </div>
+  );
+}
+
+/* Naming happens in place — the button becomes a small name field with
+   confirm/cancel, replacing the browser prompt() dialog. Enter commits,
+   Escape backs out; an async commit can veto with an error message. */
+function NameAction({ icon, label, title, defaultName, placeholder, onCommit }: {
+  icon: React.ReactNode; label: string; title?: string; defaultName?: string; placeholder?: string;
+  onCommit: (name: string) => void | Promise<string | null>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (open) { inputRef.current?.focus(); inputRef.current?.select(); } }, [open]);
+  const commit = async () => {
+    const n = name.trim();
+    if (!n || busy) return;
+    setBusy(true);
+    const err = await onCommit(n);
+    setBusy(false);
+    if (err) window.alert(err); else setOpen(false);
+  };
+  if (!open) return (
+    <button className="resetstate" title={title} onClick={() => { setName(defaultName ?? ""); setOpen(true); }}>{icon} {label}</button>
+  );
+  return (
+    <div className="namerow">
+      <input ref={inputRef} className="tinput" value={name} placeholder={placeholder ?? "Name…"} maxLength={80} aria-label={label}
+        onChange={(e) => setName(e.target.value)} disabled={busy}
+        onKeyDown={(e) => { if (e.key === "Enter") void commit(); if (e.key === "Escape") setOpen(false); }} />
+      <button className="chipbtn" title="Save" aria-label={`${label} — confirm`} disabled={busy || !name.trim()} onClick={() => void commit()}>
+        <CheckCircle2 size={14} strokeWidth={2.2} />
+      </button>
+      <button className="chipbtn" title="Cancel" aria-label={`${label} — cancel`} onClick={() => setOpen(false)}>
+        <X size={14} strokeWidth={2.2} />
+      </button>
+    </div>
+  );
+}
+
 function AngleDial({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const fromEvent = (e: React.PointerEvent) => {
@@ -555,9 +609,9 @@ export function Panel() {
           <button className="resetstate" onClick={randomize}>
             <Dices size={14} strokeWidth={2} /> Randomize everything
           </button>
-          <button className="resetstate" onClick={() => saveStyle(window.prompt("Name this style:", cfg.content.label || "My style") || "My style")}>
-            <Copy size={13} strokeWidth={2} /> Save current look as a style
-          </button>
+          <NameAction icon={<Copy size={13} strokeWidth={2} />} label="Save current look as a style"
+            defaultName={cfg.content.label || "My style"} placeholder="Style name"
+            onCommit={(n) => { saveStyle(n); }} />
         </div>
         {styleLib.length > 0 && (<>
           <div className="sublabel">My styles</div>
@@ -582,12 +636,10 @@ export function Panel() {
         {isAdmin && (<>
           <div className="sublabel">Shared library — admin</div>
           <div className="actionrow">
-            <button className="resetstate" onClick={() => {
-              const name = window.prompt("Publish the current style as a shared preset — every user will see it. Name:");
-              if (name && name.trim()) void publishPreset(name.trim()).then((err) => { if (err) window.alert(err); });
-            }}>
-              <Globe size={14} strokeWidth={2} /> Publish current…
-            </button>
+            <NameAction icon={<Globe size={14} strokeWidth={2} />} label="Publish current…"
+              title="Publish the current style as a shared preset — every user will see it"
+              placeholder="Preset name — every visitor sees it"
+              onCommit={(n) => publishPreset(n)} />
             {activeCloudPreset && (
               <button className="resetstate" onClick={() => {
                 if (window.confirm(`Overwrite the shared preset “${activeCloudPreset.name}” with the current look — for everyone?`)) void overwriteActivePreset().then((err) => { if (err) window.alert(err); });
@@ -907,10 +959,11 @@ export function Panel() {
           <Slider label="Grain size" value={C.texture.scale} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.texture.scale = v; })} />
         )}
 
-        <div className="sublabel">Transparency</div>
-        <Slider label="Frame" value={D.transparency.frame} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.frame = v; })} />
-        <Slider label="Interior" value={D.transparency.interior} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.interior = v; })} />
-        <Slider label="Text" value={D.transparency.content} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.content = v; })} />
+        <Adv label="Transparency" active={D.transparency.frame < 100 || D.transparency.interior < 100 || D.transparency.content < 100}>
+          <Slider label="Frame" value={D.transparency.frame} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.frame = v; })} />
+          <Slider label="Interior" value={D.transparency.interior} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.interior = v; })} />
+          <Slider label="Text" value={D.transparency.content} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.transparency.content = v; })} />
+        </Adv>
       </Section>
 
       {/* ── E · Lighting ──────────────────────────────────── */}
@@ -980,13 +1033,6 @@ export function Panel() {
         <Slider label="Curvature" value={C.gloss.curve} min={-40} max={60} unit="px" onChange={(v) => update((c) => { c.candy.gloss.curve = v; })} />
         <Slider label="Gloss opacity" value={C.gloss.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.gloss.opacity = v; })} />
         <Slider label="Softness" value={C.gloss.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.gloss.softness = v; })} />
-        <label className="fieldbox" style={{ minWidth: 0 }}>
-          <span className="fl">Gloss blend mode</span>
-          <select value={C.gloss.blend ?? "normal"} aria-label="Gloss blend mode" onChange={(e) => update((c) => { c.candy.gloss.blend = e.target.value as BlendMode; })}>
-            {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
-          </select>
-          <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-        </label>
         <div className="ctl">
           <label>Gloss fill</label>
           <div className="segmini" role="radiogroup" aria-label="Gloss fill">
@@ -1009,16 +1055,25 @@ export function Panel() {
           <Well label="Gloss bottom" value={C.gloss.tint2}
             onChange={(v) => update((c) => { c.candy.gloss.tint2 = v; })} />
         )}
-        <div className="ctl">
-          <label>Layering</label>
-          <div className="segmini" role="radiogroup" aria-label="Gloss layering">
-            {([["below", "Below text"], ["above", "Above text"]] as const).map(([v, t]) => (
-              <button key={v} className={C.gloss.layer === v ? "on" : ""} role="radio" aria-checked={C.gloss.layer === v}
-                onClick={() => update((c) => { c.candy.gloss.layer = v; })}>{t}</button>
-            ))}
+        <Adv label="Fine-tune gloss">
+          <label className="fieldbox" style={{ minWidth: 0 }}>
+            <span className="fl">Gloss blend mode</span>
+            <select value={C.gloss.blend ?? "normal"} aria-label="Gloss blend mode" onChange={(e) => update((c) => { c.candy.gloss.blend = e.target.value as BlendMode; })}>
+              {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+          </label>
+          <div className="ctl">
+            <label>Layering</label>
+            <div className="segmini" role="radiogroup" aria-label="Gloss layering">
+              {([["below", "Below text"], ["above", "Above text"]] as const).map(([v, t]) => (
+                <button key={v} className={C.gloss.layer === v ? "on" : ""} role="radio" aria-checked={C.gloss.layer === v}
+                  onClick={() => update((c) => { c.candy.gloss.layer = v; })}>{t}</button>
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="helper">Above text seals the label under the candy shell; below keeps it crisp and UI-like.</div>
+          <div className="helper">Above text seals the label under the candy shell; below keeps it crisp and UI-like.</div>
+        </Adv>
         </>)}
         <div className="sublabel">Specular</div>
         <label className="check"><input type="checkbox" checked={C.specular.on} onChange={(e) => update((c) => { c.candy.specular.on = e.target.checked; })} /> Specular reflections</label>
@@ -1034,24 +1089,26 @@ export function Panel() {
           <Slider label="Size" value={C.specular.size} min={4} max={100} unit="px" onChange={(v) => update((c) => { c.candy.specular.size = v; })} />
           <Slider label="Shape" value={C.specular.stretch} min={10} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.stretch = v; })} />
           <Slider label="Intensity" value={C.specular.intensity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.intensity = v; })} />
-          {C.specular.mode !== "anime" && (
-            <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
-          )}
-          <label className="fieldbox" style={{ minWidth: 0 }}>
-            <span className="fl">Specular blend mode</span>
-            <select value={C.specular.blend ?? "normal"} aria-label="Specular blend mode" onChange={(e) => update((c) => { c.candy.specular.blend = e.target.value as BlendMode; })}>
-              {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-            <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
-          </label>
-          {(C.specular.mode === "dual" || C.specular.mode === "anime") && (
-            <Slider label="Spacing" value={C.specular.gap} min={50} max={300} unit="%" onChange={(v) => update((c) => { c.candy.specular.gap = v; })} />
-          )}
-          {C.specular.mode !== "sweep" && (<>
-            <Slider label="Angle" value={C.specular.angle} min={-80} max={80} unit="°" onChange={(v) => update((c) => { c.candy.specular.angle = v; })} />
-            <Slider label="Nudge X" value={C.specular.ox} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.ox = v; })} />
-            <Slider label="Nudge Y" value={C.specular.oy} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.oy = v; })} />
-          </>)}
+          <Adv label="Fine-tune specular">
+            {C.specular.mode !== "anime" && (
+              <Slider label="Softness" value={C.specular.softness} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.specular.softness = v; })} />
+            )}
+            <label className="fieldbox" style={{ minWidth: 0 }}>
+              <span className="fl">Specular blend mode</span>
+              <select value={C.specular.blend ?? "normal"} aria-label="Specular blend mode" onChange={(e) => update((c) => { c.candy.specular.blend = e.target.value as BlendMode; })}>
+                {BLEND_MODES.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <span className="chev"><ChevronDown size={17} strokeWidth={2} /></span>
+            </label>
+            {(C.specular.mode === "dual" || C.specular.mode === "anime") && (
+              <Slider label="Spacing" value={C.specular.gap} min={50} max={300} unit="%" onChange={(v) => update((c) => { c.candy.specular.gap = v; })} />
+            )}
+            {C.specular.mode !== "sweep" && (<>
+              <Slider label="Angle" value={C.specular.angle} min={-80} max={80} unit="°" onChange={(v) => update((c) => { c.candy.specular.angle = v; })} />
+              <Slider label="Nudge X" value={C.specular.ox} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.ox = v; })} />
+              <Slider label="Nudge Y" value={C.specular.oy} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.oy = v; })} />
+            </>)}
+          </Adv>
         </>)}
         <div className="sublabel">Lower bloom</div>
         <Slider label="Bloom" value={C.bloom.opacity} min={0} max={100} unit="%" onChange={(v) => update((c) => { c.candy.bloom.opacity = v; })} />
