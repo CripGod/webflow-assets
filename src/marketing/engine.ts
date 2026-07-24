@@ -40,3 +40,15 @@ export const engineApi = {
   pickDesign, PRESETS, SHAPES, PATTERN_TYPES, KIT_COMPONENTS, STATE_NAMES,
   AUTHORED, applyPresetFull, retintText,
 };
+
+/* Crop a render's viewBox to its shell (plus glow padding) so it displays
+   large — same trick the landing funnel uses. */
+export function tightenSvg(svg: string, pad = 26): string {
+  const m = /data-shell="([-\d. ]+)"/.exec(svg);
+  if (!m) return svg;
+  const [sx, sy, sw, sh] = m[1].split(" ").map(Number);
+  return svg
+    .replace(/width="[^"]*"/, `width="${Math.round(sw + pad * 2)}"`)
+    .replace(/height="[^"]*"/, `height="${Math.round(sh + pad * 2)}"`)
+    .replace(/viewBox="[^"]*"/, `viewBox="${(sx - pad).toFixed(1)} ${(sy - pad).toFixed(1)} ${(sw + pad * 2).toFixed(1)} ${(sh + pad * 2).toFixed(1)}"`);
+}

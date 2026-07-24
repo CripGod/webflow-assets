@@ -10,6 +10,7 @@ import {
 } from "@/generator/cloud";
 import { useCloudStatus } from "@/shell/useCloudStatus";
 import { useAuthOverlay, closeAuth } from "@/shell/authOverlay";
+import { engineApi, tightenSvg } from "@/marketing/engine";
 import logoUrl from "../../pb-logo.png";
 
 // My Projects pulls the editor store — lazy so opening the overlay from the
@@ -77,6 +78,15 @@ export function AuthOverlay() {
 
   const signedIn = status.state === "synced" || status.state === "syncing" || status.state === "error";
 
+  // A real engine render greets sign-in — the product is present even here.
+  const [chipSvg] = useState(() => {
+    try {
+      const c = engineApi.applyPresetFull(engineApi.defaultConfig(), "grape-jelly");
+      return tightenSvg(engineApi.renderShell(c, "default", 200, 54, { label: "PLAYER 1", fs: 16 }), 24);
+    } catch { return ""; }
+  });
+  const [advOpen, setAdvOpen] = useState(false);
+
   let title = "Sign in";
   if (status.state === "recovery") title = "Set a new password";
   else if (signedIn) title = "Your account";
@@ -106,6 +116,10 @@ export function AuthOverlay() {
         </div>
 
         <div className="fd-modal__body">
+          {!signedIn && status.state !== "recovery" && cfg && (
+            <div className="fd-chip" aria-hidden="true"
+              dangerouslySetInnerHTML={{ __html: chipSvg }} />
+          )}
           {/* ── recovery ───────────────────────────────────────── */}
           {status.state === "recovery" ? (
             <>
@@ -146,29 +160,34 @@ export function AuthOverlay() {
                 <button className="fd-primary" onClick={() => setShowProjects(true)}>
                   <FolderOpen size={16} strokeWidth={1.9} /> My projects
                 </button>
-                <div className="fd-actions">
-                  <button className="fd-ghost" onClick={() => syncNow()}>
-                    <RefreshCw size={15} strokeWidth={1.8} /> Sync now
-                  </button>
-                  <button className="fd-ghost" onClick={() => downloadMyData()}>
-                    <FileDown size={15} strokeWidth={1.8} /> Download my data
-                  </button>
-                </div>
-                {hasLocalSnapshot() && (
-                  <button className="fd-ghost fd-ghost--wide" onClick={() => {
-                    if (window.confirm("Bring back the work this device had before your cloud copy loaded? Your account will sync to the restored version.")) restoreLocalSnapshot();
-                  }}>
-                    <History size={15} strokeWidth={1.8} /> Restore this device's earlier work
-                  </button>
-                )}
                 <button className="fd-ghost fd-ghost--wide" onClick={() => { void signOutCloud(); closeAuth(); }}>
                   <LogOut size={15} strokeWidth={1.8} /> Sign out
                 </button>
-                <p className="fd-fine">Signing out keeps your work on this device.</p>
-                {cfg?.fromOverride && (
-                  <button className="fd-linkbtn" onClick={() => { clearCloudOverride(); window.location.reload(); }}>
-                    Disconnect this browser's cloud project
-                  </button>
+                <p className="fd-fine">Your work syncs automatically and stays on this device when you sign out.</p>
+                <button className="fd-linkbtn fd-linkbtn--muted" onClick={() => setAdvOpen(!advOpen)}>
+                  {advOpen ? "Hide advanced" : "Advanced"}
+                </button>
+                {advOpen && (
+                  <div className="fd-actions fd-actions--adv">
+                    <button className="fd-ghost" onClick={() => syncNow()}>
+                      <RefreshCw size={15} strokeWidth={1.8} /> Sync now
+                    </button>
+                    <button className="fd-ghost" onClick={() => downloadMyData()}>
+                      <FileDown size={15} strokeWidth={1.8} /> Download my data
+                    </button>
+                    {hasLocalSnapshot() && (
+                      <button className="fd-ghost fd-ghost--wide" onClick={() => {
+                        if (window.confirm("Bring back the work this device had before your cloud copy loaded? Your account will sync to the restored version.")) restoreLocalSnapshot();
+                      }}>
+                        <History size={15} strokeWidth={1.8} /> Restore this device's earlier work
+                      </button>
+                    )}
+                    {cfg?.fromOverride && (
+                      <button className="fd-linkbtn" onClick={() => { clearCloudOverride(); window.location.reload(); }}>
+                        Disconnect this browser's cloud project
+                      </button>
+                    )}
+                  </div>
                 )}
               </>
             )
@@ -258,6 +277,18 @@ export function AuthOverlay() {
 
               {note && <p className={`fd-note${err ? " fd-note--err" : ""}`}>{note}</p>}
 
+              {mode === "signin" && (
+                <>
+                  <div className="fd-or"><i /><span>or</span><i /></div>
+                  <button className="fd-magic" disabled={busy}
+                    onClick={() => switchMode("magic")}>
+                    <Mail size={15} strokeWidth={1.8} /> Email me a sign-in link
+                  </button>
+                </>
+              )}
+              {(mode === "signin" || mode === "signup") && (
+                <p className="fd-free"><span className="fd-free__check">✓</span> Free Explorer — no card needed.</p>
+              )}
               <div className="fd-altlinks">
                 {(mode === "magic" || mode === "reset") && (
                   <button className="fd-linkbtn" onClick={() => switchMode("signin")}>
@@ -265,10 +296,7 @@ export function AuthOverlay() {
                   </button>
                 )}
                 {mode === "signin" && (
-                  <>
-                    <button className="fd-linkbtn" onClick={() => switchMode("magic")}>Email me a link instead</button>
-                    <button className="fd-linkbtn" onClick={() => switchMode("reset")}>Forgot password?</button>
-                  </>
+                  <button className="fd-linkbtn" onClick={() => switchMode("reset")}>Forgot password?</button>
                 )}
               </div>
 
