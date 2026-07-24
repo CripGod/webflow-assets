@@ -434,7 +434,7 @@ export const LANDING_HTML = `</head>
                 <div class="sv-row"><span class="sv-art" data-kid="badge"></span><b>BADGE</b></div>
                 <div class="sv-row"><span class="sv-art" data-kid="toggle" data-v="1"></span><b>TOGGLE</b></div>
                 <div class="sv-row"><span class="sv-art" data-kid="chip"></span><b>PILL</b></div>
-                <div class="sv-row"><span class="sv-art sv-art--wide" data-kid="progress" data-v="72"></span><b>72%</b></div>
+                <div class="sv-row"><span class="sv-art sv-art--wide" data-kid="progress" data-v="72"></span><b>PROGRESS BAR</b></div>
                 <div class="sv-row"><span class="sv-art" data-kid="iconbtn"></span><b>ICON BUTTON</b></div>
                 <div class="sv-row"><span class="sv-art sv-art--wide" data-kid="slot"></span><b>LOADOUT SLOT</b></div>
               </div>
