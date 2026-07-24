@@ -80,18 +80,13 @@ export const LANDING_HTML = `</head>
         </div>
 
         <div class="studio2 reveal-in e3" id="studio2" aria-label="Live UI button studio">
-          <div class="st2-head">
-            <span class="st2-live"><i></i> LIVE STUDIO</span>
-            <span class="st2-right">
+          <div class="st2-preview" id="previewField">
+            <span class="pv-ctl">
               <span class="st2-status" id="stStatus" aria-live="polite">LIVE PREVIEW</span>
               <button class="st2-tb" id="playCtl" type="button" aria-label="Resume the preview loop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></button>
               <button class="st2-tb" id="pauseCtl" type="button" aria-label="Pause the preview loop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h3v14H8zM13 5h3v14h-3z" fill="currentColor"/></svg></button>
             </span>
-          </div>
-
-          <div class="st2-narr"><span id="narrTxt"></span><button class="cust-btn" id="custBtn" type="button" hidden>⛭ <span id="custTxt">CUSTOMIZE</span></button></div>
-
-          <div class="st2-preview" id="previewField">
+            <div class="st2-narr"><span id="narrTxt"></span><button class="cust-btn" id="custBtn" type="button" hidden>⛭ <span id="custTxt">CUSTOMIZE</span></button></div>
             <div class="pv-steps" id="pvSteps" role="group" aria-label="Onboarding steps">
               <button type="button" data-step="1" class="on">01 MASTER</button>
               <button type="button" data-step="2" disabled>02 KIT</button>
@@ -509,7 +504,6 @@ export const LANDING_HTML = `</head>
       <div class="footer-links">
         <a href="#/terms">Terms</a>
         <a href="#/privacy">Privacy</a>
-        <a href="#github">GitHub</a>
       </div>
       <p class="footer-lic" id="footLic"></p>
     </div>
