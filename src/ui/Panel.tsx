@@ -343,11 +343,34 @@ export function Panel() {
     if (!focus) { updateParent(fn); return; }
     const before = applyKitDesign(cfgMaster, kitDesigns[focus]);
     const merged = JSON.parse(JSON.stringify(before)) as GenConfig;
-    fn(merged);
-    // v70: pin only the paths this edit changed — the rest keeps following
-    // the parent design live, so the kit stays auto-updating
-    const d = designDiff(pickDesign(before), pickDesign(merged));
-    if (d) setKitDesign(focus, mergeKitDesign(kitDesigns[focus], d));
+    if (selectedState !== "default") {
+      /* Editing a non-default state of a focused piece: route the design edit
+         into that state's fork — the same routing the store's update does —
+         because the controls READ from the fork (D = stateDesigns[sel]). The
+         old path wrote to the piece's default layer, which the fork masked:
+         the control looked dead. Fork on first touch; Default stays put. */
+      if (!merged.stateDesigns) merged.stateDesigns = {};
+      if (!merged.stateDesigns[selectedState]) merged.stateDesigns[selectedState] = pickDesign(merged);
+      const sd = merged.stateDesigns[selectedState]!;
+      const t = Object.assign({}, merged, {
+        effects: sd.effects, face: sd.face, bevel: sd.bevel, candy: sd.candy,
+        lighting: sd.lighting, shadow: sd.shadow, transparency: sd.transparency, type: sd.type,
+      }) as GenConfig;
+      Object.defineProperty(t, "shape", { get: () => sd.shape, set: (v) => { sd.shape = v; }, enumerable: true, configurable: true });
+      fn(t);
+      sd.effects = t.effects; sd.face = t.face; sd.bevel = t.bevel; sd.candy = t.candy;
+      sd.lighting = t.lighting; sd.shadow = t.shadow; sd.transparency = t.transparency; sd.type = t.type;
+      if (JSON.stringify(before.stateDesigns ?? {}) !== JSON.stringify(merged.stateDesigns)) {
+        // the piece's state forks pin wholesale — that's their storage grain
+        setKitDesign(focus, { ...(kitDesigns[focus] ?? {}), stateDesigns: merged.stateDesigns });
+      }
+    } else {
+      fn(merged);
+      // v70: pin only the paths this edit changed — the rest keeps following
+      // the parent design live, so the kit stays auto-updating
+      const d = designDiff(pickDesign(before), pickDesign(merged));
+      if (d) setKitDesign(focus, mergeKitDesign(kitDesigns[focus], d));
+    }
     // replay only the non-design portion onto the parent, design keys pinned
     const mClone = JSON.parse(JSON.stringify(cfgMaster)) as GenConfig;
     fn(mClone);
