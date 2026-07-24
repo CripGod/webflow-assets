@@ -458,3 +458,31 @@
 
 .fd-legal-note{font-size:10.5px;line-height:1.55;color:var(--fd-muted,#8b86a3);margin:2px 0 0}
 .fd-legal-note a{color:inherit;text-decoration:underline;text-underline-offset:.2em}
+
+/* ── Approved front-door dressing (artifact auth2): violet ring, mono pill
+   tabs, engine chip, magic-link secondary. Theme tokens keep it legible in
+   both app themes. ── */
+.fd-modal{border-radius:22px;box-shadow:0 0 0 4px rgba(178,107,255,.10),0 50px 110px -40px rgba(10,12,18,.55)}
+.fd-chip{display:grid;place-items:center;margin:0 0 2px}
+.fd-chip svg{width:min(200px,64%);height:auto}
+.fd-tabs{display:flex;gap:6px;padding:0;border-radius:0;background:none}
+.fd-tab{flex:1;height:auto;padding:9px 8px;border:1px solid var(--line2);border-radius:10px;background:none;color:var(--ink3);
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  transition:border-color .14s,color .14s,box-shadow .14s}
+.fd-tab.is-on{background:none;border-color:#b26bff;color:var(--ink);box-shadow:0 0 0 1.5px rgba(178,107,255,.3)}
+.fd-primary{background:linear-gradient(93deg,#7c3aed,#b026dd 55%,#e335c8);
+  box-shadow:0 0 0 2px rgba(178,107,255,.22),0 10px 26px -12px rgba(170,60,230,.55)}
+.fd-primary:hover:not(:disabled){background:linear-gradient(93deg,#7c3aed,#b026dd 55%,#e335c8);filter:brightness(1.07)}
+.fd-modal .fd-input:focus{border-color:#a855f7;box-shadow:0 0 0 3px rgba(168,85,247,.18)}
+.fd-modal .fd-consent input{accent-color:#7c3aed}
+.fd-modal .fd-consent a,.fd-modal .fd-linkbtn:not(.fd-linkbtn--muted){color:#8b5cf6}
+[data-theme="dark"] .fd-modal .fd-consent a,[data-theme="dark"] .fd-modal .fd-linkbtn:not(.fd-linkbtn--muted){color:#b26bff}
+.fd-or{display:flex;align-items:center;gap:10px;margin:2px 0;color:var(--ink3);font-size:11px}
+.fd-or i{flex:1;height:1px;background:var(--line2)}
+.fd-magic{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;height:44px;border:1px solid var(--line2);border-radius:12px;
+  background:none;color:var(--ink);cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;transition:border-color .14s,background-color .14s}
+.fd-magic:hover{border-color:#b26bff;background:color-mix(in srgb,#7c3aed 7%,transparent)}
+.fd-free{margin:2px 0 0;text-align:center;color:var(--ink3);font-size:11.5px}
+.fd-free__check{display:inline-grid;place-items:center;width:18px;height:18px;margin-right:4px;
+  border:1px solid rgba(178,107,255,.5);border-radius:50%;color:#b26bff;font-size:10px}
+.fd-actions--adv{margin-top:4px}
