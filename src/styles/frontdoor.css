@@ -455,3 +455,6 @@
 .top .brand{border:0;background:none;padding:0;cursor:pointer;text-align:left}
 .top .brand:hover .name{color:var(--accent,#6366f1)}
 @media (prefers-reduced-motion:reduce){.fd-modal,.fd-backdrop{animation:none}}
+
+.fd-legal-note{font-size:10.5px;line-height:1.55;color:var(--fd-muted,#8b86a3);margin:2px 0 0}
+.fd-legal-note a{color:inherit;text-decoration:underline;text-underline-offset:.2em}

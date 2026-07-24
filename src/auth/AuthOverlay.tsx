@@ -205,14 +205,30 @@ export function AuthOverlay() {
               )}
 
               {mode === "signup" && (
-                <label className="fd-consent">
-                  <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-                  <span>
-                    I'm 13 or older and accept the{" "}
-                    <a href="legal/terms.html" target="_blank" rel="noreferrer">Terms</a> &amp;{" "}
-                    <a href="legal/privacy.html" target="_blank" rel="noreferrer">Privacy Policy</a> (drafts).
-                  </span>
-                </label>
+                <>
+                  <label className="fd-consent">
+                    <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+                    <span>
+                      I agree to the{" "}
+                      <a href="#/terms" target="_blank" rel="noreferrer">Terms of Use</a> and acknowledge the{" "}
+                      <a href="#/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>.
+                    </span>
+                  </label>
+                  <p className="fd-legal-note">
+                    Accounts are for users age 13 and older. If you have not reached the age of
+                    majority where you live, a parent or legal guardian must agree to the Terms on
+                    your behalf.
+                  </p>
+                  <p className="fd-legal-note">
+                    PatternBreak collects your email, account identifiers, device and security data,
+                    and any projects you choose to save in order to create and secure your account,
+                    provide cloud saves and plan entitlements, support you, and improve the product.
+                    Local-only projects remain in your browser unless you choose to save or publish
+                    them. We do not sell personal information or share it for cross-context
+                    behavioral advertising. Learn more in the{" "}
+                    <a href="#/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>.
+                  </p>
+                </>
               )}
 
               {mode === "signin" && (
