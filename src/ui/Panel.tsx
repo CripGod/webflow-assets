@@ -1123,6 +1123,7 @@ export function Panel() {
               <Slider label="Angle" value={C.specular.angle} min={-80} max={80} unit="°" onChange={(v) => update((c) => { c.candy.specular.angle = v; })} />
               <Slider label="Nudge X" value={C.specular.ox} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.ox = v; })} />
               <Slider label="Nudge Y" value={C.specular.oy} min={-50} max={50} unit="" onChange={(v) => update((c) => { c.candy.specular.oy = v; })} />
+              <div className="helper">The mark rides the silhouette's lit edge — Nudge X travels it edge to edge, Nudge Y sets how deep below the shell it sits, Angle tilts the cut of its ends.</div>
             </>)}
           </Adv>
         </>)}
