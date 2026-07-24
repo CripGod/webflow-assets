@@ -42,6 +42,13 @@ export function Landing() {
     for (const [token, url] of Object.entries(TOKENS)) html = html.replaceAll(token, url);
     host.innerHTML = html;
 
+    /* gen.css pins body to height:100% / overflow:hidden for the editor —
+       correct at #/app, but it kills page scrolling here. Let the document
+       scroll like a normal page while the landing is mounted. */
+    const bodyPrev = { height: document.body.style.height, overflow: document.body.style.overflow };
+    document.body.style.height = "auto";
+    document.body.style.overflow = "visible";
+
     const ctrl = new AbortController();
     initLanding({
       engine: engineApi,
@@ -53,7 +60,8 @@ export function Landing() {
     return () => {
       ctrl.abort();
       host.innerHTML = "";
-      document.body.style.overflow = "";
+      document.body.style.height = bodyPrev.height;
+      document.body.style.overflow = bodyPrev.overflow;
     };
   }, []);
 
