@@ -129,6 +129,12 @@ an admin retired. Retired starters disappear from the Presets panel for every
 visitor and are excluded from randomize rolls; an admin-only "Restore removed
 starters" button clears the list. Cloud off → empty list → all starters show.
 
+Curation is a full edit loop: applying a shared preset marks it as the
+Overwrite target (a fresh publish adopts itself as the target), and the
+admin's "Overwrite" action saves the current look back into that preset in
+place — same RLS-gated update path, name kept, thumbnail re-rendered by the
+one shared snapshot recipe publish uses.
+
 ## Security posture (what is and is not protected)
 
 - The anon key is public by design; **all** access control is row-level

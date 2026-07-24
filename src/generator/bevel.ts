@@ -1106,12 +1106,15 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
   if (iFx.shadow) iFilters.push(`drop-shadow(0 2px 1.5px rgba(0,0,0,0.4))`);
   if (iFx.glow && !disabled) iFilters.push(`drop-shadow(0 0 5px ${glowC}) drop-shadow(0 0 12px ${hexRgba(glowC, 0.6)})`);
   const iconFilter = iFilters.length ? iFilters.join(" ") : undefined;
-  // explicit kit icons (icon button) inherit the typography treatment:
-  // same fill resolution and the same effect filter as the label
-  const inheritTypo = (cfg.icon.inherit ?? true) && opts.iconDef !== undefined && !!iconDef && !showText;
+  // explicit kit icons (icon button) inherit the typography COLOR treatment
+  // (fill/gradient/outline) unless a custom color is set. Effects, opacity
+  // and rotation are always the icon's own controls — never the type's —
+  // so what the Icons panel shows is exactly what icons do.
+  const inheritTypo = !cfg.icon.color && opts.iconDef !== undefined && !!iconDef && !showText;
   const iconColor = disabled ? "#A7AAB4"
+    : cfg.icon.color ? P(cfg.icon.color)
     : inheritTypo ? (T2.fillMode === "auto" ? autoLabel : P(T2.fill))
-    : cfg.icon.color ? P(cfg.icon.color) : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
+    : (T2.fillMode === "solid" ? P(T2.fill) : autoLabel);
 
 
   /* layout — content centers inside the text-safe area, not against the full
@@ -1292,11 +1295,11 @@ function build(cfg: GenConfig, state: GenStateName, g0: Geom, opts: {
       ${showText && T2.stripes?.on ? `<text x="${tTextX.toFixed(1)}" y="${(cy + 1 + textOy * K).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="${T2.weight}"${fontStyle}${tStyle()} letter-spacing="${spacingEm.toFixed(3)}em" fill="url(#${id}tst)" opacity="${clamp((T2.stripes.opacity ?? 30) / 100, 0, 1).toFixed(2)}" text-anchor="${tAnchor}" dominant-baseline="central">${label}</text>` : ""}
       ${glintsLayer}
       ${iconDef ? (inheritTypo
-        ? `<g${prims.length ? ` filter="url(#${id}tf)"` : ""}>${
+        ? `<g${iconFilter ? ` style="filter:${iconFilter}"` : ""}${cfg.icon.opacity < 100 ? ` opacity="${(cfg.icon.opacity / 100).toFixed(2)}"` : ""}>${
             T2.outline.on && !disabled
-              ? iconGroup(iconDef, iconX, iconY, iconSize, T2.outline.color2 ? `url(#${id}og)` : P(T2.outline.color), { strokeWidth: cfg.icon.strokeWidth / 10 + T2.outline.width * 0.85 })
+              ? iconGroup(iconDef, iconX, iconY, iconSize, T2.outline.color2 ? `url(#${id}og)` : P(T2.outline.color), { strokeWidth: cfg.icon.strokeWidth / 10 + T2.outline.width * 0.85, rotation: cfg.icon.rotation })
               : ""
-          }${iconGroup(iconDef, iconX, iconY, iconSize, !disabled && T2.fillMode === "gradient" ? `url(#${id}tg)` : iconColor, { strokeWidth: cfg.icon.strokeWidth / 10 })}</g>`
+          }${iconGroup(iconDef, iconX, iconY, iconSize, !disabled && T2.fillMode === "gradient" ? `url(#${id}tg)` : iconColor, { strokeWidth: cfg.icon.strokeWidth / 10, rotation: cfg.icon.rotation })}</g>`
         : iconGroup(iconDef, iconX, iconY, iconSize, iconColor, {
             strokeWidth: cfg.icon.strokeWidth / 10,
             opacity: (cfg.icon.opacity / 100),

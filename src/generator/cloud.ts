@@ -745,6 +745,16 @@ export async function publishCloudPreset(name: string, cfg: unknown, thumb: stri
   return { preset: data as CloudPreset, error: null };
 }
 
+/** Overwrite a shared preset's look in place (admin only — RLS enforces).
+    The name stays; only the recipe and thumbnail move. */
+export async function updateCloudPreset(id: string, cfg: unknown, thumb: string | null): Promise<string | null> {
+  const client = await getClient();
+  if (!client || !session) return "Sign in as an admin to edit presets.";
+  const { error } = await client.from("presets")
+    .update({ cfg, thumb, updated_at: new Date().toISOString() }).eq("id", id);
+  return error?.message ?? null;
+}
+
 export async function renameCloudPreset(id: string, name: string): Promise<string | null> {
   const client = await getClient();
   if (!client || !session) return "Sign in to edit presets.";
