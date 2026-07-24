@@ -16,6 +16,8 @@ button { font-family: inherit; color: inherit; }
   --line: #e8eaee; --line2: #dcdfe5;
   --ink: #17181c; --ink2: #5f6673; --ink3: #9aa1ac;
   --soft: #f5f6f8; --card: #fff;
+  /* the one canonical accent — frontdoor.css and the app both read it here */
+  --accent: #6366f1;
   --r-ctl: 12px; --r-card: 16px;
   --shadow-pop: 0 2px 4px rgba(20,22,28,.06), 0 12px 32px rgba(20,22,28,.12);
 }
@@ -27,7 +29,8 @@ button { font-family: inherit; color: inherit; }
   display: flex; align-items: center; gap: 20px; padding: 0 28px;
   border-bottom: 1px solid var(--line); background: #fff;
 }
-.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+/* the brand is a button now — it walks back to the front door */
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; text-align: left; }
 .brand .logo { width: 32px; height: 32px; flex: none; }
 .brand .name { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; color: var(--ink); }
 .top-spacer { flex: 1; }
@@ -460,6 +463,7 @@ img.logo { width: 46px; height: 46px; object-fit: contain; }
   --line: #26282e; --line2: #33363e;
   --ink: #ecedf1; --ink2: #a6adba; --ink3: #6f7683;
   --soft: #23252b; --card: #1b1c21;
+  --accent: #818cf8; /* a step brighter so it carries on dark panels */
 }
 [data-theme="dark"] body { background: #131418; color: var(--ink); }
 [data-theme="dark"] .top, [data-theme="dark"] .menu-pop, [data-theme="dark"] .zoolbar,
